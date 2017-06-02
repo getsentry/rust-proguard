@@ -2,6 +2,12 @@
 name = "proguard"
 version = "0.1.0"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+keywords = ["proguard", "retrace"]
+description = "Basic proguard mapping file handling for Rust"
+homepage = "https://github.com/mitsuhiko/proguard"
+documentation = "https://docs.rs/proguard"
+license = "BSD-3-Clause"
+readme = "README.md"
 
 [dependencies]
 regex = "0.2.2"

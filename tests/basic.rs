@@ -39,8 +39,7 @@ fn test_extra_methods() {
 #[test]
 fn test_mapping_info() {
     let mapping = MappingView::from_slice(MAPPING).unwrap();
-    let info = mapping.analyze_mapping();
-    assert_eq!(info.has_line_info(), true);
+    assert_eq!(mapping.has_line_info(), true);
 }
 
 #[test]

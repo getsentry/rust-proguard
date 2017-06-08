@@ -1,4 +1,5 @@
 extern crate proguard;
+
 use proguard::MappingView;
 
 
@@ -53,4 +54,10 @@ fn test_method_matches() {
     let meths = cls.get_methods("a", Some(200));
     assert_eq!(meths.len(), 1);
     assert_eq!(meths[0].name(), "put");
+}
+
+#[test]
+fn test_uuid() {
+    let mapping = MappingView::from_slice(MAPPING).unwrap();
+    assert_eq!(mapping.uuid(), "5cd8e873-1127-5276-81b7-8ff25043ecfd".parse().unwrap());
 }

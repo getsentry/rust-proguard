@@ -4,6 +4,7 @@ use std::cmp::min;
 use std::path::Path;
 use std::borrow::Cow;
 
+use uuid::{Uuid, NAMESPACE_DNS};
 use regex::bytes::Regex;
 use memmap::{Mmap, Protection};
 use prelude::*;
@@ -71,6 +72,15 @@ impl<'a> MappingView<'a> {
         let mmap = Mmap::open_path(path, Protection::Read)?;
         Ok(MappingView {
             backing: Backing::Mmap(mmap),
+        })
+    }
+
+    /// Returns the UUID of the mapping file.
+    pub fn uuid(&self) -> Uuid {
+        let namespace = Uuid::new_v5(&NAMESPACE_DNS, "guardsquare.com");
+        // this internally only operates on bytes, so this is safe to do
+        Uuid::new_v5(&namespace, unsafe {
+            str::from_utf8_unchecked(self.buffer())
         })
     }
 

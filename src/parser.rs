@@ -3,11 +3,11 @@ use std::str;
 use std::cmp::min;
 use std::path::Path;
 use std::borrow::Cow;
+use std::io::Result;
 
 use uuid::{Uuid, NAMESPACE_DNS};
 use regex::bytes::Regex;
 use memmap::{Mmap, Protection};
-use prelude::*;
 
 
 enum Backing<'a> {

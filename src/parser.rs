@@ -9,6 +9,15 @@ use uuid::{Uuid, NAMESPACE_DNS};
 use regex::bytes::Regex;
 use memmap::{Mmap, Protection};
 
+lazy_static! {
+    static ref METHOD_RE: Regex = Regex::new(
+        r#"(?m)^    (?:(\d+):(\d+):)?([^ ]+) ([^\(]+?)\(([^\)]*?)\) -> ([\S]+)(?:\r?\n|$)"#).unwrap();
+    static ref CLASS_LINE_RE: Regex = Regex::new(
+        r#"(?m)^([\S]+) -> ([\S]+?):(?:\r?\n|$)"#).unwrap();
+    static ref FIELD_RE: Regex = Regex::new(
+        r#"(?m)^    ([\S]+) ([\S]+?) -> ([\S]+)(?:\r?\n|$)"#).unwrap();
+}
+
 
 enum Backing<'a> {
     Buf(Cow<'a, [u8]>),
@@ -86,26 +95,18 @@ impl<'a> MappingView<'a> {
 
     /// Returns `true` if the mapping file contains line information.
     pub fn has_line_info(&self) -> bool {
-        lazy_static! {
-            static ref METHOD_RE: Regex = Regex::new(
-                r#"(?m)^    (?:(\d+):(\d+):)?([\S]+) ([\S]+?)\(([\S]*?)\) -> ([\S]+)$"#).unwrap();
-        }
-
         let buf = self.buffer();
         for caps in METHOD_RE.captures_iter(buf) {
             if caps.get(1).is_some() {
                 return true;
             }
         }
+
         false
     }
 
     /// Locates a class by an obfuscated alias.
     pub fn find_class(&'a self, alias: &str) -> Option<Class<'a>> {
-        lazy_static! {
-            static ref CLASS_LINE_RE: Regex = Regex::new(
-                r#"(?m)^([\S]+) -> ([\S]+?):(?:\r?\n|$)"#).unwrap();
-        }
         let buf = self.buffer();
         let mut iter = CLASS_LINE_RE.captures_iter(buf);
 
@@ -155,10 +156,6 @@ impl<'a> Class<'a> {
 
     /// Looks up a field by an alias.
     pub fn get_field(&'a self, alias: &str) -> Option<FieldInfo<'a>> {
-        lazy_static! {
-            static ref FIELD_RE: Regex = Regex::new(
-                r#"(?m)^    ([\S]+) ([\S]+?) -> ([\S]+)$"#).unwrap();
-        }
         let mut iter = FIELD_RE.captures_iter(self.buf);
 
         while let Some(caps) = iter.next() {
@@ -182,11 +179,6 @@ impl<'a> Class<'a> {
     pub fn get_methods(&'a self, alias: &str, lineno: Option<u32>)
         -> Vec<MethodInfo<'a>>
     {
-        lazy_static! {
-            static ref METHOD_RE: Regex = Regex::new(
-                r#"(?m)^    (?:(\d+):(\d+):)?([\S]+) ([\S]+?)\(([\S]*?)\) -> ([\S]+)$"#).unwrap();
-        }
-
         let mut rv = vec![];
 
         let mut iter = METHOD_RE.captures_iter(self.buf);

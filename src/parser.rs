@@ -93,7 +93,7 @@ impl<'a> MappingView<'a> {
     }
 
     /// Locates a class by an obfuscated alias.
-    pub fn find_class(&'a self, alias: &str) -> Option<Class<'a>> {
+    pub fn find_class<'this>(&'this self, alias: &str) -> Option<Class<'this>> {
         self.parser.classes().filter(|x| x.alias() == alias).next()
     }
 }

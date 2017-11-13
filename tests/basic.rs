@@ -140,19 +140,19 @@ fn test_iter_access() {
 
     let mem = mem_iter.next().unwrap();
     assert_eq!(mem.alias(), "a");
-    assert_eq!(mem.ty(), "android.util.SparseArray");
+    assert_eq!(mem.type_name(), "android.util.SparseArray");
     assert_eq!(mem.name(), "mChildrenByIds");
     assert!(mem.args().is_none());
 
     let mem = mem_iter.next().unwrap();
     assert_eq!(mem.alias(), "c");
-    assert_eq!(mem.ty(), "java.util.ArrayList");
+    assert_eq!(mem.type_name(), "java.util.ArrayList");
     assert_eq!(mem.name(), "mVariableDimensionsWidgets");
     assert!(mem.args().is_none());
 
     let mem = (&mut mem_iter).filter(|x| x.args().is_some()).next().unwrap();
     assert_eq!(mem.alias(), "<init>");
-    assert_eq!(mem.ty(), "void");
+    assert_eq!(mem.type_name(), "void");
     assert_eq!(mem.name(), "<init>");
     assert_eq!(mem.first_line(), 395);
     assert_eq!(mem.last_line(), 416);
@@ -160,7 +160,7 @@ fn test_iter_access() {
 
     let mem = mem_iter.next().unwrap();
     assert_eq!(mem.alias(), "<init>");
-    assert_eq!(mem.ty(), "void");
+    assert_eq!(mem.type_name(), "void");
     assert_eq!(mem.name(), "<init>");
     assert_eq!(mem.first_line(), 395);
     assert_eq!(mem.last_line(), 421);

@@ -15,8 +15,6 @@ lazy_static! {
         r#"(?m)^    (?:(\d+):(\d+):)?([^ ]+) ([^\(]+?)\(([^\)]*?)\) -> ([\S]+)(?:\r?\n|$)"#).unwrap();
     static ref CLASS_LINE_RE: Regex = Regex::new(
         r#"(?m)^([\S]+) -> ([\S]+?):(?:\r?\n|$)"#).unwrap();
-    static ref FIELD_RE: Regex = Regex::new(
-        r#"(?m)^    ([\S]+) ([\S]+?) -> ([\S]+)(?:\r?\n|$)"#).unwrap();
     static ref MEMBER_RE: Regex = Regex::new(
         r#"(?m)^    (?:(\d+):(\d+):)?([^ ]+) ([^\(]+?)(?:\(([^\)]*?)\))? -> ([\S]+)(?:\r?\n|$)"#).unwrap();
 }
@@ -40,22 +38,6 @@ pub struct MemberInfo<'a> {
     ty: &'a [u8],
     name: &'a [u8],
     args: Option<Vec<&'a [u8]>>,
-    lineno_range: Option<(u32, u32)>,
-}
-
-/// Represents field mapping information.
-pub struct FieldInfo<'a> {
-    ty: &'a [u8],
-    alias: &'a [u8],
-    name: &'a [u8],
-}
-
-/// Represents method mapping information.
-pub struct MethodInfo<'a> {
-    alias: &'a [u8],
-    return_value: &'a [u8],
-    args: Vec<&'a [u8]>,
-    method_name: &'a [u8],
     lineno_range: Option<(u32, u32)>,
 }
 
@@ -128,21 +110,10 @@ impl<'a> Class<'a> {
     }
 
     /// Looks up a field by an alias.
-    pub fn get_field(&'a self, alias: &str) -> Option<FieldInfo<'a>> {
-        let mut iter = FIELD_RE.captures_iter(self.buf);
-
-        while let Some(caps) = iter.next() {
-            let m_alias = caps.get(3).unwrap();
-            if m_alias.as_bytes() == alias.as_bytes() {
-                return Some(FieldInfo {
-                    ty: caps.get(1).unwrap().as_bytes(),
-                    name: caps.get(2).unwrap().as_bytes(),
-                    alias: m_alias.as_bytes(),
-                });
-            }
-        }
-
-        None
+    pub fn get_field(&'a self, alias: &str) -> Option<MemberInfo<'a>> {
+        self.members()
+            .filter(|x| !x.is_method() && x.alias() == alias)
+            .next()
     }
 
     /// Looks up all matching methods for a given alias.
@@ -150,44 +121,12 @@ impl<'a> Class<'a> {
     /// If the line number is supplied as well the return value will
     /// most likely only return a single item if found.
     pub fn get_methods(&'a self, alias: &str, lineno: Option<u32>)
-        -> Vec<MethodInfo<'a>>
+        -> Vec<MemberInfo<'a>>
     {
-        let mut rv = vec![];
-
-        let mut iter = METHOD_RE.captures_iter(self.buf);
-
-        while let Some(caps) = iter.next() {
-            let m_alias = caps.get(6).unwrap();
-            if m_alias.as_bytes() == alias.as_bytes() {
-                let from_line: u32 = caps.get(1)
-                    .and_then(|x| str::from_utf8(x.as_bytes()).ok())
-                    .and_then(|x| x.parse().ok())
-                    .unwrap_or(0);
-                let to_line: u32 = caps.get(2)
-                    .and_then(|x| str::from_utf8(x.as_bytes()).ok())
-                    .and_then(|x| x.parse().ok())
-                    .unwrap_or(0);
-
-                let method = MethodInfo {
-                    alias: m_alias.as_bytes(),
-                    return_value: caps.get(3).unwrap().as_bytes(),
-                    args: caps.get(5).unwrap().as_bytes().split(|&x| x == b',').collect(),
-                    method_name: caps.get(4).unwrap().as_bytes(),
-                    lineno_range: if from_line > 0 && to_line > 0 {
-                        Some((from_line, to_line))
-                    } else {
-                        None
-                    },
-                };
-
-                if method.matches_line(lineno) {
-                    rv.push(method);
-                }
-            }
-        }
-
+        let mut rv: Vec<_> = self.members()
+            .filter(|x| x.is_method() && x.alias() == alias && x.matches_line(lineno))
+            .collect();
         rv.sort_by_key(|x| x.line_diff(lineno));
-
         rv
     }
 
@@ -206,87 +145,20 @@ impl<'a> fmt::Display for Class<'a> {
     }
 }
 
-impl<'a> FieldInfo<'a> {
-
-    /// Returns the name of the field.
-    pub fn name(&self) -> &str {
-        str::from_utf8(self.name).unwrap_or("<invalid>")
-    }
-
-    /// Returns the obfuscated alias of a name.
-    pub fn alias(&self) -> &str {
-        str::from_utf8(self.alias).unwrap_or("<invalid>")
-    }
-
-    /// Returns the type name of the field.
-    pub fn type_name(&self) -> &str {
-        str::from_utf8(self.ty).unwrap_or("<invalid>")
-    }
-}
-
-impl<'a> fmt::Display for FieldInfo<'a> {
+impl<'a> fmt::Display for MemberInfo<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}", self.type_name(), self.name())
-    }
-}
-
-impl<'a> MethodInfo<'a> {
-
-    /// Returns the name of the method.
-    pub fn name(&self) -> &str {
-        str::from_utf8(self.method_name).unwrap_or("<invalid>")
-    }
-
-    /// Returns the name of the alias.
-    pub fn alias(&self) -> &str {
-        str::from_utf8(self.alias).unwrap_or("<invalid>")
-    }
-
-    /// The type of the return value.
-    pub fn return_value(&self) -> &str {
-        str::from_utf8(self.return_value).unwrap_or("<invalid>")
-    }
-
-    /// An iterator over the arguments of the method.
-    pub fn args(&'a self) -> Args<'a> {
-        Args { args: &self.args[..], idx: 0 }
-    }
-
-    /// Returns the first line of the method (or 0 if not known)
-    pub fn first_line(&self) -> u32 {
-        self.lineno_range.map(|x| x.0).unwrap_or(0)
-    }
-
-    /// Returns the last line of the method (or 0 if not known)
-    pub fn last_line(&self) -> u32 {
-        self.lineno_range.map(|x| x.1).unwrap_or(0)
-    }
-
-    fn line_diff(&self, lineno: Option<u32>) -> u32 {
-        (min(self.first_line() as i64, self.last_line() as i64) -
-         (lineno.unwrap_or(0) as i64)).abs() as u32
-    }
-
-    fn matches_line(&self, lineno: Option<u32>) -> bool {
-        let lineno = lineno.unwrap_or(0);
-        if let Some((first, last)) = self.lineno_range {
-            lineno == 0 || (first <= lineno && lineno <= last) || last == 0
-        } else {
-            true
-        }
-    }
-}
-
-impl<'a> fmt::Display for MethodInfo<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}(", self.return_value(), self.name())?;
-        for (idx, arg) in self.args().enumerate() {
-            if idx > 0 {
-                write!(f, ", ")?;
+        write!(f, "{} {}", self.type_name(), self.name())?;
+        if let Some(args) = self.args() {
+            write!(f, "(")?;
+            for (idx, arg) in args.enumerate() {
+                if idx > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", arg)?;
             }
-            write!(f, "{}", arg)?;
+            write!(f, ")")?;
         }
-        write!(f, ")")
+        Ok(())
     }
 }
 
@@ -445,7 +317,7 @@ impl<'a> MemberInfo<'a> {
     }
 
     /// Returns the type of this member or return value of method.
-    pub fn ty(&self) -> &str {
+    pub fn type_name(&self) -> &str {
         str::from_utf8(self.ty).unwrap_or("<unknown>")
     }
 
@@ -472,5 +344,19 @@ impl<'a> MemberInfo<'a> {
     /// Returns the last line of this member range.
     pub fn last_line(&self) -> u32 {
         self.lineno_range.map(|x| x.1).unwrap_or(0)
+    }
+
+    fn line_diff(&self, lineno: Option<u32>) -> u32 {
+        (min(self.first_line() as i64, self.last_line() as i64) -
+         (lineno.unwrap_or(0) as i64)).abs() as u32
+    }
+
+    fn matches_line(&self, lineno: Option<u32>) -> bool {
+        let lineno = lineno.unwrap_or(0);
+        if let Some((first, last)) = self.lineno_range {
+            lineno == 0 || (first <= lineno && lineno <= last) || last == 0
+        } else {
+            true
+        }
     }
 }

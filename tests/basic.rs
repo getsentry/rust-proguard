@@ -1,10 +1,19 @@
 extern crate proguard;
+#[macro_use] extern crate lazy_static;
 
 use proguard::MappingView;
 
 
 static MAPPING: &'static [u8] = include_bytes!("res/mapping.txt");
-static MAPPING_WIN: &'static [u8] = include_bytes!("res/mappingwindows.txt");
+lazy_static! {
+    static ref MAPPING_WIN: Vec<u8> = MAPPING.iter().flat_map(|&byte| {
+        if byte == b'\n' {
+            vec![b'\r', b'\n']
+        } else {
+            vec![byte]
+        }
+    }).collect();
+}
 
 
 #[test]
@@ -20,7 +29,7 @@ fn test_basic() {
 
 #[test]
 fn test_basic_win() {
-    let mapping = MappingView::from_slice(MAPPING_WIN).unwrap();
+    let mapping = MappingView::from_slice(&MAPPING_WIN[..]).unwrap();
     let cls = mapping.find_class("android.support.constraint.ConstraintLayout$a").unwrap();
 
     assert_eq!(cls.class_name(), "android.support.constraint.ConstraintLayout$LayoutParams");
@@ -41,7 +50,7 @@ fn test_methods() {
 
 #[test]
 fn test_methods_win() {
-    let mapping = MappingView::from_slice(MAPPING_WIN).unwrap();
+    let mapping = MappingView::from_slice(&MAPPING_WIN[..]).unwrap();
     let cls = mapping.find_class("android.support.constraint.ConstraintLayout$a").unwrap();
 
     let methods = cls.get_methods("a", Some(1848));
@@ -61,7 +70,7 @@ fn test_extra_methods() {
 
 #[test]
 fn test_extra_methods_win() {
-    let mapping = MappingView::from_slice(MAPPING_WIN).unwrap();
+    let mapping = MappingView::from_slice(&MAPPING_WIN[..]).unwrap();
     let cls = mapping.find_class("android.support.constraint.a.e").unwrap();
     let methods = cls.get_methods("a", Some(261));
     assert_eq!(methods.len(), 1);
@@ -77,7 +86,7 @@ fn test_mapping_info() {
 
 #[test]
 fn test_mapping_info_win() {
-    let mapping = MappingView::from_slice(MAPPING_WIN).unwrap();
+    let mapping = MappingView::from_slice(&MAPPING_WIN[..]).unwrap();
     assert_eq!(mapping.has_line_info(), true);
 }
 
@@ -96,7 +105,7 @@ fn test_method_matches() {
 
 #[test]
 fn test_method_matches_win() {
-    let mapping = MappingView::from_slice(MAPPING_WIN).unwrap();
+    let mapping = MappingView::from_slice(&MAPPING_WIN[..]).unwrap();
     let cls = mapping.find_class("android.support.constraint.a.a").unwrap();
     let meths = cls.get_methods("a", Some(320));
     assert_eq!(meths.len(), 1);
@@ -115,6 +124,6 @@ fn test_uuid() {
 
 #[test]
 fn test_uuid_win() {
-    let mapping = MappingView::from_slice(MAPPING_WIN).unwrap();
+    let mapping = MappingView::from_slice(&MAPPING_WIN[..]).unwrap();
     assert_eq!(mapping.uuid(), "71d468f2-0dc4-5017-9f12-1a81081913ef".parse().unwrap());
 }

@@ -1,10 +1,12 @@
 use std::fmt;
 use std::str;
+use std::mem;
 use std::cmp::min;
 use std::path::Path;
 use std::borrow::Cow;
 use std::io::Result;
 use std::iter::Peekable;
+use std::collections::HashMap;
 
 use uuid::{Uuid, NAMESPACE_DNS};
 use regex::bytes::{Regex, CaptureMatches};
@@ -26,6 +28,7 @@ enum Backing<'a> {
 }
 
 /// Represents class mapping information.
+#[derive(Clone)]
 pub struct Class<'a> {
     alias: &'a [u8],
     class_name: &'a [u8],
@@ -50,6 +53,7 @@ pub struct Args<'a> {
 /// Represents a view over a mapping text file.
 pub struct MappingView<'a> {
     parser: Parser<'a>,
+    classes: HashMap<&'a str, Class<'a>>,
 }
 
 /// Parses a proguard file.
@@ -58,11 +62,23 @@ pub struct Parser<'a> {
 }
 
 impl<'a> MappingView<'a> {
+    fn from_parser(parser: Parser<'a>) -> Result<MappingView<'a>> {
+        let mut view = MappingView {
+            parser: parser,
+            classes: HashMap::new(),
+        };
+        unsafe {
+            let iter: ClassIter<'a> = mem::transmute(view.parser.classes());
+            for class in iter {
+                view.classes.insert(mem::transmute(class.alias()), class);
+            }
+        }
+        Ok(view)
+    }
+
     /// Creates a mapping view from a Cow buffer.
     pub fn from_cow(cow: Cow<'a, [u8]>) -> Result<MappingView<'a>> {
-        Ok(MappingView {
-            parser: Parser::from_cow(cow)?,
-        })
+        MappingView::from_parser(Parser::from_cow(cow)?)
     }
 
     /// Creates a mapping from a borrowed byte slice.
@@ -77,9 +93,7 @@ impl<'a> MappingView<'a> {
 
     /// Opens a mapping view from a file on the file system.
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<MappingView<'a>> {
-        Ok(MappingView {
-            parser: Parser::from_path(path)?,
-        })
+        MappingView::from_parser(Parser::from_path(path)?)
     }
 
     /// Returns the UUID of the mapping file.
@@ -93,8 +107,8 @@ impl<'a> MappingView<'a> {
     }
 
     /// Locates a class by an obfuscated alias.
-    pub fn find_class<'this>(&'this self, alias: &str) -> Option<Class<'this>> {
-        self.parser.classes().filter(|x| x.alias() == alias).next()
+    pub fn find_class<'this>(&'this self, alias: &str) -> Option<&'this Class<'a>> {
+        self.classes.get(alias)
     }
 }
 

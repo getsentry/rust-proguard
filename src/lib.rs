@@ -6,4 +6,4 @@ extern crate uuid;
 
 mod parser;
 
-pub use parser::{MappingView, Class, MethodInfo, FieldInfo};
+pub use parser::{MappingView, Class, ClassIter, MemberIter, MemberInfo, Parser};

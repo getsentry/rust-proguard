@@ -1,7 +1,7 @@
 extern crate proguard;
 #[macro_use] extern crate lazy_static;
 
-use proguard::MappingView;
+use proguard::{MappingView, Parser};
 
 
 static MAPPING: &'static [u8] = include_bytes!("res/mapping.txt");
@@ -126,4 +126,43 @@ fn test_uuid() {
 fn test_uuid_win() {
     let mapping = MappingView::from_slice(&MAPPING_WIN[..]).unwrap();
     assert_eq!(mapping.uuid(), "71d468f2-0dc4-5017-9f12-1a81081913ef".parse().unwrap());
+}
+
+#[test]
+fn test_iter_access() {
+    let parser = Parser::from_slice(&MAPPING_WIN[..]).unwrap();
+    let mut class_iter = parser.classes();
+    class_iter.next();
+    let cls = class_iter.next().unwrap();
+    assert_eq!(cls.alias(), "android.support.constraint.ConstraintLayout");
+
+    let mut mem_iter = cls.members();
+
+    let mem = mem_iter.next().unwrap();
+    assert_eq!(mem.alias(), "a");
+    assert_eq!(mem.type_name(), "android.util.SparseArray");
+    assert_eq!(mem.name(), "mChildrenByIds");
+    assert!(mem.args().is_none());
+
+    let mem = mem_iter.next().unwrap();
+    assert_eq!(mem.alias(), "c");
+    assert_eq!(mem.type_name(), "java.util.ArrayList");
+    assert_eq!(mem.name(), "mVariableDimensionsWidgets");
+    assert!(mem.args().is_none());
+
+    let mem = (&mut mem_iter).filter(|x| x.args().is_some()).next().unwrap();
+    assert_eq!(mem.alias(), "<init>");
+    assert_eq!(mem.type_name(), "void");
+    assert_eq!(mem.name(), "<init>");
+    assert_eq!(mem.first_line(), 395);
+    assert_eq!(mem.last_line(), 416);
+    assert_eq!(mem.args().unwrap().collect::<Vec<_>>(), vec!["android.content.Context"]);
+
+    let mem = mem_iter.next().unwrap();
+    assert_eq!(mem.alias(), "<init>");
+    assert_eq!(mem.type_name(), "void");
+    assert_eq!(mem.name(), "<init>");
+    assert_eq!(mem.first_line(), 395);
+    assert_eq!(mem.last_line(), 421);
+    assert_eq!(mem.args().unwrap().collect::<Vec<_>>(), vec!["android.content.Context", "android.util.AttributeSet"]);
 }

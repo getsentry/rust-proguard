@@ -13,4 +13,4 @@ readme = "README.md"
 regex = "0.2.2"
 memmap = "^0.5.0"
 lazy_static = "^0.2.2"
-uuid = { version = "0.5.0", features = ["v5"] }
+uuid = { version = "0.6.0", features = ["v5"] }

@@ -1,16 +1,16 @@
-use std::fmt;
-use std::str;
-use std::mem;
-use std::cmp::min;
-use std::path::Path;
 use std::borrow::Cow;
+use std::cmp::min;
+use std::collections::HashMap;
+use std::fmt;
 use std::io::Result;
 use std::iter::Peekable;
-use std::collections::HashMap;
+use std::mem;
+use std::path::Path;
+use std::str;
 
-use uuid::{Uuid, NAMESPACE_DNS};
-use regex::bytes::{Regex, CaptureMatches};
 use memmap::{Mmap, Protection};
+use regex::bytes::{CaptureMatches, Regex};
+use uuid::{Uuid, NAMESPACE_DNS};
 
 lazy_static! {
     static ref METHOD_RE: Regex = Regex::new(
@@ -18,9 +18,10 @@ lazy_static! {
     static ref CLASS_LINE_RE: Regex = Regex::new(
         r#"(?m)^([\S]+) -> ([\S]+?):(?:\r?\n|$)"#).unwrap();
     static ref MEMBER_RE: Regex = Regex::new(
-        r#"(?m)^    (?:(\d+):(\d+):)?([^ ]+) ([^\(]+?)(?:\(([^\)]*?)\))? -> ([\S]+)(?:\r?\n|$)"#).unwrap();
+        r#"(?m)^    (?:(?P<src_ln>\d+):(?P<dst_ln>\d+):)?(?P<type>[^ ]+) (?P<name>[^\(]+?)(?:\((?P<args>[^\)]*?)\))? -> (?P<alias>[\S]+)(\r?\n|$)"#).unwrap();
 }
 
+// (:\d+:\d+)?
 
 enum Backing<'a> {
     Buf(Cow<'a, [u8]>),
@@ -46,7 +47,7 @@ pub struct MemberInfo<'a> {
 
 /// Represents arguments of a method.
 pub struct Args<'a> {
-    args: &'a[&'a [u8]],
+    args: &'a [&'a [u8]],
     idx: usize,
 }
 
@@ -134,10 +135,9 @@ impl<'a> Class<'a> {
     ///
     /// If the line number is supplied as well the return value will
     /// most likely only return a single item if found.
-    pub fn get_methods(&'a self, alias: &str, lineno: Option<u32>)
-        -> Vec<MemberInfo<'a>>
-    {
-        let mut rv: Vec<_> = self.members()
+    pub fn get_methods(&'a self, alias: &str, lineno: Option<u32>) -> Vec<MemberInfo<'a>> {
+        let mut rv: Vec<_> = self
+            .members()
             .filter(|x| x.is_method() && x.alias() == alias && x.matches_line(lineno))
             .collect();
         rv.sort_by_key(|x| x.line_diff(lineno));
@@ -147,9 +147,7 @@ impl<'a> Class<'a> {
     /// Iterates over all members of the class.
     pub fn members<'this>(&'this self) -> MemberIter<'this> {
         let iter = MEMBER_RE.captures_iter(self.buf).peekable();
-        MemberIter {
-            iter: iter,
-        }
+        MemberIter { iter: iter }
     }
 }
 
@@ -232,20 +230,24 @@ impl<'a> Iterator for MemberIter<'a> {
 
     fn next(&mut self) -> Option<MemberInfo<'a>> {
         if let Some(caps) = self.iter.next() {
-            let from_line: u32 = caps.get(1)
+            let from_line: u32 = caps
+                .name("src_ln")
                 .and_then(|x| str::from_utf8(x.as_bytes()).ok())
                 .and_then(|x| x.parse().ok())
                 .unwrap_or(0);
-            let to_line: u32 = caps.get(2)
+            let to_line: u32 = caps
+                .name("dst_ln")
                 .and_then(|x| str::from_utf8(x.as_bytes()).ok())
                 .and_then(|x| x.parse().ok())
                 .unwrap_or(0);
 
             Some(MemberInfo {
-                alias: caps.get(6).unwrap().as_bytes(),
-                ty: caps.get(3).unwrap().as_bytes(),
-                name: caps.get(4).unwrap().as_bytes(),
-                args: caps.get(5).map(|x| x.as_bytes().split(|&x| x == b',').collect()),
+                alias: caps.name("alias").unwrap().as_bytes(),
+                ty: caps.name("type").unwrap().as_bytes(),
+                name: caps.name("name").unwrap().as_bytes(),
+                args: caps
+                    .name("args")
+                    .map(|x| x.as_bytes().split(|&x| x == b',').collect()),
                 lineno_range: if from_line > 0 && to_line > 0 {
                     Some((from_line, to_line))
                 } else {
@@ -319,7 +321,7 @@ impl<'a> Parser<'a> {
     fn buffer(&self) -> &[u8] {
         match self.backing {
             Backing::Buf(ref buf) => buf,
-            Backing::Mmap(ref mmap) => unsafe { mmap.as_slice() }
+            Backing::Mmap(ref mmap) => unsafe { mmap.as_slice() },
         }
     }
 }
@@ -342,7 +344,10 @@ impl<'a> MemberInfo<'a> {
 
     /// Returns the args of this member if it's a method.
     pub fn args(&'a self) -> Option<Args<'a>> {
-        self.args.as_ref().map(|args| Args { args: &args[..], idx: 0 })
+        self.args.as_ref().map(|args| Args {
+            args: &args[..],
+            idx: 0,
+        })
     }
 
     /// Returns `true` if this is a method.
@@ -361,8 +366,8 @@ impl<'a> MemberInfo<'a> {
     }
 
     fn line_diff(&self, lineno: Option<u32>) -> u32 {
-        (min(self.first_line() as i64, self.last_line() as i64) -
-         (lineno.unwrap_or(0) as i64)).abs() as u32
+        (min(self.first_line() as i64, self.last_line() as i64) - (lineno.unwrap_or(0) as i64))
+            .abs() as u32
     }
 
     fn matches_line(&self, lineno: Option<u32>) -> bool {

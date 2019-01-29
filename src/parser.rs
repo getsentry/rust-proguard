@@ -3,7 +3,7 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::fmt;
 use std::io::Result;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::iter::Peekable;
 use std::mem;
 use std::path::Path;
@@ -25,7 +25,7 @@ static ref MEMBER_RE: Regex = Regex::new(
             (?P<name>[^\(]+?)(?:\(
                 (?P<args>[^\)]*?)\)(:
                 (?P<lno_start_ln>\d+):
-                (?P<lno_end_ln>\d+))?)?\ ->\
+                (?P<lno_end_ln>\d+))?)?\ ->\ 
                 (?P<alias>[\S]+)(\r?\n|$)"#).unwrap();
 }
 
@@ -162,8 +162,7 @@ impl<'a> Class<'a> {
     /// Looks up a field by an alias.
     pub fn get_field(&'a self, alias: &str) -> Option<MemberInfo<'a>> {
         self.members()
-            .filter(|x| !x.is_method() && x.alias() == alias)
-            .next()
+            .find(|x| !x.is_method() && x.alias() == alias)
     }
 
     /// Looks up all matching methods for a given alias.
@@ -180,7 +179,7 @@ impl<'a> Class<'a> {
     }
 
     /// Iterates over all members of the class.
-    pub fn members<'this>(&'this self) -> MemberIter<'this> {
+    pub fn members(&'_ self) -> MemberIter<'_> {
         let iter = MEMBER_RE.captures_iter(self.buf).peekable();
         MemberIter { iter: iter }
     }
@@ -351,7 +350,7 @@ impl<'a> Parser<'a> {
 
     /// Returns `true` if the mapping file contains line information.
     pub fn has_line_info(&self) -> bool {
-        let mut buf = self.buffer();
+        let buf = self.buffer();
         for caps in METHOD_RE.captures_iter(buf) {
             if caps.get(1).is_some() {
                 return true;
@@ -378,11 +377,6 @@ impl<'a> Parser<'a> {
             Backing::Buf(ref buf) => buf,
             Backing::Mmap(ref mmap) => unsafe { mmap.as_slice() },
         }
-
-        // &(match self.backing {
-        //     Backing::Buf(ref buf) => buf,
-        //     Backing::Mmap(ref mmap) => unsafe { mmap.as_slice() },
-        // })[123..]
     }
 
     fn parse_header(&self) -> Result<Option<Header>> {

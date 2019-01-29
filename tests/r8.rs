@@ -75,3 +75,9 @@ fn test_extra_methods() {
     assert_eq!(&methods[0].to_string(),
                "void <init>(android.arch.core.internal.SafeIterableMap$Entry, android.arch.core.internal.SafeIterableMap$Entry)");
 }
+
+#[test]
+fn test_mapping_info() {
+    let mapping = MappingView::from_slice(MAPPING_R8).unwrap();
+    assert_eq!(mapping.has_line_info(), true);
+}

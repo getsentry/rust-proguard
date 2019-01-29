@@ -15,7 +15,7 @@ use uuid::{Uuid, NAMESPACE_DNS};
 
 lazy_static! {
 static ref METHOD_RE: Regex = Regex::new(
-    r#"(?m)^    (?:(\d+):(\d+):)?([^ ]+) ([^\(]+?)\(([^\)]*?)\) -> ([\S]+)(?:\r?\n|$)"#).unwrap();
+    r#"(?m)^    (?:(\d+):(\d+):)?([^ ]+) ([^\(]+?)\(([^\)]*?)\)(:(\d+):(\d+))? -> ([\S]+)(?:\r?\n|$)"#).unwrap();
 static ref CLASS_LINE_RE: Regex = Regex::new(
     r#"(?m)^([\S]+) -> ([\S]+?):(?:\r?\n|$)"#).unwrap();
 static ref MEMBER_RE: Regex = Regex::new(

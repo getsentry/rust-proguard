@@ -19,7 +19,14 @@ static ref METHOD_RE: Regex = Regex::new(
 static ref CLASS_LINE_RE: Regex = Regex::new(
     r#"(?m)^([\S]+) -> ([\S]+?):(?:\r?\n|$)"#).unwrap();
 static ref MEMBER_RE: Regex = Regex::new(
-        r#"(?m)^    (?:(?P<start_ln>\d+):(?P<end_ln>\d+):)?(?P<type>[^ ]+) (?P<name>[^\(]+?)(?:\((?P<args>[^\)]*?)\)(:(?P<new_start_ln>\d+):(?P<new_end_ln>\d+))?)? -> (?P<alias>[\S]+)(\r?\n|$)"#).unwrap();
+        r#"(?xm)^[\ ]{4}
+            (?:(?P<start_ln>\d+):(?P<end_ln>\d+):)?
+            (?P<type>[^\ ]+)\ 
+            (?P<name>[^\(]+?)(?:\(
+                (?P<args>[^\)]*?)\)(:
+                (?P<new_start_ln>\d+):
+                (?P<new_end_ln>\d+))?)?\ ->\ 
+                (?P<alias>[\S]+)(\r?\n|$)"#).unwrap();
 }
 
 enum Backing<'a> {

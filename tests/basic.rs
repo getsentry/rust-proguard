@@ -210,6 +210,9 @@ fn test_iter_access() {
     assert_eq!(mem.name(), "<init>");
     assert_eq!(mem.first_line(), 395);
     assert_eq!(mem.last_line(), 421);
+
+    assert!(mem.first_line_optimized().is_none());
+    assert!(mem.last_line_optimized().is_none());
     assert_eq!(
         mem.args().unwrap().collect::<Vec<_>>(),
         vec!["android.content.Context", "android.util.AttributeSet"]

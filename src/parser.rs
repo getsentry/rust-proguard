@@ -24,8 +24,8 @@ static ref MEMBER_RE: Regex = Regex::new(
             (?P<type>[^\ ]+)\ 
             (?P<name>[^\(]+?)(?:\(
                 (?P<args>[^\)]*?)\)(:
-                (?P<new_start_ln>\d+):
-                (?P<new_end_ln>\d+))?)?\ ->\ 
+                (?P<lno_start_ln>\d+):
+                (?P<lno_end_ln>\d+))?)?\ ->\
                 (?P<alias>[\S]+)(\r?\n|$)"#).unwrap();
 }
 
@@ -50,7 +50,7 @@ pub struct MemberInfo<'a> {
     args: Option<Vec<&'a [u8]>>,
     lineno_range: Option<(u32, u32)>,
     // Available when Line Number Optimization (LNO) is used
-    new_lineno_range: Option<(u32, u32)>,
+    lno_lineno_range: Option<(u32, u32)>,
 }
 
 /// Represents arguments of a method.
@@ -275,13 +275,13 @@ impl<'a> Iterator for MemberIter<'a> {
                 .and_then(|x| str::from_utf8(x.as_bytes()).ok())
                 .and_then(|x| x.parse().ok())
                 .unwrap_or(0);
-            let new_src_from_line: u32 = caps
-                .name("new_start_ln")
+            let lno_src_from_line: u32 = caps
+                .name("lno_start_ln")
                 .and_then(|x| str::from_utf8(x.as_bytes()).ok())
                 .and_then(|x| x.parse().ok())
                 .unwrap_or(0);
-            let new_dst_to_line: u32 = caps
-                .name("new_end_ln")
+            let lno_dst_to_line: u32 = caps
+                .name("lno_end_ln")
                 .and_then(|x| str::from_utf8(x.as_bytes()).ok())
                 .and_then(|x| x.parse().ok())
                 .unwrap_or(0);
@@ -290,16 +290,19 @@ impl<'a> Iterator for MemberIter<'a> {
                 alias: caps.name("alias").unwrap().as_bytes(),
                 ty: caps.name("type").unwrap().as_bytes(),
                 name: caps.name("name").unwrap().as_bytes(),
-                args: caps
-                    .name("args")
-                    .map(|x| x.as_bytes().split(|&x| x == b',').collect()),
+                args: caps.name("args").map(|x| {
+                    x.as_bytes()
+                        .split(|&x| x == b',')
+                        .filter(|x| !x.is_empty())
+                        .collect()
+                }),
                 lineno_range: if src_from_line > 0 && dst_to_line > 0 {
                     Some((src_from_line, dst_to_line))
                 } else {
                     None
                 },
-                new_lineno_range: if new_src_from_line > 0 && new_dst_to_line > 0 {
-                    Some((new_src_from_line, new_dst_to_line))
+                lno_lineno_range: if lno_src_from_line > 0 && lno_dst_to_line > 0 {
+                    Some((lno_src_from_line, lno_dst_to_line))
                 } else {
                     None
                 },
@@ -452,12 +455,40 @@ impl<'a> MemberInfo<'a> {
 
     /// Returns the first line of this member range.
     pub fn first_line(&self) -> u32 {
-        self.lineno_range.map(|x| x.0).unwrap_or(0)
+        self.lno_lineno_range
+            // has line number optimization
+            .map(|x| x.0)
+            .unwrap_or_else(|| self.lineno_range.map(|x| x.0).unwrap_or(0))
     }
 
     /// Returns the last line of this member range.
     pub fn last_line(&self) -> u32 {
-        self.lineno_range.map(|x| x.1).unwrap_or(0)
+        self.lno_lineno_range
+            // has line number optimization
+            .map(|x| x.1)
+            .unwrap_or_else(|| self.lineno_range.map(|x| x.1).unwrap_or(0))
+    }
+
+    /// Returns the first line (optimized) of this member range if line number optimization was used.
+    pub fn first_line_optimized(&self) -> Option<u32> {
+        // If LNO was used, lineno_range holds the optimized value
+        // where lno_lineno_range holds the actual line number
+        if self.lno_lineno_range.is_some() {
+            self.lineno_range.map(|x| x.0)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the last line (optimized) of this member range if line number optimization was used.
+    pub fn last_line_optimized(&self) -> Option<u32> {
+        // If LNO was used, lineno_range holds the optimized value
+        // where lno_lineno_range holds the actual line number
+        if self.lno_lineno_range.is_some() {
+            self.lineno_range.map(|x| x.1)
+        } else {
+            None
+        }
     }
 
     fn line_diff(&self, lineno: Option<u32>) -> u32 {

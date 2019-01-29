@@ -9,7 +9,6 @@ use std::mem;
 use std::path::Path;
 use std::str;
 
-use failure::Error;
 use memmap::{Mmap, Protection};
 use regex::bytes::{CaptureMatches, Regex};
 use uuid::{Uuid, NAMESPACE_DNS};

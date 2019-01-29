@@ -3,25 +3,25 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::fmt;
 use std::io::Result;
+use std::io::{BufRead, BufReader, Write};
 use std::iter::Peekable;
 use std::mem;
 use std::path::Path;
 use std::str;
 
+use failure::Error;
 use memmap::{Mmap, Protection};
 use regex::bytes::{CaptureMatches, Regex};
 use uuid::{Uuid, NAMESPACE_DNS};
 
 lazy_static! {
-    static ref METHOD_RE: Regex = Regex::new(
-        r#"(?m)^    (?:(\d+):(\d+):)?([^ ]+) ([^\(]+?)\(([^\)]*?)\) -> ([\S]+)(?:\r?\n|$)"#).unwrap();
-    static ref CLASS_LINE_RE: Regex = Regex::new(
-        r#"(?m)^([\S]+) -> ([\S]+?):(?:\r?\n|$)"#).unwrap();
-    static ref MEMBER_RE: Regex = Regex::new(
-        r#"(?m)^    (?:(?P<src_ln>\d+):(?P<dst_ln>\d+):)?(?P<type>[^ ]+) (?P<name>[^\(]+?)(?:\((?P<args>[^\)]*?)\))? -> (?P<alias>[\S]+)(\r?\n|$)"#).unwrap();
+static ref METHOD_RE: Regex = Regex::new(
+    r#"(?m)^    (?:(\d+):(\d+):)?([^ ]+) ([^\(]+?)\(([^\)]*?)\) -> ([\S]+)(?:\r?\n|$)"#).unwrap();
+static ref CLASS_LINE_RE: Regex = Regex::new(
+    r#"(?m)^([\S]+) -> ([\S]+?):(?:\r?\n|$)"#).unwrap();
+static ref MEMBER_RE: Regex = Regex::new(
+        r#"(?m)^    (?:(?P<start_ln>\d+):(?P<end_ln>\d+):)?(?P<type>[^ ]+) (?P<name>[^\(]+?)(?:\((?P<args>[^\)]*?)\)(:(?P<new_start_ln>\d+):(?P<new_end_ln>\d+))?)? -> (?P<alias>[\S]+)(\r?\n|$)"#).unwrap();
 }
-
-// (:\d+:\d+)?
 
 enum Backing<'a> {
     Buf(Cow<'a, [u8]>),
@@ -43,6 +43,8 @@ pub struct MemberInfo<'a> {
     name: &'a [u8],
     args: Option<Vec<&'a [u8]>>,
     lineno_range: Option<(u32, u32)>,
+    // Available when Line Number Optimization (LNO) is used
+    new_lineno_range: Option<(u32, u32)>,
 }
 
 /// Represents arguments of a method.
@@ -54,6 +56,7 @@ pub struct Args<'a> {
 /// Represents a view over a mapping text file.
 pub struct MappingView<'a> {
     parser: Parser<'a>,
+    header: Option<Header>,
     classes: HashMap<&'a str, Class<'a>>,
 }
 
@@ -62,9 +65,31 @@ pub struct Parser<'a> {
     backing: Backing<'a>,
 }
 
+// The mapping header
+// As added by the R8 compiler
+#[derive(Debug, Default, Clone)]
+pub struct Header {
+    compiler: Option<String>,
+    compiler_version: Option<String>,
+    min_api: Option<String>,
+}
+
+impl Header {
+    pub fn compiler(&self) -> Option<&str> {
+        self.compiler.as_ref().map(|s| s.as_str())
+    }
+    pub fn compiler_version(&self) -> Option<&str> {
+        self.compiler_version.as_ref().map(|s| s.as_str())
+    }
+    pub fn min_api(&self) -> Option<&str> {
+        self.min_api.as_ref().map(|s| s.as_str())
+    }
+}
+
 impl<'a> MappingView<'a> {
     fn from_parser(parser: Parser<'a>) -> Result<MappingView<'a>> {
         let mut view = MappingView {
+            header: parser.parse_header()?,
             parser: parser,
             classes: HashMap::new(),
         };
@@ -110,6 +135,10 @@ impl<'a> MappingView<'a> {
     /// Locates a class by an obfuscated alias.
     pub fn find_class<'this>(&'this self, alias: &str) -> Option<&'this Class<'a>> {
         self.classes.get(alias)
+    }
+
+    pub fn header(&self) -> Option<&Header> {
+        self.header.as_ref()
     }
 }
 
@@ -230,13 +259,23 @@ impl<'a> Iterator for MemberIter<'a> {
 
     fn next(&mut self) -> Option<MemberInfo<'a>> {
         if let Some(caps) = self.iter.next() {
-            let from_line: u32 = caps
-                .name("src_ln")
+            let src_from_line: u32 = caps
+                .name("start_ln")
                 .and_then(|x| str::from_utf8(x.as_bytes()).ok())
                 .and_then(|x| x.parse().ok())
                 .unwrap_or(0);
-            let to_line: u32 = caps
-                .name("dst_ln")
+            let dst_to_line: u32 = caps
+                .name("end_ln")
+                .and_then(|x| str::from_utf8(x.as_bytes()).ok())
+                .and_then(|x| x.parse().ok())
+                .unwrap_or(0);
+            let new_src_from_line: u32 = caps
+                .name("new_start_ln")
+                .and_then(|x| str::from_utf8(x.as_bytes()).ok())
+                .and_then(|x| x.parse().ok())
+                .unwrap_or(0);
+            let new_dst_to_line: u32 = caps
+                .name("new_end_ln")
                 .and_then(|x| str::from_utf8(x.as_bytes()).ok())
                 .and_then(|x| x.parse().ok())
                 .unwrap_or(0);
@@ -248,8 +287,13 @@ impl<'a> Iterator for MemberIter<'a> {
                 args: caps
                     .name("args")
                     .map(|x| x.as_bytes().split(|&x| x == b',').collect()),
-                lineno_range: if from_line > 0 && to_line > 0 {
-                    Some((from_line, to_line))
+                lineno_range: if src_from_line > 0 && dst_to_line > 0 {
+                    Some((src_from_line, dst_to_line))
+                } else {
+                    None
+                },
+                new_lineno_range: if new_src_from_line > 0 && new_dst_to_line > 0 {
+                    Some((new_src_from_line, new_dst_to_line))
                 } else {
                     None
                 },
@@ -263,6 +307,7 @@ impl<'a> Iterator for MemberIter<'a> {
 impl<'a> Parser<'a> {
     /// Creates a parser from a Cow buffer.
     pub fn from_cow(cow: Cow<'a, [u8]>) -> Result<Parser<'a>> {
+        // parse header .. slice form the end of the header
         Ok(Parser {
             backing: Backing::Buf(cow),
         })
@@ -297,7 +342,7 @@ impl<'a> Parser<'a> {
 
     /// Returns `true` if the mapping file contains line information.
     pub fn has_line_info(&self) -> bool {
-        let buf = self.buffer();
+        let mut buf = self.buffer();
         for caps in METHOD_RE.captures_iter(buf) {
             if caps.get(1).is_some() {
                 return true;
@@ -319,10 +364,54 @@ impl<'a> Parser<'a> {
 
     #[inline(always)]
     fn buffer(&self) -> &[u8] {
+        // slice here starting from end of header
         match self.backing {
             Backing::Buf(ref buf) => buf,
             Backing::Mmap(ref mmap) => unsafe { mmap.as_slice() },
         }
+
+        // &(match self.backing {
+        //     Backing::Buf(ref buf) => buf,
+        //     Backing::Mmap(ref mmap) => unsafe { mmap.as_slice() },
+        // })[123..]
+    }
+
+    fn parse_header(&self) -> Result<Option<Header>> {
+        let mut f = BufReader::new(self.buffer());
+        let mut buf = String::new();
+
+        let mut read = f.read_line(&mut buf)?;
+        if !buf.starts_with('#') {
+            return Ok(None);
+        }
+
+        let mut rv = Header::default();
+        loop {
+            if read == 0 || buf.trim_end().is_empty() {
+                buf.truncate(buf.len() - read);
+                break;
+            }
+            let mut iter = buf.splitn(2, ':');
+            if let Some(key) = iter.next() {
+                if let Some(value) = iter.next() {
+                    let value = value.trim();
+                    match key.to_lowercase().as_str() {
+                        "# compiler" => rv.compiler = Some(value.to_string()),
+                        "# compiler_version" => rv.compiler_version = Some(value.to_string()),
+                        "# min_api" => rv.min_api = Some(value.to_string()),
+                        _ => {}
+                    }
+                }
+            }
+
+            if !&buf.starts_with('#') {
+                break;
+            }
+
+            buf.clear();
+            read = f.read_line(&mut buf)?;
+        }
+        Ok(Some(rv))
     }
 }
 
@@ -378,4 +467,56 @@ impl<'a> MemberInfo<'a> {
             true
         }
     }
+}
+
+#[test]
+fn test_parse_header_complete() {
+    let buf = br#"# compiler: R8
+# compiler_version: 1.3.49
+# min_api: 15
+"#;
+
+    let mapping = MappingView::from_slice(buf).expect("mapping");
+
+    let parse_result = mapping.header();
+    let header = parse_result.expect("header");
+    assert_eq!(header.compiler().expect("compiler"), "R8");
+    assert_eq!(header.compiler_version().expect("compiler"), "1.3.49");
+    assert_eq!(header.min_api().expect("min_api"), "15");
+}
+
+#[test]
+fn test_parse_header_compiler() {
+    let buf = br#"# compiler: R8"#;
+
+    let mapping = MappingView::from_slice(buf).expect("mapping");
+
+    let parse_result = mapping.header();
+    let header = parse_result.expect("header");
+    assert_eq!(header.compiler().expect("compiler"), "R8");
+    assert!(header.compiler_version().is_none());
+    assert!(header.min_api().is_none());
+}
+
+#[test]
+fn test_parse_header_compiler_version() {
+    let buf = br#"# compiler_version: 1.3.49"#;
+
+    let mapping = MappingView::from_slice(buf).expect("mapping");
+
+    let parse_result = mapping.header();
+    let header = parse_result.expect("header");
+    assert!(header.compiler().is_none());
+    assert_eq!(header.compiler_version().expect("compiler"), "1.3.49");
+    assert!(header.min_api().is_none());
+}
+
+#[test]
+fn test_parse_header_missing() {
+    let buf = br#"android.arch.core.executor.ArchTaskExecutor -> a.a.a.a.c:"#;
+
+    let mapping = MappingView::from_slice(buf).expect("mapping");
+
+    let parse_result = mapping.header();
+    assert!(parse_result.is_none());
 }

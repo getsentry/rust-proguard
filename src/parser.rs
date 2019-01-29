@@ -372,7 +372,6 @@ impl<'a> Parser<'a> {
 
     #[inline(always)]
     fn buffer(&self) -> &[u8] {
-        // slice here starting from end of header
         match self.backing {
             Backing::Buf(ref buf) => buf,
             Backing::Mmap(ref mmap) => unsafe { mmap.as_slice() },

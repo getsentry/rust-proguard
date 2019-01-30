@@ -9,9 +9,10 @@ use std::mem;
 use std::path::Path;
 use std::str;
 
-use memmap::{Mmap, Protection};
+use lazy_static::lazy_static;
+use memmap::Mmap;
 use regex::bytes::{CaptureMatches, Regex};
-use uuid::{Uuid, NAMESPACE_DNS};
+use uuid::Uuid;
 
 lazy_static! {
 static ref METHOD_RE: Regex = Regex::new(
@@ -186,13 +187,13 @@ impl<'a> Class<'a> {
 }
 
 impl<'a> fmt::Display for Class<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.class_name())
     }
 }
 
 impl<'a> fmt::Display for MemberInfo<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.type_name(), self.name())?;
         if let Some(args) = self.args() {
             write!(f, "(")?;
@@ -333,7 +334,7 @@ impl<'a> Parser<'a> {
 
     /// Creates a parser from a path.
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Parser<'a>> {
-        let mmap = Mmap::open_path(path, Protection::Read)?;
+        let mmap = unsafe { Mmap::map(&std::fs::File::open(path)?)? };
         Ok(Parser {
             backing: Backing::Mmap(mmap),
         })
@@ -341,11 +342,9 @@ impl<'a> Parser<'a> {
 
     /// Calculates the UUID of the mapping file the parser looks at.
     pub fn uuid(&self) -> Uuid {
-        let namespace = Uuid::new_v5(&NAMESPACE_DNS, "guardsquare.com");
+        let namespace = Uuid::new_v5(&Uuid::NAMESPACE_DNS, b"guardsquare.com");
         // this internally only operates on bytes, so this is safe to do
-        Uuid::new_v5(&namespace, unsafe {
-            str::from_utf8_unchecked(self.buffer())
-        })
+        Uuid::new_v5(&namespace, self.buffer())
     }
 
     /// Returns `true` if the mapping file contains line information.
@@ -374,7 +373,7 @@ impl<'a> Parser<'a> {
     fn buffer(&self) -> &[u8] {
         match self.backing {
             Backing::Buf(ref buf) => buf,
-            Backing::Mmap(ref mmap) => unsafe { mmap.as_slice() },
+            Backing::Mmap(ref mmap) => mmap,
         }
     }
 
@@ -393,21 +392,22 @@ impl<'a> Parser<'a> {
                 buf.truncate(buf.len() - read);
                 break;
             }
-            let mut iter = buf.splitn(2, ':');
+
+            if !buf.starts_with('#') {
+                break;
+            }
+
+            let mut iter = buf[1..].splitn(2, ':');
             if let Some(key) = iter.next() {
                 if let Some(value) = iter.next() {
                     let value = value.trim();
-                    match key.to_lowercase().as_str() {
-                        "# compiler" => rv.compiler = Some(value.to_string()),
-                        "# compiler_version" => rv.compiler_version = Some(value.to_string()),
-                        "# min_api" => rv.min_api = Some(value.to_string()),
+                    match key.trim().to_lowercase().as_str() {
+                        "compiler" => rv.compiler = Some(value.to_string()),
+                        "compiler_version" => rv.compiler_version = Some(value.to_string()),
+                        "min_api" => rv.min_api = Some(value.to_string()),
                         _ => {}
                     }
                 }
-            }
-
-            if !&buf.starts_with('#') {
-                break;
             }
 
             buf.clear();

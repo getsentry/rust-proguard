@@ -1,6 +1,4 @@
-extern crate proguard;
-#[macro_use]
-extern crate lazy_static;
+use lazy_static::lazy_static;
 
 use proguard::{MappingView, Parser};
 

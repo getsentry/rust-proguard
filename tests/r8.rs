@@ -2,7 +2,8 @@ use lazy_static::lazy_static;
 
 use proguard::{MappingView, Parser};
 
-static MAPPING_R8: &'static [u8] = include_bytes!("res/mapping-r8.txt");
+static MAPPING_R8: &[u8] = include_bytes!("res/mapping-r8.txt");
+
 lazy_static! {
     static ref MAPPING_WIN_R8: Vec<u8> = MAPPING_R8
         .iter()

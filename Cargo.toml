@@ -14,4 +14,4 @@ edition = "2018"
 regex = "1.1.0"
 memmap = "0.7.0"
 lazy_static = "1.2.0"
-uuid = { version = "0.7.2", features = ["v5"] }
+uuid = { version = "0.8.1", features = ["v5"] }

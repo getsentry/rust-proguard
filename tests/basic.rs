@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 
 use proguard::{MappingView, Parser};
 
-static MAPPING: &'static [u8] = include_bytes!("res/mapping.txt");
+static MAPPING: &[u8] = include_bytes!("res/mapping.txt");
 lazy_static! {
     static ref MAPPING_WIN: Vec<u8> = MAPPING
         .iter()
@@ -188,10 +188,7 @@ fn test_iter_access() {
     assert_eq!(mem.name(), "mVariableDimensionsWidgets");
     assert!(mem.args().is_none());
 
-    let mem = (&mut mem_iter)
-        .filter(|x| x.args().is_some())
-        .next()
-        .unwrap();
+    let mem = (&mut mem_iter).find(|x| x.args().is_some()).unwrap();
     assert_eq!(mem.alias(), "<init>");
     assert_eq!(mem.type_name(), "void");
     assert_eq!(mem.name(), "<init>");

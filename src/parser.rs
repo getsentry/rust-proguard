@@ -22,11 +22,11 @@ static ref CLASS_LINE_RE: Regex = Regex::new(
 static ref MEMBER_RE: Regex = Regex::new(
         r#"(?xm)^[\ ]{4}
             (?:(?P<start_ln>\d+):(?P<end_ln>\d+):)?
-            (?P<type>[^\ ]+)\ 
+            (?P<type>[^\ ]+)[\ ]
             (?P<name>[^\(]+?)(?:\(
                 (?P<args>[^\)]*?)\)(:
                 (?P<lno_start_ln>\d+):
-                (?P<lno_end_ln>\d+))?)?\ ->\ 
+                (?P<lno_end_ln>\d+))?)?\ ->[\ ]
                 (?P<alias>[\S]+)(\r?\n|$)"#).unwrap();
 }
 
@@ -83,13 +83,13 @@ pub struct Header {
 
 impl Header {
     pub fn compiler(&self) -> Option<&str> {
-        self.compiler.as_ref().map(|s| s.as_str())
+        self.compiler.as_deref()
     }
     pub fn compiler_version(&self) -> Option<&str> {
-        self.compiler_version.as_ref().map(|s| s.as_str())
+        self.compiler_version.as_deref()
     }
     pub fn min_api(&self) -> Option<&str> {
-        self.min_api.as_ref().map(|s| s.as_str())
+        self.min_api.as_deref()
     }
 }
 
@@ -97,7 +97,7 @@ impl<'a> MappingView<'a> {
     fn from_parser(parser: Parser<'a>) -> Result<MappingView<'a>> {
         let mut view = MappingView {
             header: parser.parse_header()?,
-            parser: parser,
+            parser,
             classes: HashMap::new(),
         };
         unsafe {
@@ -140,7 +140,7 @@ impl<'a> MappingView<'a> {
     }
 
     /// Locates a class by an obfuscated alias.
-    pub fn find_class<'this>(&'this self, alias: &str) -> Option<&'this Class<'a>> {
+    pub fn find_class(&self, alias: &str) -> Option<&Class<'a>> {
         self.classes.get(alias)
     }
 
@@ -182,7 +182,7 @@ impl<'a> Class<'a> {
     /// Iterates over all members of the class.
     pub fn members(&'_ self) -> MemberIter<'_> {
         let iter = MEMBER_RE.captures_iter(self.buf).peekable();
-        MemberIter { iter: iter }
+        MemberIter { iter }
     }
 }
 
@@ -360,13 +360,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Locates a class by an obfuscated alias.
-    pub fn classes<'this>(&'this self) -> ClassIter<'this> {
+    pub fn classes(&self) -> ClassIter {
         let buf = self.buffer();
         let iter = CLASS_LINE_RE.captures_iter(buf).peekable();
-        ClassIter {
-            buf: buf,
-            iter: iter,
-        }
+        ClassIter { buf, iter }
     }
 
     #[inline(always)]

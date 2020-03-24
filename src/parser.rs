@@ -144,6 +144,7 @@ impl<'a> MappingView<'a> {
         self.classes.get(alias)
     }
 
+    /// Returns the mapping header.
     pub fn header(&self) -> Option<&Header> {
         self.header.as_ref()
     }

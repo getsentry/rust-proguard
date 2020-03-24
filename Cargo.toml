@@ -1,10 +1,10 @@
 [package]
 name = "proguard"
 version = "2.0.0"
-authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
+authors = ["Sentry <oss@sentry.io>"]
 keywords = ["proguard", "retrace"]
 description = "Basic proguard mapping file handling for Rust"
-homepage = "https://github.com/mitsuhiko/proguard"
+homepage = "https://github.com/getsentry/rust-proguard"
 documentation = "https://docs.rs/proguard"
 license = "BSD-3-Clause"
 readme = "README.md"

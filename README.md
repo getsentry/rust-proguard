@@ -1,4 +1,4 @@
-# rust-proguard
+# Rust Proguard Parser
 
 A simple Rust library that implements basic proguard handling.
 

@@ -14,19 +14,24 @@ use memmap::Mmap;
 use regex::bytes::{CaptureMatches, Regex};
 use uuid::Uuid;
 
+// These formats are defined here: https://www.guardsquare.com/en/products/proguard/manual/retrace
 lazy_static! {
 static ref METHOD_RE: Regex = Regex::new(
     r#"(?m)^    (?:(\d+):(\d+):)?([^ ]+) ([^\(]+?)\(([^\)]*?)\)(:(\d+):(\d+))? -> ([\S]+)(?:\r?\n|$)"#).unwrap();
+// `originalclassname -> obfuscatedclassname:`
 static ref CLASS_LINE_RE: Regex = Regex::new(
     r#"(?m)^([\S]+) -> ([\S]+?):(?:\r?\n|$)"#).unwrap();
+// A member line is defined like this:
+// `    originalfieldtype originalfieldname -> obfuscatedfieldname`
+// `    [startline:endline:]originalreturntype [originalclassname.]originalmethodname(originalargumenttype,...)[:originalstartline[:originalendline]] -> obfuscatedmethodname`
 static ref MEMBER_RE: Regex = Regex::new(
         r#"(?xm)^[\ ]{4}
             (?:(?P<start_ln>\d+):(?P<end_ln>\d+):)?
             (?P<type>[^\ ]+)[\ ]
             (?P<name>[^\(]+?)(?:\(
                 (?P<args>[^\)]*?)\)(:
-                (?P<lno_start_ln>\d+):
-                (?P<lno_end_ln>\d+))?)?\ ->[\ ]
+                (?P<lno_start_ln>\d+)(?::
+                (?P<lno_end_ln>\d+))?)?)?\ ->[\ ]
                 (?P<alias>[\S]+)(\r?\n|$)"#).unwrap();
 }
 
@@ -285,7 +290,7 @@ impl<'a> Iterator for MemberIter<'a> {
                 .name("lno_end_ln")
                 .and_then(|x| str::from_utf8(x.as_bytes()).ok())
                 .and_then(|x| x.parse().ok())
-                .unwrap_or(0);
+                .unwrap_or(lno_src_from_line);
 
             Some(MemberInfo {
                 alias: caps.name("alias").unwrap().as_bytes(),

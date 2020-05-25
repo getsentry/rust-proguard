@@ -96,39 +96,48 @@ impl<'s> Mapper<'s> {
         &'s self,
         frame: &StackFrame<'s>,
     ) -> impl Iterator<Item = StackFrame<'s>> + 's {
+        let mut frame = frame.clone();
         if let Some(class) = self.classes.get(frame.class.as_ref()) {
+            frame.class = class.original.into();
             if let Some(members) = class.members.get(frame.method.as_ref()) {
-                // find matches based on line number
-                let mapped: Vec<_> = members
-                    .iter()
-                    .filter(|m| frame.line >= m.startline && frame.line <= m.endline)
-                    .map(|member| {
-                        // parents of inlined frames don’t have an `endline`, and
-                        // the top inlined frame need to be correctly offset.
-                        let line = if member.original_endline.is_none() {
-                            member.original_startline
-                        } else {
-                            member.original_startline + frame.line - member.startline
-                        };
-                        let file = member
-                            .original_class
-                            .map(|c| {
-                                let c = c.rsplit('.').next().unwrap();
-                                Cow::Owned(format!("{}.java", c))
-                            })
-                            .unwrap_or_else(|| frame.file.clone());
-                        StackFrame {
-                            class: member.original_class.unwrap_or(class.original).into(),
-                            method: member.original.into(),
-                            file,
-                            line,
-                        }
+                let mut mapped = vec![];
+                for member in members {
+                    // in case we don’t find a record based on the line number,
+                    // we can still re-map the method name.
+                    if member.original_class.is_none() {
+                        frame.method = member.original.into();
+                    }
+                    // skip any members which do not match our the frames line
+                    if frame.line < member.startline || frame.line > member.endline {
+                        continue;
+                    }
+                    // parents of inlined frames don’t have an `endline`, and
+                    // the top inlined frame need to be correctly offset.
+                    let line = if member.original_endline.is_none() {
+                        member.original_startline
+                    } else {
+                        member.original_startline + frame.line - member.startline
+                    };
+                    let file = member
+                        .original_class
+                        .map(|c| {
+                            let c = c.rsplit('.').next().unwrap();
+                            Cow::Owned(format!("{}.java", c))
+                        })
+                        .unwrap_or_else(|| frame.file.clone());
+                    mapped.push(StackFrame {
+                        class: member.original_class.unwrap_or(class.original).into(),
+                        method: member.original.into(),
+                        file,
+                        line,
                     })
-                    .collect();
-                return mapped.into_iter();
+                }
+                if !mapped.is_empty() {
+                    return mapped.into_iter();
+                }
             }
         }
-        vec![frame.clone()].into_iter()
+        vec![frame].into_iter()
     }
 
     /// Remaps a complete Java StackTrace.

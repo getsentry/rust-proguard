@@ -1,4 +1,4 @@
-use proguard::Mapper;
+use proguard::{Mapper, StackFrame};
 
 #[test]
 fn test_retrace() {
@@ -56,4 +56,26 @@ fn test_retrace() {
         "    at com.example1.domain.MyBean.doWork(MyBean.java:16)
     at com.exmaple.app.MainActivity.buttonClicked(MainActivity.java:29)\n"
     );
+}
+
+#[test]
+fn test_retrace_synthetic() {
+    let mapper = Mapper::new(
+        r#"original.class.name -> a:
+    1:1:void originalMethodName():10 -> b"#,
+    );
+
+    let frame = StackFrame::new("a", "does_not_exist", "", 0);
+    let expected = StackFrame::new("original.class.name", "does_not_exist", "", 0);
+    let mut actual = mapper.remap_frame(&frame);
+
+    assert_eq!(actual.next().unwrap(), expected);
+    assert_eq!(actual.next(), None);
+
+    let frame = StackFrame::new("a", "b", "", 0);
+    let expected = StackFrame::new("original.class.name", "originalMethodName", "", 0);
+    let mut actual = mapper.remap_frame(&frame);
+
+    assert_eq!(actual.next().unwrap(), expected);
+    assert_eq!(actual.next(), None);
 }

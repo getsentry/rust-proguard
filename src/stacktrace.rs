@@ -4,9 +4,9 @@ use std::borrow::Cow;
 
 /// A Java StackFrame.
 ///
-/// Basically a Rust version of the Java `StackTraceElement`.
+/// Basically a Rust version of the Java [`StackTraceElement`].
 ///
-/// See https://docs.oracle.com/en/java/javase/14/docs/api/java.base/java/lang/StackTraceElement.html
+/// [`StackTraceElement`]: https://docs.oracle.com/en/java/javase/14/docs/api/java.base/java/lang/StackTraceElement.html
 #[derive(Clone, Debug, PartialEq)]
 pub struct StackFrame<'s> {
     pub(crate) class: Cow<'s, str>,

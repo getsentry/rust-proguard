@@ -62,19 +62,24 @@ impl<'s> Mapper<'s> {
                     line_mapping,
                     ..
                 } => {
-                    if let Some(line_mapping) = line_mapping {
-                        if let Some(original_startline) = line_mapping.original_startline {
-                            let members = class.members.entry(obfuscated).or_insert_with(|| vec![]);
-                            members.push(MemberMapping {
-                                startline: line_mapping.startline,
-                                endline: line_mapping.endline,
-                                original_class,
-                                original,
-                                original_startline,
-                                original_endline: line_mapping.original_endline,
-                            });
-                        }
-                    }
+                    let (startline, endline, original_startline, original_endline) = line_mapping
+                        .map_or((0, 0, 0, None), |line_mapping| {
+                            (
+                                line_mapping.startline,
+                                line_mapping.endline,
+                                line_mapping.original_startline.unwrap_or(0),
+                                line_mapping.original_endline,
+                            )
+                        });
+                    let members = class.members.entry(obfuscated).or_insert_with(|| vec![]);
+                    members.push(MemberMapping {
+                        startline,
+                        endline,
+                        original_class,
+                        original,
+                        original_startline,
+                        original_endline,
+                    });
                 }
             }
         }

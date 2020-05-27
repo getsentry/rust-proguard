@@ -123,6 +123,9 @@ impl<'s> Mapper<'s> {
                     } else {
                         member.original_startline + frame.line - member.startline
                     };
+                    // when an inlined function is from a foreign class, we
+                    // infer the filename as `{class}.java`, which is what
+                    // retrace seems to be doing.
                     let file = member
                         .original_class
                         .map(|c| {

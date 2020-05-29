@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::{fmt::Write, iter::FusedIterator};
 
-use crate::mapping::MappingRecord;
+use crate::mapping::{MappingRecord, ProguardMapping};
 use crate::stacktrace::StackFrame;
 
 #[derive(Debug)]
@@ -87,13 +87,20 @@ impl FusedIterator for RemappedFrameIter<'_> {}
 ///
 /// This can remap frames one at a time, or the complete raw stacktrace.
 #[derive(Debug)]
-pub struct Mapper<'s> {
+pub struct ProguardMapper<'s> {
     classes: HashMap<&'s str, ClassMapping<'s>>,
 }
 
-impl<'s> Mapper<'s> {
-    /// Create a new Proguard Remapper.
-    pub fn new(mapping: &'s [u8]) -> Self {
+impl<'s> From<&'s str> for ProguardMapper<'s> {
+    fn from(s: &'s str) -> Self {
+        let mapping = ProguardMapping::new(s.as_ref());
+        Self::new(mapping)
+    }
+}
+
+impl<'s> ProguardMapper<'s> {
+    /// Create a new ProguardMapper.
+    pub fn new(mapping: ProguardMapping<'s>) -> Self {
         let mut classes = HashMap::new();
         let mut class = ClassMapping {
             original: "",
@@ -101,7 +108,9 @@ impl<'s> Mapper<'s> {
             members: BTreeMap::new(),
         };
 
+        // I can’t actually use `mapping.iter()` here because of borrow check
         for record in mapping
+            .into_source()
             .split(|c| *c == b'\n' || *c == b'\r')
             .filter(|s| !s.is_empty())
             .filter_map(MappingRecord::try_parse)
@@ -166,10 +175,10 @@ impl<'s> Mapper<'s> {
     /// # Examples
     ///
     /// ```
-    /// use proguard::Mapper;
+    /// use proguard::ProguardMapper;
     ///
-    /// let mapping = br#"android.arch.core.executor.ArchTaskExecutor -> a.a.a.a.c:"#;
-    /// let mapper = Mapper::new(mapping);
+    /// let mapping = r#"android.arch.core.executor.ArchTaskExecutor -> a.a.a.a.c:"#;
+    /// let mapper = ProguardMapper::from(mapping);
     ///
     /// let mapped = mapper.remap_class("a.a.a.a.c");
     /// assert_eq!(mapped, Some("android.arch.core.executor.ArchTaskExecutor"));

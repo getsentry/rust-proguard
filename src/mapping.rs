@@ -3,7 +3,78 @@
 //! The mapping file format is described
 //! [here](https://www.guardsquare.com/en/products/proguard/manual/retrace).
 
+#[cfg(feature = "uuid")]
+use uuid::Uuid;
+
+/// A Proguard Mapping file.
+pub struct ProguardMapping<'s> {
+    source: &'s [u8],
+}
+
+impl<'s> ProguardMapping<'s> {
+    /// Create a new Proguard Mapping.
+    pub fn new(source: &'s [u8]) -> Self {
+        Self { source }
+    }
+
+    /// Calculates the UUID of the mapping file.
+    #[cfg(feature = "uuid")]
+    pub fn uuid(&self) -> Uuid {
+        let namespace = Uuid::new_v5(&Uuid::NAMESPACE_DNS, b"guardsquare.com");
+        // this internally only operates on bytes, so this is safe to do
+        Uuid::new_v5(&namespace, self.source)
+    }
+
+    /// Returns the backing slice.
+    pub(crate) fn into_source(self) -> &'s [u8] {
+        self.source
+    }
+
+    /// Create an Iterator over [`MappingRecord`]s.
+    ///
+    /// [`MappingRecord`]: enum.MappingRecord.html
+    pub fn iter(&self) -> MappingRecordIter {
+        MappingRecordIter { slice: self.source }
+    }
+}
+
+/// An Iterator yielding [`MappingRecord`]s.
+///
+/// [`MappingRecord`]: enum.MappingRecord.html
+pub struct MappingRecordIter<'s> {
+    slice: &'s [u8],
+}
+
+impl<'s> Iterator for MappingRecordIter<'s> {
+    type Item = Result<MappingRecord<'s>, &'s [u8]>;
+    fn next(&mut self) -> Option<Self::Item> {
+        fn split(slice: &[u8]) -> (&[u8], &[u8]) {
+            for (i, c) in slice.iter().enumerate() {
+                if *c == b'\n' || *c == b'\r' {
+                    return (&slice[0..i], &slice[i..]);
+                }
+            }
+            (slice, &[])
+        }
+        loop {
+            let (line, rest) = split(self.slice);
+            self.slice = rest;
+            if rest.is_empty() {
+                return None;
+            };
+            if !line.is_empty() {
+                return Some(match MappingRecord::try_parse(line) {
+                    Some(m) => Ok(m),
+                    None => Err(line),
+                });
+            }
+        }
+    }
+}
+
 /// A proguard line mapping.
+///
+/// Maps start/end lines of a minified file to original start/end lines.
 #[derive(PartialEq, Default, Debug)]
 pub struct LineMapping {
     /// Start Line.
@@ -43,9 +114,6 @@ pub enum MappingRecord<'s> {
         obfuscated: &'s str,
     },
     /// A Method Mapping.
-    ///
-    /// This will always have a type `ty`, `original` and `obfuscated` name,
-    /// and optional `original_class`, `arguments` and `line_mapping`.
     Method {
         /// Return Type of the method.
         ty: &'s str,

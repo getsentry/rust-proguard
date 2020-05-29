@@ -6,9 +6,9 @@
 //! # Examples
 //!
 //! ```
-//! let mapping = br#"android.arch.core.internal.SafeIterableMap -> a.a.a.b.c:
+//! let mapping = r#"android.arch.core.internal.SafeIterableMap -> a.a.a.b.c:
 //!     13:13:java.util.Map$Entry eldest():168:168 -> a"#;
-//! let mapper = proguard::Mapper::new(mapping);
+//! let mapper = proguard::ProguardMapper::from(mapping);
 //!
 //! // re-mapping a classname
 //! assert_eq!(
@@ -35,17 +35,6 @@ mod mapper;
 mod mapping;
 mod stacktrace;
 
-pub use mapper::Mapper;
-pub use mapping::{LineMapping, MappingRecord};
+pub use mapper::ProguardMapper;
+pub use mapping::{LineMapping, MappingRecord, MappingRecordIter, ProguardMapping};
 pub use stacktrace::StackFrame;
-
-#[cfg(feature = "uuid")]
-use uuid::Uuid;
-
-/// Calculates the UUID of the mapping file.
-#[cfg(feature = "uuid")]
-pub fn mapping_uuid(mapping: &[u8]) -> Uuid {
-    let namespace = Uuid::new_v5(&Uuid::NAMESPACE_DNS, b"guardsquare.com");
-    // this internally only operates on bytes, so this is safe to do
-    Uuid::new_v5(&namespace, mapping)
-}

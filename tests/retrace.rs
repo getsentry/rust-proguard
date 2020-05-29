@@ -1,10 +1,10 @@
-use proguard::{Mapper, StackFrame};
+use proguard::{ProguardMapper, StackFrame};
 
 #[test]
 fn test_remap() {
     // https://github.com/getsentry/rust-proguard/issues/5#issue-410310382
-    let mapper = Mapper::new(
-        br#"some.Class -> obfuscated:
+    let mapper = ProguardMapper::from(
+        r#"some.Class -> obfuscated:
     7:8:void method3(long):78:79 -> main
     7:8:void method2(int):87 -> main
     7:8:void method1(java.lang.String):95 -> main
@@ -21,8 +21,8 @@ fn test_remap() {
     );
 
     // https://github.com/getsentry/rust-proguard/issues/6#issuecomment-605610326
-    let mapper = Mapper::new(
-        br#"com.exmaple.app.MainActivity -> com.exmaple.app.MainActivity:
+    let mapper = ProguardMapper::from(
+        r#"com.exmaple.app.MainActivity -> com.exmaple.app.MainActivity:
     com.example1.domain.MyBean myBean -> p
     1:1:void <init>():11:11 -> <init>
     1:1:void buttonClicked(android.view.View):29:29 -> buttonClicked
@@ -40,8 +40,8 @@ fn test_remap() {
     );
 
     // https://github.com/getsentry/rust-proguard/issues/6#issuecomment-605613412
-    let mapper = Mapper::new(
-        br#"com.exmaple.app.MainActivity -> com.exmaple.app.MainActivity:
+    let mapper = ProguardMapper::from(
+        r#"com.exmaple.app.MainActivity -> com.exmaple.app.MainActivity:
     com.example1.domain.MyBean myBean -> k
     11:11:void <init>() -> <init>
     17:26:void onCreate(android.os.Bundle) -> onCreate
@@ -60,8 +60,8 @@ fn test_remap() {
 
 #[test]
 fn test_remap_no_lines() {
-    let mapper = Mapper::new(
-        br#"original.class.name -> a:
+    let mapper = ProguardMapper::from(
+        r#"original.class.name -> a:
     void originalMethodName() -> b"#,
     );
 

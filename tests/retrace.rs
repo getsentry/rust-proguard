@@ -1,10 +1,10 @@
 use proguard::{Mapper, StackFrame};
 
 #[test]
-fn test_retrace() {
+fn test_remap() {
     // https://github.com/getsentry/rust-proguard/issues/5#issue-410310382
     let mapper = Mapper::new(
-        r#"some.Class -> obfuscated:
+        br#"some.Class -> obfuscated:
     7:8:void method3(long):78:79 -> main
     7:8:void method2(int):87 -> main
     7:8:void method1(java.lang.String):95 -> main
@@ -22,7 +22,7 @@ fn test_retrace() {
 
     // https://github.com/getsentry/rust-proguard/issues/6#issuecomment-605610326
     let mapper = Mapper::new(
-        r#"com.exmaple.app.MainActivity -> com.exmaple.app.MainActivity:
+        br#"com.exmaple.app.MainActivity -> com.exmaple.app.MainActivity:
     com.example1.domain.MyBean myBean -> p
     1:1:void <init>():11:11 -> <init>
     1:1:void buttonClicked(android.view.View):29:29 -> buttonClicked
@@ -35,13 +35,13 @@ fn test_retrace() {
     let mapped = mapper.remap_stacktrace(stacktrace).unwrap();
     assert_eq!(
         mapped,
-        "    at com.example1.domain.MyBean.doWork(MyBean.java:16)
+        "    at com.example1.domain.MyBean.doWork(<unknown>:16)
     at com.exmaple.app.MainActivity.buttonClicked(MainActivity.java:29)\n"
     );
 
     // https://github.com/getsentry/rust-proguard/issues/6#issuecomment-605613412
     let mapper = Mapper::new(
-        r#"com.exmaple.app.MainActivity -> com.exmaple.app.MainActivity:
+        br#"com.exmaple.app.MainActivity -> com.exmaple.app.MainActivity:
     com.example1.domain.MyBean myBean -> k
     11:11:void <init>() -> <init>
     17:26:void onCreate(android.os.Bundle) -> onCreate
@@ -53,80 +53,25 @@ fn test_retrace() {
     let mapped = mapper.remap_stacktrace(stacktrace).unwrap();
     assert_eq!(
         mapped,
-        "    at com.example1.domain.MyBean.doWork(MyBean.java:16)
+        "    at com.example1.domain.MyBean.doWork(<unknown>:16)
     at com.exmaple.app.MainActivity.buttonClicked(MainActivity.java:29)\n"
     );
 }
 
 #[test]
-fn test_retrace_synthetic() {
+fn test_remap_no_lines() {
     let mapper = Mapper::new(
-        r#"original.class.name -> a:
-    1:1:void originalMethodName():10 -> b"#,
+        br#"original.class.name -> a:
+    void originalMethodName() -> b"#,
     );
 
-    let frame = StackFrame::new("a", "does_not_exist", "", 0);
-    let expected = StackFrame::new("original.class.name", "does_not_exist", "", 0);
-    let mut actual = mapper.remap_frame(&frame);
+    let mapped = mapper.remap_class("a");
+    assert_eq!(mapped, Some("original.class.name"));
 
-    assert_eq!(actual.next().unwrap(), expected);
-    assert_eq!(actual.next(), None);
-
-    let frame = StackFrame::new("a", "b", "", 0);
-    let expected = StackFrame::new("original.class.name", "originalMethodName", "", 0);
-    let mut actual = mapper.remap_frame(&frame);
-
-    assert_eq!(actual.next().unwrap(), expected);
-    assert_eq!(actual.next(), None);
-}
-
-#[test]
-fn test_retrace_member() {
-    let mapper = Mapper::new(
-        r#"
-io.sentry.sample.-$$Lambda$MainActivity$4aaSlfCQgj_1XC8PygMYIPFzvbU -> d.a.c.a:
-    io.sentry.sample.-$$Lambda$MainActivity$4aaSlfCQgj_1XC8PygMYIPFzvbU INSTANCE -> b
-io.sentry.sample.-$$Lambda$MainActivity$C6WLFtOOCwWHrHZymygVPybkZJc -> d.a.c.b:
-    io.sentry.sample.-$$Lambda$MainActivity$C6WLFtOOCwWHrHZymygVPybkZJc INSTANCE -> b
-io.sentry.sample.-$$Lambda$MainActivity$Jj2f10fH_m5W5SRFf0Nj9WGDNDs -> d.a.c.c:
-    io.sentry.sample.-$$Lambda$MainActivity$Jj2f10fH_m5W5SRFf0Nj9WGDNDs INSTANCE -> b
-io.sentry.sample.-$$Lambda$MainActivity$OnutgJyvTK8aOxb9yV8WMSnn8y4 -> d.a.c.d:
-    io.sentry.sample.-$$Lambda$MainActivity$OnutgJyvTK8aOxb9yV8WMSnn8y4 INSTANCE -> b
-io.sentry.sample.-$$Lambda$MainActivity$W5V1SZYiQFLzkOXTNL5EFGi0luw -> d.a.c.e:
-    io.sentry.sample.-$$Lambda$MainActivity$W5V1SZYiQFLzkOXTNL5EFGi0luw INSTANCE -> b
-io.sentry.sample.-$$Lambda$MainActivity$lx6wy8pOXx_tKjUileeSycxvo_Q -> d.a.c.f:
-    io.sentry.sample.-$$Lambda$MainActivity$lx6wy8pOXx_tKjUileeSycxvo_Q INSTANCE -> b
-io.sentry.sample.-$$Lambda$MainActivity$tVGPRGxxb8SivUa5SKhzp6BuXOI -> d.a.c.g:
-    io.sentry.sample.-$$Lambda$MainActivity$tVGPRGxxb8SivUa5SKhzp6BuXOI INSTANCE -> b
-io.sentry.sample.MainActivity -> io.sentry.sample.MainActivity:
-    void lambda$onCreate$0(android.view.View) -> a
-    void lambda$onCreate$1(android.view.View) -> b
-    void lambda$onCreate$2(android.view.View) -> c
-    void lambda$onCreate$3(android.view.View) -> d
-    void lambda$onCreate$4(android.view.View) -> e
-    void lambda$onCreate$5(android.view.View) -> f
-    void lambda$onCreate$6(android.view.View) -> g
-    1:1:void timber.log.Timber.i(java.lang.String,java.lang.Object[]):0:0 -> onCreate
-    1:1:void onCreate(android.os.Bundle):0 -> onCreate
-    2:2:void onCreate(android.os.Bundle):0:0 -> onCreate"#,
+    let mut mapped = mapper.remap_frame(&StackFrame::new("a", "b", 10));
+    assert_eq!(
+        mapped.next().unwrap(),
+        StackFrame::new("original.class.name", "originalMethodName", 0)
     );
-
-    let frame = StackFrame::new("io.sentry.sample.MainActivity", "c", "", 14);
-    let expected = StackFrame::new("io.sentry.sample.MainActivity", "lambda$onCreate$2", "", 14);
-    let mut actual = mapper.remap_frame(&frame);
-
-    assert_eq!(actual.next().unwrap(), expected);
-    assert_eq!(actual.next(), None);
-
-    let frame = StackFrame::new("d.a.c.g", "onClick", "", 0);
-    let expected = StackFrame::new(
-        "io.sentry.sample.-$$Lambda$MainActivity$tVGPRGxxb8SivUa5SKhzp6BuXOI",
-        "onClick",
-        "",
-        0,
-    );
-    let mut actual = mapper.remap_frame(&frame);
-
-    assert_eq!(actual.next().unwrap(), expected);
-    assert_eq!(actual.next(), None);
+    assert_eq!(mapped.next(), None);
 }

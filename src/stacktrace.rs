@@ -11,19 +11,52 @@ use std::borrow::Cow;
 pub struct StackFrame<'s> {
     pub(crate) class: Cow<'s, str>,
     pub(crate) method: Cow<'s, str>,
-    pub(crate) file: Cow<'s, str>,
     pub(crate) line: usize,
+    pub(crate) file: Option<Cow<'s, str>>,
 }
 
 impl<'s> StackFrame<'s> {
     /// Create a new StackFrame.
-    pub fn new(class: &'s str, method: &'s str, file: &'s str, line: usize) -> Self {
+    pub fn new(class: &'s str, method: &'s str, line: usize) -> Self {
         Self {
             class: class.into(),
             method: method.into(),
-            file: file.into(),
             line,
+            file: None,
         }
+    }
+
+    /// Create a new StackFrame with file information.
+    pub fn with_file(class: &'s str, method: &'s str, line: usize, file: &'s str) -> Self {
+        Self {
+            class: class.into(),
+            method: method.into(),
+            line,
+            file: Some(file.into()),
+        }
+    }
+
+    /// Parses a StackFrame from a line of a Java StackTrace.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use proguard::StackFrame;
+    ///
+    /// let parsed = StackFrame::try_parse(b"    at some.Klass.method(Klass.java:1234)");
+    /// assert_eq!(
+    ///     parsed,
+    ///     Some(StackFrame::with_file(
+    ///         "some.Klass",
+    ///         "method",
+    ///         1234,
+    ///         "Klass.java"
+    ///     ))
+    /// );
+    /// ```
+    pub fn try_parse(line: &'s [u8]) -> Option<Self> {
+        let line = std::str::from_utf8(line).ok()?;
+        parse_frame(line)
     }
 
     /// The class of the StackFrame.
@@ -37,8 +70,8 @@ impl<'s> StackFrame<'s> {
     }
 
     /// The file of the StackFrame.
-    pub fn file(&self) -> &str {
-        self.file.as_ref()
+    pub fn file(&self) -> Option<&str> {
+        self.file.as_deref()
     }
 
     /// The line of the StackFrame.
@@ -50,7 +83,7 @@ impl<'s> StackFrame<'s> {
 /// Parses a single line from a Java StackTrace.
 ///
 /// Returns [`None`] if the line could not be parsed.
-pub fn parse_stacktrace_line(line: &str) -> Option<StackFrame> {
+fn parse_frame(line: &str) -> Option<StackFrame> {
     if !line.starts_with("    at ") || !line.ends_with(')') {
         return None;
     }
@@ -67,7 +100,7 @@ pub fn parse_stacktrace_line(line: &str) -> Option<StackFrame> {
     Some(StackFrame {
         class: class.into(),
         method: method.into(),
-        file: file.into(),
+        file: Some(file.into()),
         line,
     })
 }

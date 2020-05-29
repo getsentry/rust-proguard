@@ -4,14 +4,14 @@ version = "3.0.0"
 authors = ["Sentry <oss@sentry.io>"]
 keywords = ["proguard", "retrace"]
 description = "Basic proguard mapping file handling for Rust"
-homepage = "https://github.com/getsentry/rust-proguard"
-documentation = "https://docs.rs/proguard"
+repository = "https://github.com/getsentry/sentry-rust"
+homepage = "https://sentry.io/welcome/"
 license = "BSD-3-Clause"
 readme = "README.md"
 edition = "2018"
 
 [dependencies]
-regex = "1.1.0"
-memmap = "0.7.0"
-lazy_static = "1.2.0"
-uuid = { version = "0.8.1", features = ["v5"] }
+uuid = { version = "0.8.1", features = ["v5"], optional = true }
+
+[dev-dependencies]
+lazy_static = "1.4.0"

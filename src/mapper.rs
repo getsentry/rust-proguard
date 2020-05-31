@@ -108,13 +108,7 @@ impl<'s> ProguardMapper<'s> {
             members: BTreeMap::new(),
         };
 
-        // I can’t actually use `mapping.iter()` here because of borrow check
-        for record in mapping
-            .into_source()
-            .split(|c| *c == b'\n' || *c == b'\r')
-            .filter(|s| !s.is_empty())
-            .filter_map(MappingRecord::try_parse)
-        {
+        for record in mapping.iter().filter_map(Result::ok) {
             match record {
                 MappingRecord::Class {
                     original,

@@ -25,15 +25,10 @@ impl<'s> ProguardMapping<'s> {
         Uuid::new_v5(&namespace, self.source)
     }
 
-    /// Returns the backing slice.
-    pub(crate) fn into_source(self) -> &'s [u8] {
-        self.source
-    }
-
     /// Create an Iterator over [`MappingRecord`]s.
     ///
     /// [`MappingRecord`]: enum.MappingRecord.html
-    pub fn iter(&self) -> MappingRecordIter {
+    pub fn iter(&self) -> MappingRecordIter<'s> {
         MappingRecordIter { slice: self.source }
     }
 }
@@ -51,7 +46,7 @@ impl<'s> Iterator for MappingRecordIter<'s> {
         fn split(slice: &[u8]) -> (&[u8], &[u8]) {
             for (i, c) in slice.iter().enumerate() {
                 if *c == b'\n' || *c == b'\r' {
-                    return (&slice[0..i], &slice[i..]);
+                    return (&slice[0..i], &slice[i + 1..]);
                 }
             }
             (slice, &[])
@@ -59,15 +54,16 @@ impl<'s> Iterator for MappingRecordIter<'s> {
         loop {
             let (line, rest) = split(self.slice);
             self.slice = rest;
-            if rest.is_empty() {
-                return None;
-            };
+
             if !line.is_empty() {
                 return Some(match MappingRecord::try_parse(line) {
                     Some(m) => Ok(m),
                     None => Err(line),
                 });
             }
+            if rest.is_empty() {
+                return None;
+            };
         }
     }
 }

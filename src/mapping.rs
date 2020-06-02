@@ -33,6 +33,19 @@ impl<'s> ProguardMapping<'s> {
     }
 }
 
+/// Split the input `slice` on line terminators.
+///
+/// This is basically [`str::lines`], except it works on a byte slice.
+/// Also NOTE that it does not treat `\r\n` as a single line ending.
+fn split_line(slice: &[u8]) -> (&[u8], &[u8]) {
+    for (i, c) in slice.iter().enumerate() {
+        if *c == b'\n' || *c == b'\r' {
+            return (&slice[0..i], &slice[i + 1..]);
+        }
+    }
+    (slice, &[])
+}
+
 /// An Iterator yielding [`MappingRecord`]s.
 ///
 /// [`MappingRecord`]: enum.MappingRecord.html
@@ -43,16 +56,10 @@ pub struct MappingRecordIter<'s> {
 impl<'s> Iterator for MappingRecordIter<'s> {
     type Item = Result<MappingRecord<'s>, &'s [u8]>;
     fn next(&mut self) -> Option<Self::Item> {
-        fn split(slice: &[u8]) -> (&[u8], &[u8]) {
-            for (i, c) in slice.iter().enumerate() {
-                if *c == b'\n' || *c == b'\r' {
-                    return (&slice[0..i], &slice[i + 1..]);
-                }
-            }
-            (slice, &[])
-        }
+        // We loop here, ignoring empty lines, which is important also because
+        // `split_line` above would output an empty line for each `\r\n`.
         loop {
-            let (line, rest) = split(self.slice);
+            let (line, rest) = split_line(self.slice);
             self.slice = rest;
 
             if !line.is_empty() {

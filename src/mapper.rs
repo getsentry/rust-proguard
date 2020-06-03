@@ -21,10 +21,10 @@ struct ClassMapping<'s> {
     members: BTreeMap<&'s str, Vec<MemberMapping<'s>>>,
 }
 
-type MemberIter<'m> = std::iter::Fuse<std::slice::Iter<'m, MemberMapping<'m>>>;
+type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
 
 /// An Iterator over remapped StackFrames.
-#[derive(Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RemappedFrameIter<'m> {
     inner: Option<(StackFrame<'m>, MemberIter<'m>)>,
 }
@@ -85,7 +85,8 @@ impl FusedIterator for RemappedFrameIter<'_> {}
 
 /// A Proguard Remapper.
 ///
-/// This can remap frames one at a time, or the complete raw stacktrace.
+/// This can remap class names, stack frames one at a time, or the complete
+/// raw stacktrace.
 #[derive(Debug)]
 pub struct ProguardMapper<'s> {
     classes: HashMap<&'s str, ClassMapping<'s>>,
@@ -166,6 +167,9 @@ impl<'s> ProguardMapper<'s> {
 
     /// Remaps an obfuscated Class.
     ///
+    /// This works on the fully-qualified name of the class, with its complete
+    /// module prefix.
+    ///
     /// # Examples
     ///
     /// ```
@@ -193,7 +197,7 @@ impl<'s> ProguardMapper<'s> {
             if let Some(members) = class.members.get(frame.method.as_ref()) {
                 let mut frame = frame.clone();
                 frame.class = class.original.into();
-                return RemappedFrameIter::members(frame, members.iter().fuse());
+                return RemappedFrameIter::members(frame, members.iter());
             }
         }
         RemappedFrameIter::empty()

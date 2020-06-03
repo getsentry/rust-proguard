@@ -69,12 +69,17 @@ impl<'s> StackFrame<'s> {
         self.method.as_ref()
     }
 
+    /// The fully qualified method name, including the class.
+    pub fn full_method(&self) -> String {
+        format!("{}.{}", self.class, self.method)
+    }
+
     /// The file of the StackFrame.
     pub fn file(&self) -> Option<&str> {
         self.file.as_deref()
     }
 
-    /// The line of the StackFrame.
+    /// The line of the StackFrame, 1-based.
     pub fn line(&self) -> usize {
         self.line
     }

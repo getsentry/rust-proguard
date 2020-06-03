@@ -4,7 +4,7 @@
 //! [here](https://www.guardsquare.com/en/products/proguard/manual/retrace).
 
 #[cfg(feature = "uuid")]
-use uuid::Uuid;
+use uuid_::Uuid;
 
 /// A Proguard Mapping file.
 pub struct ProguardMapping<'s> {
@@ -25,11 +25,14 @@ impl<'s> ProguardMapping<'s> {
     /// use proguard::ProguardMapping;
     ///
     /// let valid = ProguardMapping::new(b"a -> b:\n    void method() -> b");
-    /// assert_eq!(valid.    /// let invalid = ProguardMapping::new(
+    /// assert_eq!(valid.is_valid(), true);
+    ///
+    /// let invalid = ProguardMapping::new(
     ///     br#"
     /// # looks: like
     /// a -> proguard:
-    ///   mapping but(is) -> not"#,
+    ///   mapping but(is) -> not
+    /// "#,
     /// );
     /// assert_eq!(invalid.is_valid(), false);
     /// ```
@@ -74,11 +77,18 @@ impl<'s> ProguardMapping<'s> {
     }
 
     /// Calculates the UUID of the mapping file.
+    ///
+    /// The UUID is generated from a file checksum. See [more documentation] on
+    /// how the UUID is generated.
+    ///
+    /// [more documentation]: https://docs.sentry.io/workflow/debug-files/#proguard-uuids
     #[cfg(feature = "uuid")]
     pub fn uuid(&self) -> Uuid {
-        let namespace = Uuid::new_v5(&Uuid::NAMESPACE_DNS, b"guardsquare.com");
+        lazy_static::lazy_static! {
+            static ref NAMESPACE: Uuid = Uuid::new_v5(&Uuid::NAMESPACE_DNS, b"guardsquare.com");
+        }
         // this internally only operates on bytes, so this is safe to do
-        Uuid::new_v5(&namespace, self.source)
+        Uuid::new_v5(&NAMESPACE, self.source)
     }
 
     /// Create an Iterator over [`MappingRecord`]s.
@@ -94,19 +104,26 @@ impl<'s> ProguardMapping<'s> {
 /// This is basically [`str::lines`], except it works on a byte slice.
 /// Also NOTE that it does not treat `\r\n` as a single line ending.
 fn split_line(slice: &[u8]) -> (&[u8], &[u8]) {
-    for (i, c) in slice.iter().enumerate() {
-        if *c == b'\n' || *c == b'\r' {
-            return (&slice[0..i], &slice[i + 1..]);
-        }
+    let pos = slice.iter().position(|c| *c == b'\n' || *c == b'\r');
+    match pos {
+        Some(pos) => (&slice[0..pos], &slice[pos + 1..]),
+        None => (slice, &[]),
     }
-    (slice, &[])
 }
 
-/// An Iterator yielding [`MappingRecord`]s.
+/// An Iterator yielding [`MappingRecord`]s, created by [`ProguardMapping::iter`].
 ///
 /// [`MappingRecord`]: enum.MappingRecord.html
+/// [`ProguardMapping::iter`]: struct.ProguardMapping.html#method.iter
+#[derive(Clone, Default)]
 pub struct MappingRecordIter<'s> {
     slice: &'s [u8],
+}
+
+impl<'s> std::fmt::Debug for MappingRecordIter<'s> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MappingRecordIter").finish()
+    }
 }
 
 impl<'s> Iterator for MappingRecordIter<'s> {
@@ -134,11 +151,13 @@ impl<'s> Iterator for MappingRecordIter<'s> {
 /// A proguard line mapping.
 ///
 /// Maps start/end lines of a minified file to original start/end lines.
+///
+/// All line mappings are 1-based and inclusive.
 #[derive(PartialEq, Default, Debug)]
 pub struct LineMapping {
-    /// Start Line.
+    /// Start Line, 1-based.
     pub startline: usize,
-    /// End Line.
+    /// End Line, inclusive.
     pub endline: usize,
     /// The original Start Line.
     pub original_startline: Option<usize>,
@@ -275,7 +294,7 @@ impl<'s> MappingRecord<'s> {
 
 /// Parses a single line from a Proguard File.
 ///
-/// Returns [`None`] if the line could not be parsed.
+/// Returns `None` if the line could not be parsed.
 fn parse_mapping(mut line: &str) -> Option<MappingRecord> {
     if line.starts_with('#') {
         let mut split = line[1..].splitn(2, ':');

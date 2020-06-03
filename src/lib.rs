@@ -3,11 +3,15 @@
 //! The main use case is to re-map classes or complete stack frames, but it can
 //! also be used to parse a proguard mapping line-by-line.
 //!
+//! The `uuid` feature also allows getting the UUID of the proguard file.
+//!
 //! # Examples
 //!
 //! ```
-//! let mapping = r#"android.arch.core.internal.SafeIterableMap -> a.a.a.b.c:
-//!     13:13:java.util.Map$Entry eldest():168:168 -> a"#;
+//! let mapping = r#"
+//! android.arch.core.internal.SafeIterableMap -> a.a.a.b.c:
+//!     13:13:java.util.Map$Entry eldest():168:168 -> a
+//! "#;
 //! let mapper = proguard::ProguardMapper::from(mapping);
 //!
 //! // re-mapping a classname

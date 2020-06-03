@@ -17,6 +17,62 @@ impl<'s> ProguardMapping<'s> {
         Self { source }
     }
 
+    /// Whether the mapping file is indeed valid.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use proguard::ProguardMapping;
+    ///
+    /// let valid = ProguardMapping::new(b"a -> b:\n    void method() -> b");
+    /// assert_eq!(valid.    /// let invalid = ProguardMapping::new(
+    ///     br#"
+    /// # looks: like
+    /// a -> proguard:
+    ///   mapping but(is) -> not"#,
+    /// );
+    /// assert_eq!(invalid.is_valid(), false);
+    /// ```
+    pub fn is_valid(&self) -> bool {
+        let mut has_class_line = false;
+        for record in self.iter().take(50) {
+            match record {
+                Ok(MappingRecord::Class { .. }) => {
+                    has_class_line = true;
+                }
+                Ok(MappingRecord::Field { .. }) | Ok(MappingRecord::Method { .. })
+                    if has_class_line =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Whether the mapping file contains line info.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use proguard::ProguardMapping;
+    ///
+    /// let with = ProguardMapping::new(b"a -> b:\n    1:1:void method() -> a");
+    /// assert_eq!(with.has_line_info(), true);
+    ///
+    /// let without = ProguardMapping::new(b"a -> b:\n    void method() -> b");
+    /// assert_eq!(without.has_line_info(), false);
+    /// ```
+    pub fn has_line_info(&self) -> bool {
+        for record in self.iter().take(100) {
+            if let Ok(MappingRecord::Method { line_mapping, .. }) = record {
+                return line_mapping.is_some();
+            }
+        }
+        false
+    }
+
     /// Calculates the UUID of the mapping file.
     #[cfg(feature = "uuid")]
     pub fn uuid(&self) -> Uuid {

@@ -7,8 +7,15 @@
 use uuid_::Uuid;
 
 /// A Proguard Mapping file.
+#[derive(Clone, Default)]
 pub struct ProguardMapping<'s> {
     source: &'s [u8],
+}
+
+impl<'s> std::fmt::Debug for ProguardMapping<'s> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProguardMapping").finish()
+    }
 }
 
 impl<'s> ProguardMapping<'s> {

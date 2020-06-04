@@ -12,15 +12,45 @@ use uuid_::Uuid;
 /// Error when parsing a proguard mapping line.
 ///
 /// Since the mapping parses proguard line-by-line, an error will also contain
-/// the failed line.
-#[derive(Clone, Debug, PartialEq)]
+/// the offending line.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ParseError<'s> {
     line: &'s [u8],
     kind: ParseErrorKind,
 }
 
+impl<'s> ParseError<'s> {
+    /// The offending line that caused the error.
+    pub fn line(&self) -> &[u8] {
+        self.line
+    }
+
+    /// The specific parse Error.
+    pub fn kind(&self) -> ParseErrorKind {
+        self.kind
+    }
+}
+
+impl fmt::Display for ParseError<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            ParseErrorKind::Utf8Error(e) => e.fmt(f),
+            ParseErrorKind::ParseError(d) => d.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for ParseError<'_> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self.kind {
+            ParseErrorKind::Utf8Error(ref e) => Some(e),
+            ParseErrorKind::ParseError(_) => None,
+        }
+    }
+}
+
 /// The specific parse Error.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ParseErrorKind {
     /// The line failed utf-8 conversion.
     Utf8Error(str::Utf8Error),

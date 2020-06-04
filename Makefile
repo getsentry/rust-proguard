@@ -13,7 +13,8 @@ doc:
 .PHONY: doc
 
 test:
-	@cargo test
+	@cargo test --no-default-features
+	@cargo test --all-features
 .PHONY: test
 
 style:
@@ -28,5 +29,5 @@ format:
 
 lint:
 	@rustup component add clippy --toolchain stable 2> /dev/null
-	@cargo +stable clippy --tests -- -D clippy::all
+	@cargo +stable clippy --all-features --tests --examples -- -D clippy::all
 .PHONY: lint

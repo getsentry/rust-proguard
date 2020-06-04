@@ -85,10 +85,7 @@ impl<'s> ProguardMapping<'s> {
 
     /// Calculates the UUID of the mapping file.
     ///
-    /// The UUID is generated from a file checksum. See [more documentation] on
-    /// how the UUID is generated.
-    ///
-    /// [more documentation]: https://docs.sentry.io/workflow/debug-files/#proguard-uuids
+    /// The UUID is generated from a file checksum.
     #[cfg(feature = "uuid")]
     pub fn uuid(&self) -> Uuid {
         lazy_static::lazy_static! {

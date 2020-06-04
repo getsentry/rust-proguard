@@ -12,15 +12,27 @@ use uuid_::Uuid;
 /// Error when parsing a proguard mapping line.
 ///
 /// Since the mapping parses proguard line-by-line, an error will also contain
-/// the failed line.
-#[derive(Clone, Debug, PartialEq)]
+/// the offending line.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ParseError<'s> {
     line: &'s [u8],
     kind: ParseErrorKind,
 }
 
+impl<'s> ParseError<'s> {
+    /// The offending line that caused the error.
+    pub fn line(&self) -> &[u8] {
+        self.line
+    }
+
+    /// The specific parse Error.
+    pub fn kind(&self) -> ParseErrorKind {
+        self.kind
+    }
+}
+
 /// The specific parse Error.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ParseErrorKind {
     /// The line failed utf-8 conversion.
     Utf8Error(str::Utf8Error),

@@ -87,7 +87,7 @@ impl<'s> StackFrame<'s> {
 
 /// Parses a single line from a Java StackTrace.
 ///
-/// Returns [`None`] if the line could not be parsed.
+/// Returns `None` if the line could not be parsed.
 fn parse_frame(line: &str) -> Option<StackFrame> {
     if !line.starts_with("    at ") || !line.ends_with(')') {
         return None;

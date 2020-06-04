@@ -4,7 +4,7 @@ use std::{fmt::Write, iter::FusedIterator};
 use crate::mapping::{MappingRecord, ProguardMapping};
 use crate::stacktrace::StackFrame;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct MemberMapping<'s> {
     startline: usize,
     endline: usize,
@@ -14,7 +14,7 @@ struct MemberMapping<'s> {
     original_endline: Option<usize>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct ClassMapping<'s> {
     original: &'s str,
     obfuscated: &'s str,
@@ -87,7 +87,7 @@ impl FusedIterator for RemappedFrameIter<'_> {}
 ///
 /// This can remap class names, stack frames one at a time, or the complete
 /// raw stacktrace.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ProguardMapper<'s> {
     classes: HashMap<&'s str, ClassMapping<'s>>,
 }

@@ -13,15 +13,15 @@ use uuid_::Uuid;
 ///
 /// Since the mapping parses proguard line-by-line, an error will also contain
 /// the failed line.
-#[derive(Debug, PartialEq)]
-pub struct ProguardParseError<'s> {
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParseError<'s> {
     line: &'s [u8],
-    kind: ProguardParseErrorKind,
+    kind: ParseErrorKind,
 }
 
 /// The specific parse Error.
-#[derive(Debug, PartialEq)]
-pub enum ProguardParseErrorKind {
+#[derive(Clone, Debug, PartialEq)]
+pub enum ParseErrorKind {
     /// The line failed utf-8 conversion.
     Utf8Error(str::Utf8Error),
     /// The line failed parsing.
@@ -153,7 +153,7 @@ impl<'s> fmt::Debug for MappingRecordIter<'s> {
 }
 
 impl<'s> Iterator for MappingRecordIter<'s> {
-    type Item = Result<MappingRecord<'s>, ProguardParseError<'s>>;
+    type Item = Result<MappingRecord<'s>, ParseError<'s>>;
     fn next(&mut self) -> Option<Self::Item> {
         // We loop here, ignoring empty lines, which is important also because
         // `split_line` above would output an empty line for each `\r\n`.
@@ -176,7 +176,7 @@ impl<'s> Iterator for MappingRecordIter<'s> {
 /// Maps start/end lines of a minified file to original start/end lines.
 ///
 /// All line mappings are 1-based and inclusive.
-#[derive(PartialEq, Default, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LineMapping {
     /// Start Line, 1-based.
     pub startline: usize,
@@ -189,7 +189,7 @@ pub struct LineMapping {
 }
 
 /// A Proguard Mapping Record.
-#[derive(PartialEq, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MappingRecord<'s> {
     /// A Proguard Header.
     Header {
@@ -309,14 +309,14 @@ impl<'s> MappingRecord<'s> {
     ///     })
     /// );
     /// ```
-    pub fn try_parse(line: &'s [u8]) -> Result<Self, ProguardParseError<'s>> {
-        let line = std::str::from_utf8(line).map_err(|e| ProguardParseError {
+    pub fn try_parse(line: &'s [u8]) -> Result<Self, ParseError<'s>> {
+        let line = std::str::from_utf8(line).map_err(|e| ParseError {
             line,
-            kind: ProguardParseErrorKind::Utf8Error(e),
+            kind: ParseErrorKind::Utf8Error(e),
         })?;
-        parse_mapping(line).ok_or_else(|| ProguardParseError {
+        parse_mapping(line).ok_or_else(|| ParseError {
             line: line.as_ref(),
-            kind: ProguardParseErrorKind::ParseError("line is not a valid proguard record"),
+            kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
         })
     }
 }
@@ -351,7 +351,12 @@ fn parse_mapping(mut line: &str) -> Option<MappingRecord> {
     // `originalfieldtype originalfieldname -> obfuscatedfieldname`
     // `[startline:endline:]originalreturntype [originalclassname.]originalmethodname(originalargumenttype,...)[:originalstartline[:originalendline]] -> obfuscatedmethodname`
     line = &line[4..];
-    let mut line_mapping = LineMapping::default();
+    let mut line_mapping = LineMapping {
+        startline: 0,
+        endline: 0,
+        original_startline: None,
+        original_endline: None,
+    };
 
     // leading line mapping
     if line.starts_with(char::is_numeric) {

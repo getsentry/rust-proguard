@@ -3,8 +3,30 @@
 //! The mapping file format is described
 //! [here](https://www.guardsquare.com/en/products/proguard/manual/retrace).
 
+use std::fmt;
+use std::str;
+
 #[cfg(feature = "uuid")]
 use uuid_::Uuid;
+
+/// Error when parsing a proguard mapping line.
+///
+/// Since the mapping parses proguard line-by-line, an error will also contain
+/// the failed line.
+#[derive(Debug, PartialEq)]
+pub struct ProguardParseError<'s> {
+    line: &'s [u8],
+    kind: ProguardParseErrorKind,
+}
+
+/// The specific parse Error.
+#[derive(Debug, PartialEq)]
+pub enum ProguardParseErrorKind {
+    /// The line failed utf-8 conversion.
+    Utf8Error(str::Utf8Error),
+    /// The line failed parsing.
+    ParseError(&'static str),
+}
 
 /// A Proguard Mapping file.
 #[derive(Clone, Default)]
@@ -12,8 +34,8 @@ pub struct ProguardMapping<'s> {
     source: &'s [u8],
 }
 
-impl<'s> std::fmt::Debug for ProguardMapping<'s> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'s> fmt::Debug for ProguardMapping<'s> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProguardMapping").finish()
     }
 }
@@ -124,14 +146,14 @@ pub struct MappingRecordIter<'s> {
     slice: &'s [u8],
 }
 
-impl<'s> std::fmt::Debug for MappingRecordIter<'s> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'s> fmt::Debug for MappingRecordIter<'s> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MappingRecordIter").finish()
     }
 }
 
 impl<'s> Iterator for MappingRecordIter<'s> {
-    type Item = Result<MappingRecord<'s>, &'s [u8]>;
+    type Item = Result<MappingRecord<'s>, ProguardParseError<'s>>;
     fn next(&mut self) -> Option<Self::Item> {
         // We loop here, ignoring empty lines, which is important also because
         // `split_line` above would output an empty line for each `\r\n`.
@@ -140,10 +162,7 @@ impl<'s> Iterator for MappingRecordIter<'s> {
             self.slice = rest;
 
             if !line.is_empty() {
-                return Some(match MappingRecord::try_parse(line) {
-                    Some(m) => Ok(m),
-                    None => Err(line),
-                });
+                return Some(MappingRecord::try_parse(line));
             }
             if rest.is_empty() {
                 return None;
@@ -224,7 +243,7 @@ impl<'s> MappingRecord<'s> {
     /// let parsed = MappingRecord::try_parse(b"# compiler: R8");
     /// assert_eq!(
     ///     parsed,
-    ///     Some(MappingRecord::Header {
+    ///     Ok(MappingRecord::Header {
     ///         key: "compiler",
     ///         value: Some("R8")
     ///     })
@@ -235,7 +254,7 @@ impl<'s> MappingRecord<'s> {
     ///     MappingRecord::try_parse(b"android.arch.core.executor.ArchTaskExecutor -> a.a.a.a.c:");
     /// assert_eq!(
     ///     parsed,
-    ///     Some(MappingRecord::Class {
+    ///     Ok(MappingRecord::Class {
     ///         original: "android.arch.core.executor.ArchTaskExecutor",
     ///         obfuscated: "a.a.a.a.c"
     ///     })
@@ -246,7 +265,7 @@ impl<'s> MappingRecord<'s> {
     ///     MappingRecord::try_parse(b"    android.arch.core.executor.ArchTaskExecutor sInstance -> a");
     /// assert_eq!(
     ///     parsed,
-    ///     Some(MappingRecord::Field {
+    ///     Ok(MappingRecord::Field {
     ///         ty: "android.arch.core.executor.ArchTaskExecutor",
     ///         original: "sInstance",
     ///         obfuscated: "a",
@@ -259,7 +278,7 @@ impl<'s> MappingRecord<'s> {
     /// );
     /// assert_eq!(
     ///     parsed,
-    ///     Some(MappingRecord::Method {
+    ///     Ok(MappingRecord::Method {
     ///         ty: "java.lang.Object",
     ///         original: "putIfAbsent",
     ///         obfuscated: "b",
@@ -275,7 +294,7 @@ impl<'s> MappingRecord<'s> {
     /// );
     /// assert_eq!(
     ///     parsed,
-    ///     Some(MappingRecord::Method {
+    ///     Ok(MappingRecord::Method {
     ///         ty: "void",
     ///         original: "doWork",
     ///         obfuscated: "buttonClicked",
@@ -290,15 +309,23 @@ impl<'s> MappingRecord<'s> {
     ///     })
     /// );
     /// ```
-    pub fn try_parse(line: &'s [u8]) -> Option<Self> {
-        let line = std::str::from_utf8(line).ok()?;
-        parse_mapping(line)
+    pub fn try_parse(line: &'s [u8]) -> Result<Self, ProguardParseError<'s>> {
+        let line = std::str::from_utf8(line).map_err(|e| ProguardParseError {
+            line,
+            kind: ProguardParseErrorKind::Utf8Error(e),
+        })?;
+        parse_mapping(line).ok_or_else(|| ProguardParseError {
+            line: line.as_ref(),
+            kind: ProguardParseErrorKind::ParseError("line is not a valid proguard record"),
+        })
     }
 }
 
 /// Parses a single line from a Proguard File.
 ///
 /// Returns `None` if the line could not be parsed.
+// TODO: this function is private here, but in the future it would be nice to
+// better elaborate parse errors.
 fn parse_mapping(mut line: &str) -> Option<MappingRecord> {
     if line.starts_with('#') {
         let mut split = line[1..].splitn(2, ':');

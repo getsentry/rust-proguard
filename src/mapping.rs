@@ -31,6 +31,24 @@ impl<'s> ParseError<'s> {
     }
 }
 
+impl fmt::Display for ParseError<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            ParseErrorKind::Utf8Error(e) => e.fmt(f),
+            ParseErrorKind::ParseError(d) => d.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for ParseError<'_> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self.kind {
+            ParseErrorKind::Utf8Error(ref e) => Some(e),
+            ParseErrorKind::ParseError(_) => None,
+        }
+    }
+}
+
 /// The specific parse Error.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ParseErrorKind {

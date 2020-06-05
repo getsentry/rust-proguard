@@ -173,10 +173,8 @@ impl<'s> Mapper<'s> {
     /// # Examples
     ///
     /// ```
-    /// use proguard::Mapper;
-    ///
     /// let mapping = r#"android.arch.core.executor.ArchTaskExecutor -> a.a.a.a.c:"#;
-    /// let mapper = Mapper::from(mapping);
+    /// let mapper = proguard::Mapper::from(mapping);
     ///
     /// let mapped = mapper.remap_class("a.a.a.a.c");
     /// assert_eq!(mapped, Some("android.arch.core.executor.ArchTaskExecutor"));

@@ -60,17 +60,17 @@ pub enum ParseErrorKind {
 
 /// A Proguard Mapping file.
 #[derive(Clone, Default)]
-pub struct ProguardMapping<'s> {
+pub struct Mapping<'s> {
     source: &'s [u8],
 }
 
-impl<'s> fmt::Debug for ProguardMapping<'s> {
+impl<'s> fmt::Debug for Mapping<'s> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ProguardMapping").finish()
+        f.debug_struct("Mapping").finish()
     }
 }
 
-impl<'s> ProguardMapping<'s> {
+impl<'s> Mapping<'s> {
     /// Create a new Proguard Mapping.
     pub fn new(source: &'s [u8]) -> Self {
         Self { source }
@@ -81,12 +81,12 @@ impl<'s> ProguardMapping<'s> {
     /// # Examples
     ///
     /// ```
-    /// use proguard::ProguardMapping;
+    /// use proguard::Mapping;
     ///
-    /// let valid = ProguardMapping::new(b"a -> b:\n    void method() -> b");
+    /// let valid = Mapping::new(b"a -> b:\n    void method() -> b");
     /// assert_eq!(valid.is_valid(), true);
     ///
-    /// let invalid = ProguardMapping::new(
+    /// let invalid = Mapping::new(
     ///     br#"
     /// # looks: like
     /// a -> proguard:
@@ -99,12 +99,10 @@ impl<'s> ProguardMapping<'s> {
         let mut has_class_line = false;
         for record in self.iter().take(50) {
             match record {
-                Ok(MappingRecord::Class { .. }) => {
+                Ok(Record::Class { .. }) => {
                     has_class_line = true;
                 }
-                Ok(MappingRecord::Field { .. }) | Ok(MappingRecord::Method { .. })
-                    if has_class_line =>
-                {
+                Ok(Record::Field { .. }) | Ok(Record::Method { .. }) if has_class_line => {
                     return true;
                 }
                 _ => {}
@@ -118,17 +116,17 @@ impl<'s> ProguardMapping<'s> {
     /// # Examples
     ///
     /// ```
-    /// use proguard::ProguardMapping;
+    /// use proguard::Mapping;
     ///
-    /// let with = ProguardMapping::new(b"a -> b:\n    1:1:void method() -> a");
+    /// let with = Mapping::new(b"a -> b:\n    1:1:void method() -> a");
     /// assert_eq!(with.has_line_info(), true);
     ///
-    /// let without = ProguardMapping::new(b"a -> b:\n    void method() -> b");
+    /// let without = Mapping::new(b"a -> b:\n    void method() -> b");
     /// assert_eq!(without.has_line_info(), false);
     /// ```
     pub fn has_line_info(&self) -> bool {
         for record in self.iter().take(100) {
-            if let Ok(MappingRecord::Method { line_mapping, .. }) = record {
+            if let Ok(Record::Method { line_mapping, .. }) = record {
                 return line_mapping.is_some();
             }
         }
@@ -147,11 +145,11 @@ impl<'s> ProguardMapping<'s> {
         Uuid::new_v5(&NAMESPACE, self.source)
     }
 
-    /// Create an Iterator over [`MappingRecord`]s.
+    /// Create an Iterator over [`Record`]s.
     ///
-    /// [`MappingRecord`]: enum.MappingRecord.html
-    pub fn iter(&self) -> MappingRecordIter<'s> {
-        MappingRecordIter { slice: self.source }
+    /// [`Record`]: enum.Record.html
+    pub fn iter(&self) -> RecordIter<'s> {
+        RecordIter { slice: self.source }
     }
 }
 
@@ -167,23 +165,23 @@ fn split_line(slice: &[u8]) -> (&[u8], &[u8]) {
     }
 }
 
-/// An Iterator yielding [`MappingRecord`]s, created by [`ProguardMapping::iter`].
+/// An Iterator yielding [`Record`]s, created by [`Mapping::iter`].
 ///
-/// [`MappingRecord`]: enum.MappingRecord.html
-/// [`ProguardMapping::iter`]: struct.ProguardMapping.html#method.iter
+/// [`Record`]: enum.Record.html
+/// [`Mapping::iter`]: struct.Mapping.html#method.iter
 #[derive(Clone, Default)]
-pub struct MappingRecordIter<'s> {
+pub struct RecordIter<'s> {
     slice: &'s [u8],
 }
 
-impl<'s> fmt::Debug for MappingRecordIter<'s> {
+impl<'s> fmt::Debug for RecordIter<'s> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MappingRecordIter").finish()
+        f.debug_struct("RecordIter").finish()
     }
 }
 
-impl<'s> Iterator for MappingRecordIter<'s> {
-    type Item = Result<MappingRecord<'s>, ParseError<'s>>;
+impl<'s> Iterator for RecordIter<'s> {
+    type Item = Result<Record<'s>, ParseError<'s>>;
     fn next(&mut self) -> Option<Self::Item> {
         // We loop here, ignoring empty lines, which is important also because
         // `split_line` above would output an empty line for each `\r\n`.
@@ -192,7 +190,7 @@ impl<'s> Iterator for MappingRecordIter<'s> {
             self.slice = rest;
 
             if !line.is_empty() {
-                return Some(MappingRecord::try_parse(line));
+                return Some(Record::try_parse(line));
             }
             if rest.is_empty() {
                 return None;
@@ -220,7 +218,7 @@ pub struct LineMapping {
 
 /// A Proguard Mapping Record.
 #[derive(Clone, Debug, PartialEq)]
-pub enum MappingRecord<'s> {
+pub enum Record<'s> {
     /// A Proguard Header.
     Header {
         /// The Key of the Header.
@@ -261,19 +259,19 @@ pub enum MappingRecord<'s> {
     },
 }
 
-impl<'s> MappingRecord<'s> {
+impl<'s> Record<'s> {
     /// Parses a line from a proguard mapping file.
     ///
     /// # Examples
     ///
     /// ```
-    /// use proguard::MappingRecord;
+    /// use proguard::Record;
     ///
     /// // Headers
-    /// let parsed = MappingRecord::try_parse(b"# compiler: R8");
+    /// let parsed = Record::try_parse(b"# compiler: R8");
     /// assert_eq!(
     ///     parsed,
-    ///     Ok(MappingRecord::Header {
+    ///     Ok(Record::Header {
     ///         key: "compiler",
     ///         value: Some("R8")
     ///     })
@@ -281,10 +279,10 @@ impl<'s> MappingRecord<'s> {
     ///
     /// // Class Mappings
     /// let parsed =
-    ///     MappingRecord::try_parse(b"android.arch.core.executor.ArchTaskExecutor -> a.a.a.a.c:");
+    ///     Record::try_parse(b"android.arch.core.executor.ArchTaskExecutor -> a.a.a.a.c:");
     /// assert_eq!(
     ///     parsed,
-    ///     Ok(MappingRecord::Class {
+    ///     Ok(Record::Class {
     ///         original: "android.arch.core.executor.ArchTaskExecutor",
     ///         obfuscated: "a.a.a.a.c"
     ///     })
@@ -292,10 +290,10 @@ impl<'s> MappingRecord<'s> {
     ///
     /// // Field
     /// let parsed =
-    ///     MappingRecord::try_parse(b"    android.arch.core.executor.ArchTaskExecutor sInstance -> a");
+    ///     Record::try_parse(b"    android.arch.core.executor.ArchTaskExecutor sInstance -> a");
     /// assert_eq!(
     ///     parsed,
-    ///     Ok(MappingRecord::Field {
+    ///     Ok(Record::Field {
     ///         ty: "android.arch.core.executor.ArchTaskExecutor",
     ///         original: "sInstance",
     ///         obfuscated: "a",
@@ -303,12 +301,12 @@ impl<'s> MappingRecord<'s> {
     /// );
     ///
     /// // Method without line mappings
-    /// let parsed = MappingRecord::try_parse(
+    /// let parsed = Record::try_parse(
     ///     b"    java.lang.Object putIfAbsent(java.lang.Object,java.lang.Object) -> b",
     /// );
     /// assert_eq!(
     ///     parsed,
-    ///     Ok(MappingRecord::Method {
+    ///     Ok(Record::Method {
     ///         ty: "java.lang.Object",
     ///         original: "putIfAbsent",
     ///         obfuscated: "b",
@@ -319,12 +317,12 @@ impl<'s> MappingRecord<'s> {
     /// );
     ///
     /// // Inlined method from foreign class
-    /// let parsed = MappingRecord::try_parse(
+    /// let parsed = Record::try_parse(
     ///     b"    1016:1016:void com.example1.domain.MyBean.doWork():16:16 -> buttonClicked",
     /// );
     /// assert_eq!(
     ///     parsed,
-    ///     Ok(MappingRecord::Method {
+    ///     Ok(Record::Method {
     ///         ty: "void",
     ///         original: "doWork",
     ///         obfuscated: "buttonClicked",
@@ -356,12 +354,12 @@ impl<'s> MappingRecord<'s> {
 /// Returns `None` if the line could not be parsed.
 // TODO: this function is private here, but in the future it would be nice to
 // better elaborate parse errors.
-fn parse_mapping(mut line: &str) -> Option<MappingRecord> {
+fn parse_mapping(mut line: &str) -> Option<Record> {
     if line.starts_with('#') {
         let mut split = line[1..].splitn(2, ':');
         let key = split.next()?.trim();
         let value = split.next().map(|s| s.trim());
-        return Some(MappingRecord::Header { key, value });
+        return Some(Record::Header { key, value });
     }
     if !line.starts_with("    ") {
         // class line: `originalclassname -> obfuscatedclassname:`
@@ -372,7 +370,7 @@ fn parse_mapping(mut line: &str) -> Option<MappingRecord> {
         }
         let mut obfuscated = split.next()?;
         obfuscated = &obfuscated[..obfuscated.len() - 1];
-        return Some(MappingRecord::Class {
+        return Some(Record::Class {
             original,
             obfuscated,
         });
@@ -422,7 +420,7 @@ fn parse_mapping(mut line: &str) -> Option<MappingRecord> {
     original = args.next()?;
 
     Some(match args.next() {
-        None => MappingRecord::Field {
+        None => Record::Field {
             ty,
             original,
             obfuscated,
@@ -437,7 +435,7 @@ fn parse_mapping(mut line: &str) -> Option<MappingRecord> {
             original = split_class.next()?;
             let original_class = split_class.next();
 
-            MappingRecord::Method {
+            Record::Method {
                 ty,
                 original,
                 obfuscated,

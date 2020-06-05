@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
-use std::{fmt::Write, iter::FusedIterator};
+use std::fmt::Write;
+use std::iter::FusedIterator;
 
-use crate::mapping::{Mapping, Record};
+use crate::mapping::{ProguardMapping, ProguardRecord};
 use crate::stacktrace::StackFrame;
 
 #[derive(Clone, Debug)]
@@ -88,20 +89,20 @@ impl FusedIterator for RemappedFrameIter<'_> {}
 /// This can remap class names, stack frames one at a time, or the complete
 /// raw stacktrace.
 #[derive(Clone, Debug)]
-pub struct Mapper<'s> {
+pub struct ProguardMapper<'s> {
     classes: HashMap<&'s str, ClassMapping<'s>>,
 }
 
-impl<'s> From<&'s str> for Mapper<'s> {
+impl<'s> From<&'s str> for ProguardMapper<'s> {
     fn from(s: &'s str) -> Self {
-        let mapping = Mapping::new(s.as_ref());
+        let mapping = ProguardMapping::new(s.as_ref());
         Self::new(mapping)
     }
 }
 
-impl<'s> Mapper<'s> {
-    /// Create a new Mapper.
-    pub fn new(mapping: Mapping<'s>) -> Self {
+impl<'s> ProguardMapper<'s> {
+    /// Create a new ProguardMapper.
+    pub fn new(mapping: ProguardMapping<'s>) -> Self {
         let mut classes = HashMap::new();
         let mut class = ClassMapping {
             original: "",
@@ -111,7 +112,7 @@ impl<'s> Mapper<'s> {
 
         for record in mapping.iter().filter_map(Result::ok) {
             match record {
-                Record::Class {
+                ProguardRecord::Class {
                     original,
                     obfuscated,
                 } => {
@@ -124,7 +125,7 @@ impl<'s> Mapper<'s> {
                         members: BTreeMap::new(),
                     }
                 }
-                Record::Method {
+                ProguardRecord::Method {
                     original,
                     obfuscated,
                     original_class,
@@ -174,7 +175,7 @@ impl<'s> Mapper<'s> {
     ///
     /// ```
     /// let mapping = r#"android.arch.core.executor.ArchTaskExecutor -> a.a.a.a.c:"#;
-    /// let mapper = proguard::Mapper::from(mapping);
+    /// let mapper = proguard::ProguardMapper::from(mapping);
     ///
     /// let mapped = mapper.remap_class("a.a.a.a.c");
     /// assert_eq!(mapped, Some("android.arch.core.executor.ArchTaskExecutor"));

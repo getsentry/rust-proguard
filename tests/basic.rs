@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 
-use proguard::{Mapper, Mapping, StackFrame};
+use proguard::{ProguardMapper, ProguardMapping, StackFrame};
 
 static MAPPING: &[u8] = include_bytes!("res/mapping.txt");
 lazy_static! {
@@ -16,7 +16,7 @@ lazy_static! {
 
 #[test]
 fn test_basic() {
-    let mapper = Mapper::new(Mapping::new(MAPPING));
+    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING));
 
     let class = mapper.remap_class("android.support.constraint.ConstraintLayout$a");
     assert_eq!(
@@ -27,7 +27,7 @@ fn test_basic() {
 
 #[test]
 fn test_basic_win() {
-    let mapper = Mapper::new(Mapping::new(&MAPPING_WIN[..]));
+    let mapper = ProguardMapper::new(ProguardMapping::new(&MAPPING_WIN[..]));
 
     let class = mapper.remap_class("android.support.constraint.ConstraintLayout$a");
     assert_eq!(
@@ -38,7 +38,7 @@ fn test_basic_win() {
 
 #[test]
 fn test_method_matches() {
-    let mapper = Mapper::new(Mapping::new(MAPPING));
+    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING));
 
     let mut mapped =
         mapper.remap_frame(&StackFrame::new("android.support.constraint.a.a", "a", 320));
@@ -69,7 +69,7 @@ fn test_method_matches() {
 
 #[test]
 fn test_method_matches_win() {
-    let mapper = Mapper::new(Mapping::new(&MAPPING_WIN[..]));
+    let mapper = ProguardMapper::new(ProguardMapping::new(&MAPPING_WIN[..]));
 
     let mut mapped =
         mapper.remap_frame(&StackFrame::new("android.support.constraint.a.a", "a", 320));
@@ -102,7 +102,7 @@ fn test_method_matches_win() {
 #[test]
 fn test_uuid() {
     assert_eq!(
-        Mapping::new(MAPPING).uuid(),
+        ProguardMapping::new(MAPPING).uuid(),
         "5cd8e873-1127-5276-81b7-8ff25043ecfd".parse().unwrap()
     );
 }
@@ -111,7 +111,7 @@ fn test_uuid() {
 #[test]
 fn test_uuid_win() {
     assert_eq!(
-        Mapping::new(&MAPPING_WIN[..]).uuid(),
+        ProguardMapping::new(&MAPPING_WIN[..]).uuid(),
         "71d468f2-0dc4-5017-9f12-1a81081913ef".parse().unwrap()
     );
 }

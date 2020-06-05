@@ -12,7 +12,7 @@
 //! android.arch.core.internal.SafeIterableMap -> a.a.a.b.c:
 //!     13:13:java.util.Map$Entry eldest():168:168 -> a
 //! "#;
-//! let mapper = proguard::Mapper::from(mapping);
+//! let mapper = proguard::ProguardMapper::from(mapping);
 //!
 //! // re-mapping a classname
 //! assert_eq!(
@@ -39,6 +39,8 @@ mod mapper;
 mod mapping;
 mod stacktrace;
 
-pub use mapper::{Mapper, RemappedFrameIter};
-pub use mapping::{LineMapping, Mapping, ParseError, ParseErrorKind, Record, RecordIter};
+pub use mapper::{ProguardMapper, RemappedFrameIter};
+pub use mapping::{
+    LineMapping, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord, ProguardRecordIter,
+};
 pub use stacktrace::StackFrame;

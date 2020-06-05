@@ -1,9 +1,9 @@
-use proguard::{Mapper, StackFrame};
+use proguard::{ProguardMapper, StackFrame};
 
 #[test]
 fn test_remap() {
     // https://github.com/getsentry/rust-proguard/issues/5#issue-410310382
-    let mapper = Mapper::from(
+    let mapper = ProguardMapper::from(
         r#"some.Class -> obfuscated:
     7:8:void method3(long):78:79 -> main
     7:8:void method2(int):87 -> main
@@ -21,7 +21,7 @@ fn test_remap() {
     );
 
     // https://github.com/getsentry/rust-proguard/issues/6#issuecomment-605610326
-    let mapper = Mapper::from(
+    let mapper = ProguardMapper::from(
         r#"com.exmaple.app.MainActivity -> com.exmaple.app.MainActivity:
     com.example1.domain.MyBean myBean -> p
     1:1:void <init>():11:11 -> <init>
@@ -40,7 +40,7 @@ fn test_remap() {
     );
 
     // https://github.com/getsentry/rust-proguard/issues/6#issuecomment-605613412
-    let mapper = Mapper::from(
+    let mapper = ProguardMapper::from(
         r#"com.exmaple.app.MainActivity -> com.exmaple.app.MainActivity:
     com.example1.domain.MyBean myBean -> k
     11:11:void <init>() -> <init>
@@ -60,7 +60,7 @@ fn test_remap() {
 
 #[test]
 fn test_remap_no_lines() {
-    let mapper = Mapper::from(
+    let mapper = ProguardMapper::from(
         r#"original.class.name -> a:
     void originalMethodName() -> b"#,
     );

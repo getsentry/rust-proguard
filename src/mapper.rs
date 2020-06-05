@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::{fmt::Write, iter::FusedIterator};
 
-use crate::mapping::{MappingRecord, ProguardMapping};
+use crate::mapping::{Mapping, Record};
 use crate::stacktrace::StackFrame;
 
 #[derive(Clone, Debug)]
@@ -88,20 +88,20 @@ impl FusedIterator for RemappedFrameIter<'_> {}
 /// This can remap class names, stack frames one at a time, or the complete
 /// raw stacktrace.
 #[derive(Clone, Debug)]
-pub struct ProguardMapper<'s> {
+pub struct Mapper<'s> {
     classes: HashMap<&'s str, ClassMapping<'s>>,
 }
 
-impl<'s> From<&'s str> for ProguardMapper<'s> {
+impl<'s> From<&'s str> for Mapper<'s> {
     fn from(s: &'s str) -> Self {
-        let mapping = ProguardMapping::new(s.as_ref());
+        let mapping = Mapping::new(s.as_ref());
         Self::new(mapping)
     }
 }
 
-impl<'s> ProguardMapper<'s> {
-    /// Create a new ProguardMapper.
-    pub fn new(mapping: ProguardMapping<'s>) -> Self {
+impl<'s> Mapper<'s> {
+    /// Create a new Mapper.
+    pub fn new(mapping: Mapping<'s>) -> Self {
         let mut classes = HashMap::new();
         let mut class = ClassMapping {
             original: "",
@@ -111,7 +111,7 @@ impl<'s> ProguardMapper<'s> {
 
         for record in mapping.iter().filter_map(Result::ok) {
             match record {
-                MappingRecord::Class {
+                Record::Class {
                     original,
                     obfuscated,
                 } => {
@@ -124,7 +124,7 @@ impl<'s> ProguardMapper<'s> {
                         members: BTreeMap::new(),
                     }
                 }
-                MappingRecord::Method {
+                Record::Method {
                     original,
                     obfuscated,
                     original_class,
@@ -145,7 +145,7 @@ impl<'s> ProguardMapper<'s> {
                                 None => (line_mapping.startline, Some(line_mapping.endline)),
                             }
                         });
-                    let members = class.members.entry(obfuscated).or_insert_with(|| vec![]);
+                    let members = class.members.entry(obfuscated).or_insert_with(Vec::new);
                     members.push(MemberMapping {
                         startline,
                         endline,
@@ -173,10 +173,8 @@ impl<'s> ProguardMapper<'s> {
     /// # Examples
     ///
     /// ```
-    /// use proguard::ProguardMapper;
-    ///
     /// let mapping = r#"android.arch.core.executor.ArchTaskExecutor -> a.a.a.a.c:"#;
-    /// let mapper = ProguardMapper::from(mapping);
+    /// let mapper = proguard::Mapper::from(mapping);
     ///
     /// let mapped = mapper.remap_class("a.a.a.a.c");
     /// assert_eq!(mapped, Some("android.arch.core.executor.ArchTaskExecutor"));

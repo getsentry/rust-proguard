@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+**Fixes**
+
+- Fix `has_line_info` to not short-circuit when it found lines _without_ line-info.
+
 ## 4.0.0
 
 This is a complete rewrite of the crate.

@@ -209,7 +209,12 @@ impl<'s> ProguardMapper<'s> {
             match StackFrame::try_parse(line.as_ref()) {
                 None => writeln!(&mut stacktrace, "{}", line)?,
                 Some(frame) => {
-                    for line in self.remap_frame(&frame) {
+                    let mut remapped = self.remap_frame(&frame).peekable();
+                    if remapped.peek().is_none() {
+                        writeln!(&mut stacktrace, "{}", line)?;
+                        continue;
+                    }
+                    for line in remapped {
                         writeln!(
                             &mut stacktrace,
                             "    at {}.{}({}:{})",

@@ -17,7 +17,11 @@ lazy_static! {
 
 #[test]
 fn test_basic_r8() {
-    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_R8));
+    let mapping = ProguardMapping::new(MAPPING_R8);
+    assert!(mapping.is_valid());
+    assert!(mapping.has_line_info());
+
+    let mapper = ProguardMapper::new(mapping);
 
     let class = mapper.remap_class("a.a.a.a.c");
     assert_eq!(class, Some("android.arch.core.executor.ArchTaskExecutor"));

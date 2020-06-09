@@ -96,6 +96,8 @@ impl<'s> ProguardMapping<'s> {
     /// assert_eq!(invalid.is_valid(), false);
     /// ```
     pub fn is_valid(&self) -> bool {
+        // In order to not parse the whole file, we look for a class followed by
+        // a member in the first 50 lines, which is a good heuristic.
         let mut has_class_line = false;
         for record in self.iter().take(50) {
             match record {
@@ -127,9 +129,13 @@ impl<'s> ProguardMapping<'s> {
     /// assert_eq!(without.has_line_info(), false);
     /// ```
     pub fn has_line_info(&self) -> bool {
+        // Similarly to `is_valid` above, we only scan the first 100 lines, and
+        // are looking for a method record with a valid line_mapping.
         for record in self.iter().take(100) {
             if let Ok(ProguardRecord::Method { line_mapping, .. }) = record {
-                return line_mapping.is_some();
+                if line_mapping.is_some() {
+                    return true;
+                }
             }
         }
         false

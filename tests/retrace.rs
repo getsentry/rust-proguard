@@ -75,3 +75,34 @@ fn test_remap_no_lines() {
     );
     assert_eq!(mapped.next(), None);
 }
+
+#[test]
+fn test_remap_kotlin() {
+    let mapper = ProguardMapper::from(
+        r#"io.sentry.sample.-$$Lambda$r3Avcbztes2hicEObh02jjhQqd4 -> e.a.c.a:
+    io.sentry.sample.MainActivity f$0 -> b
+    1:1:void io.sentry.sample.KotlinSampleKt.fun3(io.sentry.sample.KotlinSample):16:16 -> onClick
+    1:1:void io.sentry.sample.KotlinSample.fun2():11 -> onClick
+    1:1:void io.sentry.sample.KotlinSample.fun1():7 -> onClick
+    1:1:void io.sentry.sample.MainActivity.bar():56 -> onClick
+    1:1:void io.sentry.sample.MainActivity.foo():44 -> onClick
+    1:1:void io.sentry.sample.MainActivity.onClickHandler(android.view.View):40 -> onClick
+    1:1:void onClick(android.view.View):0 -> onClick"#,
+    );
+
+    let mapped = mapper
+        .remap_stacktrace("    at e.a.c.a.onClick(lambda:1)")
+        .unwrap();
+
+    assert_eq!(
+        mapped.trim(),
+        r#"    at io.sentry.sample.KotlinSampleKt.fun3(<unknown>:16)
+    at io.sentry.sample.KotlinSample.fun2(<unknown>:11)
+    at io.sentry.sample.KotlinSample.fun1(<unknown>:7)
+    at io.sentry.sample.MainActivity.bar(<unknown>:56)
+    at io.sentry.sample.MainActivity.foo(<unknown>:44)
+    at io.sentry.sample.MainActivity.onClickHandler(<unknown>:40)
+    at io.sentry.sample.-$$Lambda$r3Avcbztes2hicEObh02jjhQqd4.onClick(lambda:0)"#
+            .trim()
+    );
+}

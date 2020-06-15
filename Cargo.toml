@@ -2,7 +2,7 @@
 name = "proguard"
 version = "4.0.1"
 authors = ["Sentry <oss@sentry.io>"]
-keywords = ["proguard", "retrace"]
+keywords = ["proguard", "retrace", "android", "r8"]
 description = "Basic proguard mapping file handling for Rust"
 repository = "https://github.com/getsentry/sentry-rust"
 homepage = "https://sentry.io/welcome/"

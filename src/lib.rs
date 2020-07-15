@@ -41,6 +41,7 @@ mod stacktrace;
 
 pub use mapper::{ProguardMapper, RemappedFrameIter};
 pub use mapping::{
-    LineMapping, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord, ProguardRecordIter,
+    LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord,
+    ProguardRecordIter,
 };
 pub use stacktrace::StackFrame;

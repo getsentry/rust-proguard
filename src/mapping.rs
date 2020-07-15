@@ -58,6 +58,78 @@ pub enum ParseErrorKind {
     ParseError(&'static str),
 }
 
+/// Summary of a mapping file.
+pub struct MappingSummary<'s> {
+    compiler: Option<&'s str>,
+    compiler_version: Option<&'s str>,
+    min_api: Option<u32>,
+    class_count: usize,
+    method_count: usize,
+}
+
+impl<'s> MappingSummary<'s> {
+    fn new(mapping: &'s ProguardMapping<'s>) -> MappingSummary<'s> {
+        let mut compiler = None;
+        let mut compiler_version = None;
+        let mut min_api = None;
+        let mut class_count = 0;
+        let mut method_count = 0;
+
+        for record in mapping.iter() {
+            match record {
+                Ok(ProguardRecord::Header { key, value }) => match key {
+                    "compiler" => {
+                        compiler = value;
+                    }
+                    "compiler_version" => {
+                        compiler_version = value;
+                    }
+                    "min_api" => {
+                        min_api = value.and_then(|x| x.parse().ok());
+                    }
+                    _ => {}
+                },
+                Ok(ProguardRecord::Class { .. }) => class_count += 1,
+                Ok(ProguardRecord::Method { .. }) => method_count += 1,
+                _ => {}
+            }
+        }
+
+        MappingSummary {
+            compiler,
+            compiler_version,
+            min_api,
+            class_count,
+            method_count,
+        }
+    }
+
+    /// Returns the name of the compiler that created the proguard mapping.
+    pub fn compiler(&self) -> Option<&str> {
+        self.compiler
+    }
+
+    /// Returns the version of the compiler.
+    pub fn compiler_version(&self) -> Option<&str> {
+        self.compiler_version
+    }
+
+    /// Returns the min-api value.
+    pub fn min_api(&self) -> Option<u32> {
+        self.min_api
+    }
+
+    /// Returns the number of classes in the mapping file.
+    pub fn class_count(&self) -> usize {
+        self.class_count
+    }
+
+    /// Returns the number of methods in the mapping file.
+    pub fn method_count(&self) -> usize {
+        self.method_count
+    }
+}
+
 /// A Proguard Mapping file.
 #[derive(Clone, Default)]
 pub struct ProguardMapping<'s> {
@@ -113,6 +185,11 @@ impl<'s> ProguardMapping<'s> {
             }
         }
         false
+    }
+
+    /// Returns a summary of the file.
+    pub fn summary(&self) -> MappingSummary<'_> {
+        MappingSummary::new(self)
     }
 
     /// Whether the mapping file contains line info.

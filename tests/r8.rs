@@ -69,6 +69,18 @@ fn test_method_matches() {
     assert_eq!(mapped.next(), None);
 }
 
+#[test]
+fn test_summary() {
+    let mapping = ProguardMapping::new(MAPPING_R8);
+
+    let summary = mapping.summary();
+    assert_eq!(summary.compiler(), Some("R8"));
+    assert_eq!(summary.compiler_version(), Some("1.3.49"));
+    assert_eq!(summary.min_api(), Some(15));
+    assert_eq!(summary.class_count(), 1167);
+    assert_eq!(summary.method_count(), 24076);
+}
+
 #[cfg(feature = "uuid")]
 #[test]
 fn test_uuid() {

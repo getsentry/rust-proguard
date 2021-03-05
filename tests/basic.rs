@@ -135,7 +135,7 @@ fn test_inlines() {
     at java.lang.reflect.Method.invoke(Method.java)
     at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:492)
     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:930)"#;
-    let remapped = mapper.remap_stacktrace(raw).unwrap();
+    let remapped = mapper.remap_stacktrace_str(raw).unwrap();
 
     assert_eq!(
         remapped.trim(),

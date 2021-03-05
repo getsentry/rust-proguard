@@ -1,9 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::Write;
+use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
-use crate::mapping::{ProguardMapping, ProguardRecord};
-use crate::stacktrace::StackFrame;
+use crate::stacktrace::{self, StackFrame, Throwable};
+use crate::{
+    mapping::{ProguardMapping, ProguardRecord},
+    stacktrace::StackTrace,
+};
 
 #[derive(Clone, Debug)]
 struct MemberMapping<'s> {
@@ -64,15 +67,15 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
             let file = if member.original_class.is_some() {
                 None
             } else {
-                frame.file.clone()
+                frame.file
             };
             let class = match member.original_class {
-                Some(class) => class.into(),
-                _ => frame.class.clone(),
+                Some(class) => class,
+                _ => frame.class,
             };
             return Some(StackFrame {
                 class,
-                method: member.original.into(),
+                method: member.original,
                 file,
                 line,
             });
@@ -189,44 +192,250 @@ impl<'s> ProguardMapper<'s> {
     /// Returns zero or more [`StackFrame`]s, based on the information in
     /// the proguard mapping. This can return more than one frame in the case
     /// of inlined functions. In that case, frames are sorted top to bottom.
-    ///
-    /// [`StackFrame`]: struct.StackFrame.html
     pub fn remap_frame(&'s self, frame: &StackFrame<'s>) -> RemappedFrameIter<'s> {
-        if let Some(class) = self.classes.get(frame.class.as_ref()) {
-            if let Some(members) = class.members.get(frame.method.as_ref()) {
+        if let Some(class) = self.classes.get(frame.class) {
+            if let Some(members) = class.members.get(frame.method) {
                 let mut frame = frame.clone();
-                frame.class = class.original.into();
+                frame.class = class.original;
                 return RemappedFrameIter::members(frame, members.iter());
             }
         }
         RemappedFrameIter::empty()
     }
 
+    /// Remaps a throwable which is the first line of a full stacktrace.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use proguard::{ProguardMapper,Throwable};
+    ///
+    /// let mapping = "com.example.Mapper -> a.b:";
+    /// let mapper = ProguardMapper::from(mapping);
+    ///
+    /// let throwable = Throwable::try_parse(b"a.b: Crash").unwrap();
+    /// let mapped = mapper.remap_throwable(&throwable);
+    ///
+    /// assert_eq!(Some(Throwable::with_message("com.example.Mapper", "Crash")), mapped);
+    /// ```
+    pub fn remap_throwable<'a>(&'a self, throwable: &Throwable<'a>) -> Option<Throwable<'a>> {
+        if let Some(class) = self.remap_class(throwable.class) {
+            Some(Throwable {
+                class,
+                message: throwable.message,
+            })
+        } else {
+            None
+        }
+    }
+
     /// Remaps a complete Java StackTrace.
-    pub fn remap_stacktrace(&'s self, input: &'s str) -> Result<String, std::fmt::Error> {
+    pub fn remap_stacktrace<'a>(&'a self, trace: &StackTrace<'a>) -> StackTrace<'a> {
+        let exception = trace
+            .exception
+            .as_ref()
+            .and_then(|t| self.remap_throwable(t));
+
+        let frames =
+            trace
+                .frames
+                .iter()
+                .fold(Vec::with_capacity(trace.frames.len()), |mut frames, f| {
+                    let mut peek_frames = self.remap_frame(f).peekable();
+                    if peek_frames.peek().is_some() {
+                        frames.extend(peek_frames);
+                    } else {
+                        frames.push(f.clone());
+                    }
+
+                    frames
+                });
+
+        let cause = trace
+            .cause
+            .as_ref()
+            .map(|c| Box::new(self.remap_stacktrace(c)));
+
+        StackTrace {
+            exception,
+            frames,
+            cause,
+        }
+    }
+
+    /// Remaps a complete Java StackTrace, similar to [`Self::remap_stacktrace`] but instead works on
+    /// strings as input and output.
+    pub fn remap_stacktrace_str(&self, input: &str) -> Result<String, std::fmt::Error> {
         let mut stacktrace = String::new();
-        for line in input.lines() {
-            match StackFrame::try_parse(line.as_ref()) {
-                None => writeln!(&mut stacktrace, "{}", line)?,
-                Some(frame) => {
-                    let mut remapped = self.remap_frame(&frame).peekable();
-                    if remapped.peek().is_none() {
-                        writeln!(&mut stacktrace, "{}", line)?;
-                        continue;
-                    }
-                    for line in remapped {
-                        writeln!(
-                            &mut stacktrace,
-                            "    at {}.{}({}:{})",
-                            line.class,
-                            line.method,
-                            line.file.as_deref().unwrap_or("<unknown>"),
-                            line.line
-                        )?;
-                    }
+        let mut lines = input.lines();
+
+        if let Some(line) = lines.next() {
+            match stacktrace::parse_throwable(line) {
+                None => match stacktrace::parse_frame(line) {
+                    None => writeln!(&mut stacktrace, "{}", line)?,
+                    Some(frame) => format_frames(&mut stacktrace, line, self.remap_frame(&frame))?,
+                },
+                Some(throwable) => {
+                    format_throwable(&mut stacktrace, line, self.remap_throwable(&throwable))?
                 }
             }
         }
+
+        for line in lines {
+            match stacktrace::parse_frame(line) {
+                None => match line
+                    .strip_prefix("Caused by: ")
+                    .and_then(stacktrace::parse_throwable)
+                {
+                    None => writeln!(&mut stacktrace, "{}", line)?,
+                    Some(cause) => {
+                        format_cause(&mut stacktrace, line, self.remap_throwable(&cause))?
+                    }
+                },
+                Some(frame) => format_frames(&mut stacktrace, line, self.remap_frame(&frame))?,
+            }
+        }
         Ok(stacktrace)
+    }
+}
+
+fn format_throwable(
+    stacktrace: &mut impl Write,
+    line: &str,
+    throwable: Option<Throwable<'_>>,
+) -> Result<(), FmtError> {
+    if let Some(throwable) = throwable {
+        writeln!(stacktrace, "{}", throwable)
+    } else {
+        writeln!(stacktrace, "{}", line)
+    }
+}
+
+fn format_frames<'s>(
+    stacktrace: &mut impl Write,
+    line: &str,
+    remapped: impl Iterator<Item = StackFrame<'s>>,
+) -> Result<(), FmtError> {
+    let mut remapped = remapped.peekable();
+
+    if remapped.peek().is_none() {
+        return writeln!(stacktrace, "{}", line);
+    }
+    for line in remapped {
+        writeln!(stacktrace, "    {}", line)?;
+    }
+
+    Ok(())
+}
+
+fn format_cause(
+    stacktrace: &mut impl Write,
+    line: &str,
+    cause: Option<Throwable<'_>>,
+) -> Result<(), FmtError> {
+    if let Some(cause) = cause {
+        writeln!(stacktrace, "Caused by: {}", cause)
+    } else {
+        writeln!(stacktrace, "{}", line)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stacktrace() {
+        let mapping = "\
+com.example.MainFragment$EngineFailureException -> com.example.MainFragment$d:
+com.example.MainFragment$RocketException -> com.example.MainFragment$e:
+com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
+    1:1:void com.example.MainFragment$Rocket.startEngines():90:90 -> onClick
+    1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
+    1:1:void onClick(android.view.View):65 -> onClick
+    2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
+    2:2:void onClick(android.view.View):65 -> onClick
+    ";
+        let stacktrace = StackTrace {
+            exception: Some(Throwable {
+                class: "com.example.MainFragment$e",
+                message: Some("Crash!"),
+            }),
+            frames: vec![
+                StackFrame {
+                    class: "com.example.MainFragment$g",
+                    method: "onClick",
+                    line: 2,
+                    file: Some("SourceFile"),
+                },
+                StackFrame {
+                    class: "android.view.View",
+                    method: "performClick",
+                    line: 7393,
+                    file: Some("View.java"),
+                },
+            ],
+            cause: Some(Box::new(StackTrace {
+                exception: Some(Throwable {
+                    class: "com.example.MainFragment$d",
+                    message: Some("Engines overheating"),
+                }),
+                frames: vec![StackFrame {
+                    class: "com.example.MainFragment$g",
+                    method: "onClick",
+                    line: 1,
+                    file: Some("SourceFile"),
+                }],
+                cause: None,
+            })),
+        };
+        let expect = "\
+com.example.MainFragment$RocketException: Crash!
+    at com.example.MainFragment$Rocket.fly(<unknown>:85)
+    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    at android.view.View.performClick(View.java:7393)
+Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
+    at com.example.MainFragment$Rocket.startEngines(<unknown>:90)
+    at com.example.MainFragment$Rocket.fly(<unknown>:83)
+    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)\n";
+
+        let mapper = ProguardMapper::from(mapping);
+
+        assert_eq!(expect, mapper.remap_stacktrace(&stacktrace).to_string());
+    }
+
+    #[test]
+    fn stacktrace_str() {
+        let mapping = "\
+com.example.MainFragment$EngineFailureException -> com.example.MainFragment$d:
+com.example.MainFragment$RocketException -> com.example.MainFragment$e:
+com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
+    1:1:void com.example.MainFragment$Rocket.startEngines():90:90 -> onClick
+    1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
+    1:1:void onClick(android.view.View):65 -> onClick
+    2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
+    2:2:void onClick(android.view.View):65 -> onClick
+    ";
+        let stacktrace = "\
+com.example.MainFragment$e: Crash!
+    at com.example.MainFragment$g.onClick(SourceFile:2)
+    at android.view.View.performClick(View.java:7393)
+Caused by: com.example.MainFragment$d: Engines overheating
+    at com.example.MainFragment$g.onClick(SourceFile:1)
+    ... 13 more";
+        let expect = "\
+com.example.MainFragment$RocketException: Crash!
+    at com.example.MainFragment$Rocket.fly(<unknown>:85)
+    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    at android.view.View.performClick(View.java:7393)
+Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
+    at com.example.MainFragment$Rocket.startEngines(<unknown>:90)
+    at com.example.MainFragment$Rocket.fly(<unknown>:83)
+    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    ... 13 more\n";
+
+        let mapper = ProguardMapper::from(mapping);
+
+        assert_eq!(expect, mapper.remap_stacktrace_str(stacktrace).unwrap());
     }
 }

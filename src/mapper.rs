@@ -226,43 +226,9 @@ impl<'s> ProguardMapper<'s> {
         }
     }
 
-    /// Remaps a complete Java StackTrace.
-    pub fn remap_stacktrace<'a>(&'a self, trace: &StackTrace<'a>) -> StackTrace<'a> {
-        let exception = trace
-            .exception
-            .as_ref()
-            .and_then(|t| self.remap_throwable(t));
-
-        let frames =
-            trace
-                .frames
-                .iter()
-                .fold(Vec::with_capacity(trace.frames.len()), |mut frames, f| {
-                    let mut peek_frames = self.remap_frame(f).peekable();
-                    if peek_frames.peek().is_some() {
-                        frames.extend(peek_frames);
-                    } else {
-                        frames.push(f.clone());
-                    }
-
-                    frames
-                });
-
-        let cause = trace
-            .cause
-            .as_ref()
-            .map(|c| Box::new(self.remap_stacktrace(c)));
-
-        StackTrace {
-            exception,
-            frames,
-            cause,
-        }
-    }
-
     /// Remaps a complete Java StackTrace, similar to [`Self::remap_stacktrace`] but instead works on
     /// strings as input and output.
-    pub fn remap_stacktrace_str(&self, input: &str) -> Result<String, std::fmt::Error> {
+    pub fn remap_stacktrace(&self, input: &str) -> Result<String, std::fmt::Error> {
         let mut stacktrace = String::new();
         let mut lines = input.lines();
 
@@ -293,6 +259,40 @@ impl<'s> ProguardMapper<'s> {
             }
         }
         Ok(stacktrace)
+    }
+
+    /// Remaps a complete Java StackTrace.
+    pub fn remap_stacktrace_typed<'a>(&'a self, trace: &StackTrace<'a>) -> StackTrace<'a> {
+        let exception = trace
+            .exception
+            .as_ref()
+            .and_then(|t| self.remap_throwable(t));
+
+        let frames =
+            trace
+                .frames
+                .iter()
+                .fold(Vec::with_capacity(trace.frames.len()), |mut frames, f| {
+                    let mut peek_frames = self.remap_frame(f).peekable();
+                    if peek_frames.peek().is_some() {
+                        frames.extend(peek_frames);
+                    } else {
+                        frames.push(f.clone());
+                    }
+
+                    frames
+                });
+
+        let cause = trace
+            .cause
+            .as_ref()
+            .map(|c| Box::new(self.remap_stacktrace_typed(c)));
+
+        StackTrace {
+            exception,
+            frames,
+            cause,
+        }
     }
 }
 
@@ -398,7 +398,10 @@ Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
 
         let mapper = ProguardMapper::from(mapping);
 
-        assert_eq!(expect, mapper.remap_stacktrace(&stacktrace).to_string());
+        assert_eq!(
+            expect,
+            mapper.remap_stacktrace_typed(&stacktrace).to_string()
+        );
     }
 
     #[test]
@@ -433,6 +436,6 @@ Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
 
         let mapper = ProguardMapper::from(mapping);
 
-        assert_eq!(expect, mapper.remap_stacktrace_str(stacktrace).unwrap());
+        assert_eq!(expect, mapper.remap_stacktrace(stacktrace).unwrap());
     }
 }

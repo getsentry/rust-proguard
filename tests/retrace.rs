@@ -11,7 +11,7 @@ fn test_remap() {
     7:8:void main(java.lang.String[]):101 -> main"#,
     );
     let stacktrace = "    at obfuscated.main(Foo.java:8)";
-    let mapped = mapper.remap_stacktrace_str(stacktrace).unwrap();
+    let mapped = mapper.remap_stacktrace(stacktrace).unwrap();
     assert_eq!(
         mapped,
         "    at some.Class.method3(Foo.java:79)
@@ -32,7 +32,7 @@ fn test_remap() {
     2:5:void onCreate(android.os.Bundle):22:25 -> onCreate"#,
     );
     let stacktrace = "    at com.exmaple.app.MainActivity.buttonClicked(MainActivity.java:2)";
-    let mapped = mapper.remap_stacktrace_str(stacktrace).unwrap();
+    let mapped = mapper.remap_stacktrace(stacktrace).unwrap();
     assert_eq!(
         mapped,
         "    at com.example1.domain.MyBean.doWork(<unknown>:16)
@@ -50,7 +50,7 @@ fn test_remap() {
     1016:1016:void buttonClicked(android.view.View):29 -> buttonClicked"#,
     );
     let stacktrace = "    at com.exmaple.app.MainActivity.buttonClicked(MainActivity.java:1016)";
-    let mapped = mapper.remap_stacktrace_str(stacktrace).unwrap();
+    let mapped = mapper.remap_stacktrace(stacktrace).unwrap();
     assert_eq!(
         mapped,
         "    at com.example1.domain.MyBean.doWork(<unknown>:16)
@@ -91,7 +91,7 @@ fn test_remap_kotlin() {
     );
 
     let mapped = mapper
-        .remap_stacktrace_str("    at e.a.c.a.onClick(lambda:1)")
+        .remap_stacktrace("    at e.a.c.a.onClick(lambda:1)")
         .unwrap();
 
     assert_eq!(

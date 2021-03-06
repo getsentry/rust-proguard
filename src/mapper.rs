@@ -2,11 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
-use crate::stacktrace::{self, StackFrame, Throwable};
-use crate::{
-    mapping::{ProguardMapping, ProguardRecord},
-    stacktrace::StackTrace,
-};
+use crate::mapping::{ProguardMapping, ProguardRecord};
+use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
 
 #[derive(Clone, Debug)]
 struct MemberMapping<'s> {

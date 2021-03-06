@@ -440,8 +440,8 @@ impl<'s> ProguardRecord<'s> {
 // TODO: this function is private here, but in the future it would be nice to
 // better elaborate parse errors.
 fn parse_mapping(mut line: &str) -> Option<ProguardRecord> {
-    if line.starts_with('#') {
-        let mut split = line[1..].splitn(2, ':');
+    if let Some(line) = line.strip_prefix('#') {
+        let mut split = line.splitn(2, ':');
         let key = split.next()?.trim();
         let value = split.next().map(|s| s.trim());
         return Some(ProguardRecord::Header { key, value });

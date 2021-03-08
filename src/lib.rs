@@ -44,4 +44,4 @@ pub use mapping::{
     LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord,
     ProguardRecordIter,
 };
-pub use stacktrace::StackFrame;
+pub use stacktrace::{StackFrame, StackTrace, Throwable};

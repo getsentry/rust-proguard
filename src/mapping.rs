@@ -374,8 +374,9 @@ impl<'s> ProguardRecord<'s> {
     /// );
     ///
     /// // Field
-    /// let parsed =
-    ///     ProguardRecord::try_parse(b"    android.arch.core.executor.ArchTaskExecutor sInstance -> a");
+    /// let parsed = ProguardRecord::try_parse(
+    ///     b"    android.arch.core.executor.ArchTaskExecutor sInstance -> a",
+    /// );
     /// assert_eq!(
     ///     parsed,
     ///     Ok(ProguardRecord::Field {

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+**Features**:
+
+- A new `MappingSummary` was added providing some information about the mapping file.
+- Added support for remapping a complete Java `StackTrace`, including the `Throwable` and cause chain.
+
+**Thank you**:
+
+Features, fixes and improvements in this release have been contributed by:
+
+- [@dnaka91](https://github.com/dnaka91)
+
 ## 4.0.1
 
 **Fixes**

@@ -205,7 +205,7 @@ impl<'s> ProguardMapper<'s> {
     /// # Example
     ///
     /// ```
-    /// use proguard::{ProguardMapper,Throwable};
+    /// use proguard::{ProguardMapper, Throwable};
     ///
     /// let mapping = "com.example.Mapper -> a.b:";
     /// let mapper = ProguardMapper::from(mapping);
@@ -213,7 +213,10 @@ impl<'s> ProguardMapper<'s> {
     /// let throwable = Throwable::try_parse(b"a.b: Crash").unwrap();
     /// let mapped = mapper.remap_throwable(&throwable);
     ///
-    /// assert_eq!(Some(Throwable::with_message("com.example.Mapper", "Crash")), mapped);
+    /// assert_eq!(
+    ///     Some(Throwable::with_message("com.example.Mapper", "Crash")),
+    ///     mapped
+    /// );
     /// ```
     pub fn remap_throwable<'a>(&'a self, throwable: &Throwable<'a>) -> Option<Throwable<'a>> {
         if let Some(class) = self.remap_class(throwable.class) {

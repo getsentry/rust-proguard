@@ -1,13 +1,14 @@
-# Configuration for sentry-craft (https://github.com/getsentry/craft)
-minVersion: "0.9.2"
+minVersion: "0.15.0"
 github:
   owner: getsentry
   repo: rust-proguard
-targets:
-  - name: crates
-  - name: github
-changelogPolicy: simple
+changelogPolicy: auto
+
 statusProvider:
   name: github
 artifactProvider:
   name: none
+
+targets:
+  - name: crates
+  - name: github

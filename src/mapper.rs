@@ -218,7 +218,7 @@ impl<'s> ProguardMapper<'s> {
     ///     mapped
     /// );
     /// ```
-    pub fn remap_throwable(&'s self, throwable: &Throwable<'s>) -> Option<Throwable<'s>> {
+    pub fn remap_throwable<'a>(&'a self, throwable: &Throwable<'a>) -> Option<Throwable<'a>> {
         if let Some(class) = self.remap_class(throwable.class) {
             Some(Throwable {
                 class,
@@ -231,7 +231,7 @@ impl<'s> ProguardMapper<'s> {
 
     /// Remaps a complete Java StackTrace, similar to [`Self::remap_stacktrace`] but instead works on
     /// strings as input and output.
-    pub fn remap_stacktrace(&'s self, input: &str) -> Result<String, std::fmt::Error> {
+    pub fn remap_stacktrace(&self, input: &str) -> Result<String, std::fmt::Error> {
         let mut stacktrace = String::new();
         let mut lines = input.lines();
 
@@ -265,7 +265,7 @@ impl<'s> ProguardMapper<'s> {
     }
 
     /// Remaps a complete Java StackTrace.
-    pub fn remap_stacktrace_typed(&'s self, trace: &StackTrace<'s>) -> StackTrace<'s> {
+    pub fn remap_stacktrace_typed<'a>(&'a self, trace: &StackTrace<'a>) -> StackTrace<'a> {
         let exception = trace
             .exception
             .as_ref()

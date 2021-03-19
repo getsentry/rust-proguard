@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+**Fixes**:
+
+- Removed overly conservative limit in `has_line_info`.
+
+**Thank you**:
+
+Features, fixes and improvements in this release have been contributed by:
+
+- [@JaCzekanski](https://github.com/JaCzekanski)
+
 ## 4.1.0
 
 **Features**:

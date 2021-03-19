@@ -1,6 +1,6 @@
 [package]
 name = "proguard"
-version = "4.1.0"
+version = "4.1.1"
 authors = ["Sentry <oss@sentry.io>"]
 keywords = ["proguard", "retrace", "android", "r8"]
 description = "Basic proguard mapping file handling for Rust"

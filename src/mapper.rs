@@ -219,14 +219,10 @@ impl<'s> ProguardMapper<'s> {
     /// );
     /// ```
     pub fn remap_throwable<'a>(&'a self, throwable: &Throwable<'a>) -> Option<Throwable<'a>> {
-        if let Some(class) = self.remap_class(throwable.class) {
-            Some(Throwable {
-                class,
-                message: throwable.message,
-            })
-        } else {
-            None
-        }
+        self.remap_class(throwable.class).map(|class| Throwable {
+            class,
+            message: throwable.message,
+        })
     }
 
     /// Remaps a complete Java StackTrace, similar to [`Self::remap_stacktrace`] but instead works on

@@ -206,6 +206,8 @@ impl<'s> ProguardMapping<'s> {
     /// assert_eq!(without.has_line_info(), false);
     /// ```
     pub fn has_line_info(&self) -> bool {
+        // We are matching on the inner `ProguardRecord` anyway
+        #[allow(clippy::manual_flatten)]
         for record in self.iter() {
             if let Ok(ProguardRecord::Method { line_mapping, .. }) = record {
                 if line_mapping.is_some() {

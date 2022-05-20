@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+**Breaking Changes**:
+
+- Update `uuid` dependency to version `1.0.0`. ([#22](https://github.com/getsentry/rust-proguard/pull/22))
+
+**Thank you**:
+
+Features, fixes and improvements in this release have been contributed by:
+
+- [@jhpratt](https://github.com/jhpratt)
+
 ## 4.1.1
 
 **Fixes**:

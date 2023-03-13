@@ -234,7 +234,7 @@ impl<'s> ProguardMapping<'s> {
     ///
     /// [`ProguardRecord`]: enum.ProguardRecord.html
     pub fn iter(&self) -> ProguardRecordIter<'s> {
-        ProguardRecordIter::new(self.source)
+        ProguardRecordIter { slice: self.source }
     }
 }
 
@@ -242,15 +242,9 @@ impl<'s> ProguardMapping<'s> {
 ///
 /// [`ProguardRecord`]: enum.ProguardRecord.html
 /// [`ProguardMapping::iter`]: struct.ProguardMapping.html#method.iter
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ProguardRecordIter<'s> {
     slice: &'s [u8],
-}
-
-impl<'s> ProguardRecordIter<'s> {
-    fn new(slice: &'s [u8]) -> Self {
-        Self { slice }
-    }
 }
 
 impl<'s> fmt::Debug for ProguardRecordIter<'s> {
@@ -262,24 +256,13 @@ impl<'s> fmt::Debug for ProguardRecordIter<'s> {
 impl<'s> Iterator for ProguardRecordIter<'s> {
     type Item = Result<ProguardRecord<'s>, ParseError<'s>>;
     fn next(&mut self) -> Option<Self::Item> {
-        let (_, slice) = parse_newline(self.slice);
-        self.slice = slice;
-
-        if self.slice.len() <= 0 {
+        if self.slice.is_empty() {
             return None;
         }
 
-        match parse(self.slice) {
-            Ok((record, slice)) => {
-                self.slice = slice;
-                Some(Ok(record))
-            }
-            Err(err) => {
-                let (_, slice) = parse_line(self.slice);
-                self.slice = slice;
-                Some(Err(err))
-            }
-        }
+        let (result, slice) = parse_proguard_record(self.slice);
+        self.slice = slice;
+        Some(result)
     }
 }
 
@@ -423,239 +406,120 @@ impl<'s> ProguardRecord<'s> {
     /// );
     /// ```
     pub fn try_parse(line: &'s [u8]) -> Result<Self, ParseError<'s>> {
-        match parse(line) {
-            Ok((record, slice)) if slice.len() == 0 => Ok(record),
-            _ => Err(ParseError {
-                line: line.as_ref(),
+        match parse_proguard_record(line) {
+            (Err(err), _) => Err(err),
+            // We were able to extract a record from the line but there are bytes remaining
+            // when they should have all been consumed during parsing
+            (Ok(_), slice) if !slice.is_empty() => Err(ParseError {
+                line,
                 kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
             }),
+            (Ok(record), _) => Ok(record),
         }
     }
 }
 
-fn parse_newline<'s>(bytes: &'s [u8]) -> (&'s [u8], &'s [u8]) {
-    match bytes.iter().position(|c| *c != b'\n' && *c != b'\r') {
-        Some(pos) => (&bytes[..pos], &bytes[pos..]),
-        None => (bytes, &bytes[..0]),
-    }
-}
+fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &[u8]) {
+    let bytes = consume_leading_newlines(bytes);
 
-fn parse_line<'s>(bytes: &'s [u8]) -> (&'s [u8], &'s [u8]) {
-    match bytes.iter().position(|c| *c == b'\n' || *c == b'\r') {
-        Some(pos) => (&bytes[..pos], &bytes[pos..]),
-        None => (bytes, &bytes[..0]),
-    }
-}
-
-fn parse_bytes<'s>(bytes: &'s [u8], pattern: &'s [u8]) -> (Option<&'s [u8]>, &'s [u8]) {
-    // pattern is longer than data
-    if pattern.len() > bytes.len() {
-        return (None, bytes);
-    }
-
-    for (i, byte) in pattern.iter().enumerate() {
-        if bytes[i] != *byte {
-            return (None, bytes);
-        }
-    }
-
-    let i = pattern.len();
-    return (Some(&bytes[..i]), &bytes[i..]);
-}
-
-fn parse_usize<'s>(bytes: &'s [u8]) -> (Option<usize>, &'s [u8]) {
-    let (slice, rest) = match bytes.iter().position(|c| !(*c as char).is_numeric()) {
-        Some(pos) => (&bytes[..pos], &bytes[pos..]),
-        None => (bytes, &[] as &[u8]),
+    let result = if bytes.strip_prefix(b"#").is_some() {
+        parse_proguard_header(bytes)
+    } else if bytes.strip_prefix(b"    ").is_some() {
+        parse_proguard_field_or_method(bytes)
+    } else {
+        parse_proguard_class(bytes)
     };
 
-    match std::str::from_utf8(slice) {
-        Ok(s) => match s.parse() {
-            Ok(value) => (Some(value), rest),
-            Err(_) => (None, bytes),
-        },
-        Err(_) => (None, bytes),
+    match result {
+        Ok((record, bytes)) => (Ok(record), consume_leading_newlines(bytes)),
+        Err(err) => (Err(err), consume_line(bytes)),
     }
 }
 
-fn parse_until<'s>(bytes: &'s [u8], delimiters: &'s [u8]) -> (Option<&'s str>, &'s [u8]) {
-    let (slice, rest) = match bytes.iter().position(|c| delimiters.iter().any(|d| c == d)) {
-        Some(pos) => (&bytes[..pos], &bytes[pos..]),
-        None => (bytes, &[] as &[u8]),
-    };
+fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+    let bytes = parse_prefix(bytes, b"#")?;
 
-    match std::str::from_utf8(slice) {
-        Ok(s) => (Some(s), rest),
-        Err(_) => (None, bytes),
-    }
-}
+    let (key, bytes) = parse_until(bytes, b":\r\n")?;
 
-fn required<'s, T>(value: Option<T>) -> Result<T, ParseError<'s>> {
-    match value {
-        Some(value) => Ok(value),
-        None => Err(ParseError {
-            line: b"",
-            kind: ParseErrorKind::ParseError("parse"),
-        }),
-    }
-}
-
-fn parse<'s>(bytes: &'s [u8]) -> Result<(ProguardRecord, &'s [u8]), ParseError<'s>> {
-    let bytes = match parse_header(bytes) {
-        Ok((None, bytes)) => bytes,
-        Ok((Some(record), bytes)) => return Ok((record, bytes)),
-        Err(err) => return Err(err),
-    };
-
-    let bytes = match parse_class(bytes) {
-        Ok((None, bytes)) => bytes,
-        Ok((Some(record), bytes)) => return Ok((record, bytes)),
-        Err(err) => return Err(err),
-    };
-
-    let bytes = match parse_field_or_method(bytes) {
-        Ok((None, bytes)) => bytes,
-        Ok((Some(record), bytes)) => return Ok((record, bytes)),
-        Err(err) => return Err(err),
-    };
-
-    Err(ParseError {
-        line: bytes,
-        kind: ParseErrorKind::ParseError("parse"),
-    })
-}
-
-fn parse_header<'s>(bytes: &'s [u8]) -> Result<(Option<ProguardRecord>, &'s [u8]), ParseError<'s>> {
-    let (value, rest) = parse_bytes(bytes, b"#");
-    if value.is_none() {
-        return Ok((None, bytes));
-    }
-
-    let (key, bytes) = parse_until(rest, b":\r\n");
-    let key = required(key)?;
-
-    let (colon, bytes) = parse_bytes(bytes, b":");
-
-    let (value, bytes) = match colon {
-        Some(_) => parse_until(bytes, b"\r\n"),
-        None => (None, bytes),
-    };
+    let (value, bytes) = match parse_prefix(bytes, b":") {
+        Ok(bytes) => parse_until(bytes, b"\r\n").map(|(v, bytes)| (Some(v), bytes)),
+        Err(_) => Ok((None, bytes)),
+    }?;
 
     let record = ProguardRecord::Header {
         key: key.trim(),
         value: value.map(|v| v.trim()),
     };
 
-    Ok((Some(record), bytes))
+    Ok((record, bytes))
 }
 
-fn parse_class<'s>(bytes: &'s [u8]) -> Result<(Option<ProguardRecord>, &'s [u8]), ParseError<'s>> {
-    let (value, _) = parse_bytes(bytes, b" ");
-    if value.is_some() {
-        return Ok((None, bytes));
-    }
+fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+    let bytes = parse_prefix(bytes, b"    ")?;
 
-    let (original, bytes) = parse_until(bytes, b" ");
-    let original = required(original)?;
-
-    let (arrow, bytes) = parse_bytes(bytes, b" -> ");
-    let _ = required(arrow)?;
-
-    let (obfuscated, bytes) = parse_until(bytes, b":");
-    let obfuscated = required(obfuscated)?;
-
-    let (colon, bytes) = parse_bytes(bytes, b":");
-    let _ = required(colon)?;
-
-    let record = ProguardRecord::Class {
-        original,
-        obfuscated,
+    let (startline, bytes) = match parse_usize(bytes) {
+        Ok((startline, bytes)) => (Some(startline), bytes),
+        Err(_) => (None, bytes),
     };
 
-    Ok((Some(record), bytes))
-}
-
-fn parse_field_or_method<'s>(
-    bytes: &'s [u8],
-) -> Result<(Option<ProguardRecord>, &'s [u8]), ParseError<'s>> {
-    let (spaces, bytes) = parse_bytes(bytes, b"    ");
-    let _ = required(spaces)?;
-
-    let (startline, bytes) = parse_usize(bytes);
     let (endline, bytes) = match startline {
         Some(_) => {
-            let (colon, bytes) = parse_bytes(bytes, b":");
-            let _ = required(colon)?;
-            let (endline, bytes) = parse_usize(bytes);
-            let endline = required(endline)?;
-            let (colon, bytes) = parse_bytes(bytes, b":");
-            let _ = required(colon)?;
+            let bytes = parse_prefix(bytes, b":")?;
+            let (endline, bytes) = parse_usize(bytes)?;
+            let bytes = parse_prefix(bytes, b":")?;
             (Some(endline), bytes)
         }
         None => (None, bytes),
     };
 
-    let (ty, bytes) = parse_until(bytes, b" ");
-    let ty = required(ty)?;
+    let (ty, bytes) = parse_until(bytes, b" ")?;
 
-    let (space, bytes) = parse_bytes(bytes, b" ");
-    let _ = required(space)?;
+    let bytes = parse_prefix(bytes, b" ")?;
 
-    let (original, bytes) = parse_until(bytes, b" (");
-    let original = required(original)?;
+    let (original, bytes) = parse_until(bytes, b" (")?;
 
-    let (open_parens, bytes) = parse_bytes(bytes, b"(");
-    let (arguments, bytes) = match open_parens {
-        Some(_) => {
-            let (arguments, bytes) = parse_until(bytes, b")");
-            let arguments = required(arguments)?;
-            let (close_parens, bytes) = parse_bytes(bytes, b")");
-            let _ = required(close_parens)?;
+    let (arguments, bytes) = match parse_prefix(bytes, b"(") {
+        Ok(bytes) => {
+            let (arguments, bytes) = parse_until(bytes, b")")?;
+            let bytes = parse_prefix(bytes, b")")?;
             (Some(arguments), bytes)
         }
-        None => (None, bytes),
+        Err(_) => (None, bytes),
     };
 
     let (original_startline, bytes) = match arguments {
-        Some(_) => {
-            let (colon, rest) = parse_bytes(bytes, b":");
-            match colon {
-                Some(_) => {
-                    let (original_startline, bytes) = parse_usize(rest);
-                    let original_startline = required(original_startline)?;
-                    (Some(original_startline), bytes)
-                }
-                None => (None, bytes),
+        Some(_) => match parse_prefix(bytes, b":") {
+            Ok(bytes) => {
+                let (original_startline, bytes) = parse_usize(bytes)?;
+                (Some(original_startline), bytes)
             }
-        }
+            Err(_) => (None, bytes),
+        },
         None => (None, bytes),
     };
 
     let (original_endline, bytes) = match original_startline {
-        Some(_) => {
-            let (colon, rest) = parse_bytes(bytes, b":");
-            match colon {
-                Some(_) => {
-                    let (original_endline, bytes) = parse_usize(rest);
-                    let original_endline = required(original_endline)?;
-                    (Some(original_endline), bytes)
-                }
-                None => (None, bytes),
+        Some(_) => match parse_prefix(bytes, b":") {
+            Ok(bytes) => {
+                let (original_endline, bytes) = parse_usize(bytes)?;
+                (Some(original_endline), bytes)
             }
-        }
+            Err(_) => (None, bytes),
+        },
         None => (None, bytes),
     };
 
-    let (arrow, bytes) = parse_bytes(bytes, b" -> ");
-    let _ = required(arrow)?;
+    let bytes = parse_prefix(bytes, b" -> ")?;
 
-    let (obfuscated, bytes) = parse_until(bytes, b"\r\n");
-    let obfuscated = required(obfuscated)?;
+    let (obfuscated, bytes) = parse_until(bytes, b"\r\n")?;
 
     let record = match arguments {
         Some(arguments) => {
             let mut split_class = original.rsplitn(2, '.');
-            let original = required(split_class.next())?;
+            let original = split_class.next().ok_or(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            })?;
             let original_class = split_class.next();
 
             let line_mapping = match (startline, endline) {
@@ -675,8 +539,8 @@ fn parse_field_or_method<'s>(
                 original,
                 obfuscated,
                 arguments,
-                original_class: original_class,
-                line_mapping: line_mapping,
+                original_class,
+                line_mapping,
             }
         }
         None => ProguardRecord::Field {
@@ -686,107 +550,82 @@ fn parse_field_or_method<'s>(
         },
     };
 
-    Ok((Some(record), bytes))
+    Ok((record, bytes))
 }
 
-/// Parses a single line from a Proguard File.
-///
-/// Returns `None` if the line could not be parsed.
-// TODO: this function is private here, but in the future it would be nice to
-// better elaborate parse errors.
-fn parse_mapping(mut line: &str) -> Option<ProguardRecord> {
-    if let Some(line) = line.strip_prefix('#') {
-        let mut split = line.splitn(2, ':');
-        let key = split.next()?.trim();
-        let value = split.next().map(|s| s.trim());
-        return Some(ProguardRecord::Header { key, value });
-    }
-    if !line.starts_with("    ") {
-        // class line: `originalclassname -> obfuscatedclassname:`
-        let mut split = line.splitn(3, ' ');
-        let original = split.next()?;
-        if split.next()? != "->" || !line.ends_with(':') {
-            return None;
-        }
-        let mut obfuscated = split.next()?;
-        obfuscated = &obfuscated[..obfuscated.len() - 1];
-        return Some(ProguardRecord::Class {
-            original,
-            obfuscated,
-        });
-    }
-    // field line or method line:
-    // `originalfieldtype originalfieldname -> obfuscatedfieldname`
-    // `[startline:endline:]originalreturntype [originalclassname.]originalmethodname(originalargumenttype,...)[:originalstartline[:originalendline]] -> obfuscatedmethodname`
-    line = &line[4..];
-    let mut line_mapping = LineMapping {
-        startline: 0,
-        endline: 0,
-        original_startline: None,
-        original_endline: None,
+fn parse_proguard_class(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+    let (original, bytes) = parse_until(bytes, b" ")?;
+
+    let bytes = parse_prefix(bytes, b" -> ")?;
+
+    let (obfuscated, bytes) = parse_until(bytes, b":")?;
+
+    let bytes = parse_prefix(bytes, b":")?;
+
+    let record = ProguardRecord::Class {
+        original,
+        obfuscated,
     };
 
-    // leading line mapping
-    if line.starts_with(char::is_numeric) {
-        let mut nums = line.splitn(3, ':');
-        line_mapping.startline = nums.next()?.parse().ok()?;
-        line_mapping.endline = nums.next()?.parse().ok()?;
-        line = nums.next()?;
-    }
+    Ok((record, bytes))
+}
 
-    // split the type, name and obfuscated name
-    let mut split = line.splitn(4, ' ');
-    let ty = split.next()?;
-    let mut original = split.next()?;
-    if split.next()? != "->" {
-        return None;
-    }
-    let obfuscated = split.next()?;
-
-    // split off trailing line mappings
-    let mut nums = original.splitn(3, ':');
-    original = nums.next()?;
-    line_mapping.original_startline = match nums.next() {
-        Some(n) => Some(n.parse().ok()?),
-        _ => None,
-    };
-    line_mapping.original_endline = match nums.next() {
-        Some(n) => Some(n.parse().ok()?),
-        _ => None,
+fn parse_usize(bytes: &[u8]) -> Result<(usize, &[u8]), ParseError> {
+    let (slice, rest) = match bytes.iter().position(|c| !(*c as char).is_numeric()) {
+        Some(pos) => bytes.split_at(pos),
+        None => (bytes, &[] as &[u8]),
     };
 
-    // split off the arguments
-    let mut args = original.splitn(2, '(');
-    original = args.next()?;
-
-    Some(match args.next() {
-        None => ProguardRecord::Field {
-            ty,
-            original,
-            obfuscated,
+    match std::str::from_utf8(slice) {
+        Ok(s) => match s.parse() {
+            Ok(value) => Ok((value, rest)),
+            Err(_) => Err(ParseError {
+                line: slice,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
         },
-        Some(args) => {
-            if !args.ends_with(')') {
-                return None;
-            }
-            let arguments = &args[..args.len() - 1];
+        Err(err) => Err(ParseError {
+            line: slice,
+            kind: ParseErrorKind::Utf8Error(err),
+        }),
+    }
+}
 
-            let mut split_class = original.rsplitn(2, '.');
-            original = split_class.next()?;
-            let original_class = split_class.next();
-
-            ProguardRecord::Method {
-                ty,
-                original,
-                obfuscated,
-                arguments,
-                original_class,
-                line_mapping: if line_mapping.startline > 0 {
-                    Some(line_mapping)
-                } else {
-                    None
-                },
-            }
-        }
+fn parse_prefix<'s>(bytes: &'s [u8], prefix: &'s [u8]) -> Result<&'s [u8], ParseError<'s>> {
+    bytes.strip_prefix(prefix).ok_or(ParseError {
+        line: bytes,
+        kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
     })
+}
+
+fn parse_until<'s>(
+    bytes: &'s [u8],
+    delimiters: &'s [u8],
+) -> Result<(&'s str, &'s [u8]), ParseError<'s>> {
+    let (slice, rest) = match bytes.iter().position(|c| delimiters.iter().any(|d| c == d)) {
+        Some(pos) => bytes.split_at(pos),
+        None => (bytes, &[] as &[u8]),
+    };
+
+    match std::str::from_utf8(slice) {
+        Ok(s) => Ok((s, rest)),
+        Err(err) => Err(ParseError {
+            line: slice,
+            kind: ParseErrorKind::Utf8Error(err),
+        }),
+    }
+}
+
+fn consume_leading_newlines(bytes: &[u8]) -> &[u8] {
+    match bytes.iter().position(|c| *c != b'\r' && *c != b'\n') {
+        Some(i) => &bytes[i..],
+        None => b"",
+    }
+}
+
+fn consume_line(bytes: &[u8]) -> &[u8] {
+    match bytes.iter().position(|c| *c == b'\r' || *c == b'\n') {
+        Some(i) => &bytes[i + 1..],
+        None => &[] as &[u8],
+    }
 }

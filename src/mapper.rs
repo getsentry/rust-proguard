@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
@@ -19,7 +19,7 @@ struct MemberMapping<'s> {
 struct ClassMapping<'s> {
     original: &'s str,
     obfuscated: &'s str,
-    members: BTreeMap<&'s str, Vec<MemberMapping<'s>>>,
+    members: HashMap<&'s str, Vec<MemberMapping<'s>>>,
 }
 
 type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
@@ -107,7 +107,7 @@ impl<'s> ProguardMapper<'s> {
         let mut class = ClassMapping {
             original: "",
             obfuscated: "",
-            members: BTreeMap::new(),
+            members: HashMap::new(),
         };
 
         for record in mapping.iter().filter_map(Result::ok) {
@@ -122,7 +122,7 @@ impl<'s> ProguardMapper<'s> {
                     class = ClassMapping {
                         original,
                         obfuscated,
-                        members: BTreeMap::new(),
+                        members: HashMap::new(),
                     }
                 }
                 ProguardRecord::Method {
@@ -146,15 +146,23 @@ impl<'s> ProguardMapper<'s> {
                                 None => (line_mapping.startline, Some(line_mapping.endline)),
                             }
                         });
-                    let members = class.members.entry(obfuscated).or_insert_with(Vec::new);
-                    members.push(MemberMapping {
-                        startline,
-                        endline,
-                        original_class,
-                        original,
-                        original_startline,
-                        original_endline,
-                    });
+                    class.members.entry(obfuscated)
+                        .and_modify(|members| members.push(MemberMapping {
+                            startline,
+                            endline,
+                            original_class,
+                            original,
+                            original_startline,
+                            original_endline,
+                        }))
+                        .or_insert_with(|| vec![MemberMapping {
+                            startline,
+                            endline,
+                            original_class,
+                            original,
+                            original_startline,
+                            original_endline,
+                        }]);
                 }
                 _ => {}
             }

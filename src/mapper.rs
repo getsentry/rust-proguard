@@ -146,23 +146,29 @@ impl<'s> ProguardMapper<'s> {
                                 None => (line_mapping.startline, Some(line_mapping.endline)),
                             }
                         });
-                    class.members.entry(obfuscated)
-                        .and_modify(|members| members.push(MemberMapping {
-                            startline,
-                            endline,
-                            original_class,
-                            original,
-                            original_startline,
-                            original_endline,
-                        }))
-                        .or_insert_with(|| vec![MemberMapping {
-                            startline,
-                            endline,
-                            original_class,
-                            original,
-                            original_startline,
-                            original_endline,
-                        }]);
+                    class
+                        .members
+                        .entry(obfuscated)
+                        .and_modify(|members| {
+                            members.push(MemberMapping {
+                                startline,
+                                endline,
+                                original_class,
+                                original,
+                                original_startline,
+                                original_endline,
+                            })
+                        })
+                        .or_insert_with(|| {
+                            vec![MemberMapping {
+                                startline,
+                                endline,
+                                original_class,
+                                original,
+                                original_startline,
+                                original_endline,
+                            }]
+                        });
                 }
                 _ => {}
             }

@@ -425,9 +425,9 @@ impl<'s> ProguardRecord<'s> {
 fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &[u8]) {
     let bytes = consume_leading_newlines(bytes);
 
-    let result = if bytes.strip_prefix(b"#").is_some() {
+    let result = if bytes.starts_with(b"#") {
         parse_proguard_header(bytes)
-    } else if bytes.strip_prefix(b"    ").is_some() {
+    } else if bytes.starts_with(b"    ") {
         parse_proguard_field_or_method(bytes)
     } else {
         parse_proguard_class(bytes)
@@ -435,7 +435,16 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &
 
     match result {
         Ok((record, bytes)) => (Ok(record), bytes),
-        Err(err) => (Err(err), consume_line(bytes)),
+        Err(_) => {
+            let (line, bytes) = split_line(bytes);
+            (
+                Err(ParseError {
+                    line,
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+                bytes,
+            )
+        }
     }
 }
 
@@ -443,10 +452,10 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &
 fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
     let bytes = parse_prefix(bytes, b"#")?;
 
-    let (key, bytes) = parse_until(bytes, b":\r\n")?;
+    let (key, bytes) = parse_until_or_newline(bytes, |c| *c == b':')?;
 
     let (value, bytes) = match parse_prefix(bytes, b":") {
-        Ok(bytes) => parse_until(bytes, b"\r\n").map(|(v, bytes)| (Some(v), bytes)),
+        Ok(bytes) => parse_until(bytes, is_newline).map(|(v, bytes)| (Some(v), bytes)),
         Err(_) => Ok((None, bytes)),
     }?;
 
@@ -480,15 +489,15 @@ fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]
         None => (None, bytes),
     };
 
-    let (ty, bytes) = parse_until(bytes, b" ")?;
+    let (ty, bytes) = parse_until(bytes, |c| *c == b' ')?;
 
     let bytes = parse_prefix(bytes, b" ")?;
 
-    let (original, bytes) = parse_until(bytes, b" (")?;
+    let (original, bytes) = parse_until(bytes, |c| *c == b' ' || *c == b'(')?;
 
     let (arguments, bytes) = match parse_prefix(bytes, b"(") {
         Ok(bytes) => {
-            let (arguments, bytes) = parse_until(bytes, b")")?;
+            let (arguments, bytes) = parse_until(bytes, |c| *c == b')')?;
             let bytes = parse_prefix(bytes, b")")?;
             (Some(arguments), bytes)
         }
@@ -519,7 +528,7 @@ fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]
 
     let bytes = parse_prefix(bytes, b" -> ")?;
 
-    let (obfuscated, bytes) = parse_until(bytes, b"\r\n")?;
+    let (obfuscated, bytes) = parse_until(bytes, is_newline)?;
 
     let record = match arguments {
         Some(arguments) => {
@@ -565,11 +574,11 @@ fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]
 fn parse_proguard_class(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
     // class line:
     // `originalclassname -> obfuscatedclassname:`
-    let (original, bytes) = parse_until(bytes, b" ")?;
+    let (original, bytes) = parse_until(bytes, |c| *c == b' ')?;
 
     let bytes = parse_prefix(bytes, b" -> ")?;
 
-    let (obfuscated, bytes) = parse_until(bytes, b":")?;
+    let (obfuscated, bytes) = parse_until(bytes, |c| *c == b':')?;
 
     let bytes = parse_prefix(bytes, b":")?;
 
@@ -609,11 +618,11 @@ fn parse_prefix<'s>(bytes: &'s [u8], prefix: &'s [u8]) -> Result<&'s [u8], Parse
     })
 }
 
-fn parse_until<'s>(
-    bytes: &'s [u8],
-    delimiters: &'s [u8],
-) -> Result<(&'s str, &'s [u8]), ParseError<'s>> {
-    let (slice, rest) = match bytes.iter().position(|c| delimiters.iter().any(|d| c == d)) {
+fn parse_until<'s, P>(bytes: &'s [u8], predicate: P) -> Result<(&'s str, &'s [u8]), ParseError<'s>>
+where
+    P: Fn(&u8) -> bool,
+{
+    let (slice, rest) = match bytes.iter().position(predicate) {
         Some(pos) => bytes.split_at(pos),
         None => (bytes, &[] as &[u8]),
     };
@@ -627,16 +636,44 @@ fn parse_until<'s>(
     }
 }
 
+fn parse_until_or_newline<'s, P>(
+    bytes: &'s [u8],
+    predicate: P,
+) -> Result<(&'s str, &'s [u8]), ParseError<'s>>
+where
+    P: Fn(&u8) -> bool,
+{
+    match parse_until(bytes, |byte| is_newline(byte) || predicate(byte)) {
+        Ok((slice, bytes)) => {
+            if !bytes.is_empty() && is_newline(&bytes[0]) {
+                Err(ParseError {
+                    line: slice.as_bytes(),
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                })
+            } else {
+                Ok((slice, bytes))
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
 fn consume_leading_newlines(bytes: &[u8]) -> &[u8] {
-    match bytes.iter().position(|c| *c != b'\r' && *c != b'\n') {
-        Some(i) => &bytes[i..],
+    match bytes.iter().position(|c| !is_newline(c)) {
+        Some(pos) => &bytes[pos..],
         None => b"",
     }
 }
 
-fn consume_line(bytes: &[u8]) -> &[u8] {
-    match bytes.iter().position(|c| *c == b'\r' || *c == b'\n') {
-        Some(i) => &bytes[i + 1..],
-        None => &[] as &[u8],
-    }
+fn split_line(bytes: &[u8]) -> (&[u8], &[u8]) {
+    let pos = match bytes.iter().position(|c| is_newline(c)) {
+        Some(pos) => pos + 1,
+        None => bytes.len(),
+    };
+
+    bytes.split_at(pos)
+}
+
+fn is_newline(byte: &u8) -> bool {
+    *byte == b'\r' || *byte == b'\n'
 }

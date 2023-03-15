@@ -147,7 +147,10 @@ impl<'s> ProguardMapper<'s> {
                             }
                         });
 
-                    let members = class.members.entry(obfuscated).or_insert_with(|| Vec::with_capacity(1));
+                    let members = class
+                        .members
+                        .entry(obfuscated)
+                        .or_insert_with(|| Vec::with_capacity(1));
                     members.push(MemberMapping {
                         startline,
                         endline,

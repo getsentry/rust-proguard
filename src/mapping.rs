@@ -452,7 +452,7 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &
 fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
     let bytes = parse_prefix(bytes, b"#")?;
 
-    let (key, bytes) = parse_until_or_newline(bytes, |c| *c == b':')?;
+    let (key, bytes) = parse_until(bytes, |c| *c == b':' || is_newline(c))?;
 
     let (value, bytes) = match parse_prefix(bytes, b":") {
         Ok(bytes) => parse_until(bytes, is_newline).map(|(v, bytes)| (Some(v), bytes)),
@@ -489,15 +489,15 @@ fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]
         None => (None, bytes),
     };
 
-    let (ty, bytes) = parse_until(bytes, |c| *c == b' ')?;
+    let (ty, bytes) = parse_until_no_newline(bytes, |c| *c == b' ')?;
 
     let bytes = parse_prefix(bytes, b" ")?;
 
-    let (original, bytes) = parse_until(bytes, |c| *c == b' ' || *c == b'(')?;
+    let (original, bytes) = parse_until_no_newline(bytes, |c| *c == b' ' || *c == b'(')?;
 
     let (arguments, bytes) = match parse_prefix(bytes, b"(") {
         Ok(bytes) => {
-            let (arguments, bytes) = parse_until(bytes, |c| *c == b')')?;
+            let (arguments, bytes) = parse_until_no_newline(bytes, |c| *c == b')')?;
             let bytes = parse_prefix(bytes, b")")?;
             (Some(arguments), bytes)
         }
@@ -574,11 +574,11 @@ fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]
 fn parse_proguard_class(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
     // class line:
     // `originalclassname -> obfuscatedclassname:`
-    let (original, bytes) = parse_until(bytes, |c| *c == b' ')?;
+    let (original, bytes) = parse_until_no_newline(bytes, |c| *c == b' ')?;
 
     let bytes = parse_prefix(bytes, b" -> ")?;
 
-    let (obfuscated, bytes) = parse_until(bytes, |c| *c == b':')?;
+    let (obfuscated, bytes) = parse_until_no_newline(bytes, |c| *c == b':')?;
 
     let bytes = parse_prefix(bytes, b":")?;
 
@@ -636,7 +636,7 @@ where
     }
 }
 
-fn parse_until_or_newline<P>(bytes: &[u8], predicate: P) -> Result<(&str, &[u8]), ParseError>
+fn parse_until_no_newline<P>(bytes: &[u8], predicate: P) -> Result<(&str, &[u8]), ParseError>
 where
     P: Fn(&u8) -> bool,
 {

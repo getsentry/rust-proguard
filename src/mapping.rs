@@ -636,10 +636,7 @@ where
     }
 }
 
-fn parse_until_or_newline<P>(
-    bytes: &[u8],
-    predicate: P,
-) -> Result<(&str, &[u8]), ParseError>
+fn parse_until_or_newline<P>(bytes: &[u8], predicate: P) -> Result<(&str, &[u8]), ParseError>
 where
     P: Fn(&u8) -> bool,
 {

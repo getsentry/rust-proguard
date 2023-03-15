@@ -419,6 +419,9 @@ impl<'s> ProguardRecord<'s> {
     }
 }
 
+/// Parses a single line from a Proguard File.
+///
+/// Returns `Err(ParseError)` if the line could not be parsed.
 fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &[u8]) {
     let bytes = consume_leading_newlines(bytes);
 
@@ -431,11 +434,12 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &
     };
 
     match result {
-        Ok((record, bytes)) => (Ok(record), consume_leading_newlines(bytes)),
+        Ok((record, bytes)) => (Ok(record), bytes),
         Err(err) => (Err(err), consume_line(bytes)),
     }
 }
 
+/// Parses a single Proguard Header from a Proguard File.
 fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
     let bytes = parse_prefix(bytes, b"#")?;
 
@@ -451,10 +455,14 @@ fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseE
         value: value.map(|v| v.trim()),
     };
 
-    Ok((record, bytes))
+    Ok((record, consume_leading_newlines(bytes)))
 }
 
+/// Parses a single Proguard Field or Method from a Proguard File.
 fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+    // field line or method line:
+    // `originalfieldtype originalfieldname -> obfuscatedfieldname`
+    // `[startline:endline:]originalreturntype [originalclassname.]originalmethodname(originalargumenttype,...)[:originalstartline[:originalendline]] -> obfuscatedmethodname`
     let bytes = parse_prefix(bytes, b"    ")?;
 
     let (startline, bytes) = match parse_usize(bytes) {
@@ -550,10 +558,13 @@ fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]
         },
     };
 
-    Ok((record, bytes))
+    Ok((record, consume_leading_newlines(bytes)))
 }
 
+/// Parses a single Proguard Class from a Proguard File.
 fn parse_proguard_class(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+    // class line:
+    // `originalclassname -> obfuscatedclassname:`
     let (original, bytes) = parse_until(bytes, b" ")?;
 
     let bytes = parse_prefix(bytes, b" -> ")?;
@@ -567,7 +578,7 @@ fn parse_proguard_class(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseEr
         obfuscated,
     };
 
-    Ok((record, bytes))
+    Ok((record, consume_leading_newlines(bytes)))
 }
 
 fn parse_usize(bytes: &[u8]) -> Result<(usize, &[u8]), ParseError> {

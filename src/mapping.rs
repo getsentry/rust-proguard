@@ -618,7 +618,7 @@ fn parse_prefix<'s>(bytes: &'s [u8], prefix: &'s [u8]) -> Result<&'s [u8], Parse
     })
 }
 
-fn parse_until<'s, P>(bytes: &'s [u8], predicate: P) -> Result<(&'s str, &'s [u8]), ParseError<'s>>
+fn parse_until<P>(bytes: &[u8], predicate: P) -> Result<(&str, &[u8]), ParseError>
 where
     P: Fn(&u8) -> bool,
 {
@@ -636,10 +636,10 @@ where
     }
 }
 
-fn parse_until_or_newline<'s, P>(
-    bytes: &'s [u8],
+fn parse_until_or_newline<P>(
+    bytes: &[u8],
     predicate: P,
-) -> Result<(&'s str, &'s [u8]), ParseError<'s>>
+) -> Result<(&str, &[u8]), ParseError>
 where
     P: Fn(&u8) -> bool,
 {
@@ -666,7 +666,7 @@ fn consume_leading_newlines(bytes: &[u8]) -> &[u8] {
 }
 
 fn split_line(bytes: &[u8]) -> (&[u8], &[u8]) {
-    let pos = match bytes.iter().position(|c| is_newline(c)) {
+    let pos = match bytes.iter().position(is_newline) {
         Some(pos) => pos + 1,
         None => bytes.len(),
     };

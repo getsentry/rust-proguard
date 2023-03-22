@@ -674,3 +674,361 @@ fn split_line(bytes: &[u8]) -> (&[u8], &[u8]) {
 fn is_newline(byte: &u8) -> bool {
     *byte == b'\r' || *byte == b'\n'
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_parse_header_with_value() {
+        let bytes = b"# compiler: R8";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Header {
+                key: "compiler",
+                value: Some("R8")
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_header_without_value() {
+        let bytes = b"# common_typos_disable";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Header {
+                key: "common_typos_disable",
+                value: None,
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_header_trims_whitespace() {
+        let bytes = b"#    compiler   :    R8  ";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Header {
+                key: "compiler",
+                value: Some("R8")
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_header_consumes_trailing_newlines() {
+        let bytes = b"# compiler: R8\r\n\r\n";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Header {
+                key: "compiler",
+                value: Some("R8")
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_class() {
+        let bytes = b"android.support.v4.app.RemoteActionCompatParcelizer -> android.support.v4.app.RemoteActionCompatParcelizer:";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Class {
+                original: "android.support.v4.app.RemoteActionCompatParcelizer",
+                obfuscated: "android.support.v4.app.RemoteActionCompatParcelizer"
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_class_consumes_trailing_newlines() {
+        let bytes = b"android.support.v4.app.RemoteActionCompatParcelizer -> android.support.v4.app.RemoteActionCompatParcelizer:\r\n\r\n";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Class {
+                original: "android.support.v4.app.RemoteActionCompatParcelizer",
+                obfuscated: "android.support.v4.app.RemoteActionCompatParcelizer"
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_field() {
+        let bytes = b"    android.app.Activity mActivity -> a";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Field {
+                ty: "android.app.Activity",
+                original: "mActivity",
+                obfuscated: "a",
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_field_consumes_trailing_newlines() {
+        let bytes = b"    android.app.Activity mActivity -> a\r\n\r\n";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Field {
+                ty: "android.app.Activity",
+                original: "mActivity",
+                obfuscated: "a",
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_simple() {
+        let bytes = b"    boolean equals(java.lang.Object,java.lang.Object) -> a";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Method {
+                ty: "boolean",
+                original: "equals",
+                obfuscated: "a",
+                arguments: "java.lang.Object,java.lang.Object",
+                original_class: None,
+                line_mapping: None,
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_with_class() {
+        let bytes = b"    void androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar) -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Method {
+                ty: "void",
+                original: "setSupportActionBar",
+                obfuscated: "onCreate",
+                arguments: "androidx.appcompat.widget.Toolbar",
+                original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
+                line_mapping: None,
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_with_start_end_lines() {
+        let bytes = b"    14:15:void androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar) -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Method {
+                ty: "void",
+                original: "setSupportActionBar",
+                obfuscated: "onCreate",
+                arguments: "androidx.appcompat.widget.Toolbar",
+                original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
+                line_mapping: Some(LineMapping {
+                    startline: 14,
+                    endline: 15,
+                    original_startline: None,
+                    original_endline: None,
+                }),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_with_start_end_original_start_lines() {
+        let bytes = b"    14:15:void androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar):436 -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Method {
+                ty: "void",
+                original: "setSupportActionBar",
+                obfuscated: "onCreate",
+                arguments: "androidx.appcompat.widget.Toolbar",
+                original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
+                line_mapping: Some(LineMapping {
+                    startline: 14,
+                    endline: 15,
+                    original_startline: Some(436),
+                    original_endline: None,
+                }),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_with_start_end_original_start_original_end_lines() {
+        let bytes = b"    14:15:void androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar):436:437 -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Method {
+                ty: "void",
+                original: "setSupportActionBar",
+                obfuscated: "onCreate",
+                arguments: "androidx.appcompat.widget.Toolbar",
+                original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
+                line_mapping: Some(LineMapping {
+                    startline: 14,
+                    endline: 15,
+                    original_startline: Some(436),
+                    original_endline: Some(437),
+                }),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_class_with_bad_delimiter() {
+        // intentionally removed the spaces from the delimiter
+        let bytes = b"android.support.v4.app.RemoteActionCompatParcelizer->android.support.v4.app.RemoteActionCompatParcelizer:";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_class_without_trailing_colon() {
+        // intentionally removed trailing colon
+        let bytes = b"android.support.v4.app.RemoteActionCompatParcelizer -> android.support.v4.app.RemoteActionCompatParcelizer";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_field_insufficient_leading_spaces() {
+        // only 2 leading spaces instead of 4
+        let bytes = b"  android.app.Activity mActivity -> a";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_with_only_startline_no_endline() {
+        let bytes = b"    14:void androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar) -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_without_type() {
+        let bytes = b"    14:15:androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar) -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_iter() {
+        let bytes = b"\
+# compiler: R8
+# common_typos_disable
+
+androidx.activity.OnBackPressedCallback->c.a.b:
+androidx.activity.OnBackPressedCallback -> c.a.b:
+    boolean mEnabled -> a
+  boolean mEnabled -> a
+    java.util.ArrayDeque mOnBackPressedCallbacks -> b
+    1:4:void onBackPressed():184:187 -> c
+androidx.activity.OnBackPressedCallback 
+-> c.a.b:
+        ";
+
+        let mapping: Vec<Result<ProguardRecord, ParseError>> = ProguardMapping::new(bytes).iter().collect();
+        assert_eq!(
+            mapping,
+            vec![
+                Ok(ProguardRecord::Header {
+                    key: "compiler",
+                    value: Some("R8"),
+                }),
+                Ok(ProguardRecord::Header {
+                    key: "common_typos_disable",
+                    value: None,
+                }),
+                Err(ParseError {
+                    line: b"androidx.activity.OnBackPressedCallback->c.a.b:\n",
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+                Ok(ProguardRecord::Class {
+                    original: "androidx.activity.OnBackPressedCallback",
+                    obfuscated: "c.a.b",
+                }),
+                Ok(ProguardRecord::Field {
+                    ty: "boolean",
+                    original: "mEnabled",
+                    obfuscated: "a",
+                }),
+                Err(ParseError {
+                    line: b"  boolean mEnabled -> a\n",
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+                Ok(ProguardRecord::Field {
+                    ty: "java.util.ArrayDeque",
+                    original: "mOnBackPressedCallbacks",
+                    obfuscated: "b",
+                }),
+                Ok(ProguardRecord::Method {
+                    ty: "void",
+                    original: "onBackPressed",
+                    obfuscated: "c",
+                    arguments: "",
+                    original_class: None,
+                    line_mapping: Some(LineMapping {
+                        startline: 1,
+                        endline: 4,
+                        original_startline: Some(184),
+                        original_endline: Some(187),
+                    }),
+                }),
+                Err(ParseError {
+                    line: b"androidx.activity.OnBackPressedCallback \n",
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+                Err(ParseError {
+                    line: b"-> c.a.b:\n",
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+                Err(ParseError {
+                    line: b"        ",
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+            ],
+        );
+    }
+}

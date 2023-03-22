@@ -969,7 +969,8 @@ androidx.activity.OnBackPressedCallback
 -> c.a.b:
         ";
 
-        let mapping: Vec<Result<ProguardRecord, ParseError>> = ProguardMapping::new(bytes).iter().collect();
+        let mapping: Vec<Result<ProguardRecord, ParseError>> =
+            ProguardMapping::new(bytes).iter().collect();
         assert_eq!(
             mapping,
             vec![

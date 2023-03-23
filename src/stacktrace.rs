@@ -251,15 +251,11 @@ pub(crate) fn parse_frame(line: &str) -> Option<StackFrame> {
     if !line.starts_with("at ") || !line.ends_with(')') {
         return None;
     }
-    let mut arg_split = line[3..line.len() - 1].splitn(2, '(');
 
-    let mut method_split = arg_split.next()?.rsplitn(2, '.');
-    let method = method_split.next()?;
-    let class = method_split.next()?;
-
-    let mut file_split = arg_split.next()?.splitn(2, ':');
-    let file = file_split.next()?;
-    let line = file_split.next()?.parse().ok()?;
+    let (method_split, file_split) = line[3..line.len() - 1].split_once('(')?;
+    let (class, method) = method_split.rsplit_once('.')?;
+    let (file, line) = file_split.split_once(':')?;
+    let line = line.parse().ok()?;
 
     Some(StackFrame {
         class,

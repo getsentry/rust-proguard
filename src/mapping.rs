@@ -238,18 +238,6 @@ impl<'s> ProguardMapping<'s> {
     }
 }
 
-/// Split the input `slice` on line terminators.
-///
-/// This is basically [`str::lines`], except it works on a byte slice.
-/// Also NOTE that it does not treat `\r\n` as a single line ending.
-fn split_line(slice: &[u8]) -> (&[u8], &[u8]) {
-    let pos = slice.iter().position(|c| *c == b'\n' || *c == b'\r');
-    match pos {
-        Some(pos) => (&slice[0..pos], &slice[pos + 1..]),
-        None => (slice, &[]),
-    }
-}
-
 /// An Iterator yielding [`ProguardRecord`]s, created by [`ProguardMapping::iter`].
 ///
 /// [`ProguardRecord`]: enum.ProguardRecord.html
@@ -268,19 +256,13 @@ impl<'s> fmt::Debug for ProguardRecordIter<'s> {
 impl<'s> Iterator for ProguardRecordIter<'s> {
     type Item = Result<ProguardRecord<'s>, ParseError<'s>>;
     fn next(&mut self) -> Option<Self::Item> {
-        // We loop here, ignoring empty lines, which is important also because
-        // `split_line` above would output an empty line for each `\r\n`.
-        loop {
-            let (line, rest) = split_line(self.slice);
-            self.slice = rest;
-
-            if !line.is_empty() {
-                return Some(ProguardRecord::try_parse(line));
-            }
-            if rest.is_empty() {
-                return None;
-            };
+        if self.slice.is_empty() {
+            return None;
         }
+
+        let (result, slice) = parse_proguard_record(self.slice);
+        self.slice = slice;
+        Some(result)
     }
 }
 
@@ -424,102 +406,150 @@ impl<'s> ProguardRecord<'s> {
     /// );
     /// ```
     pub fn try_parse(line: &'s [u8]) -> Result<Self, ParseError<'s>> {
-        let line = std::str::from_utf8(line).map_err(|e| ParseError {
-            line,
-            kind: ParseErrorKind::Utf8Error(e),
-        })?;
-        parse_mapping(line).ok_or_else(|| ParseError {
-            line: line.as_ref(),
-            kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
-        })
+        match parse_proguard_record(line) {
+            (Err(err), _) => Err(err),
+            // We were able to extract a record from the line but there are bytes remaining
+            // when they should have all been consumed during parsing
+            (Ok(_), slice) if !slice.is_empty() => Err(ParseError {
+                line,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+            (Ok(record), _) => Ok(record),
+        }
     }
 }
 
 /// Parses a single line from a Proguard File.
 ///
-/// Returns `None` if the line could not be parsed.
-// TODO: this function is private here, but in the future it would be nice to
-// better elaborate parse errors.
-fn parse_mapping(mut line: &str) -> Option<ProguardRecord> {
-    if let Some(line) = line.strip_prefix('#') {
-        let mut split = line.splitn(2, ':');
-        let key = split.next()?.trim();
-        let value = split.next().map(|s| s.trim());
-        return Some(ProguardRecord::Header { key, value });
-    }
-    if !line.starts_with("    ") {
-        // class line: `originalclassname -> obfuscatedclassname:`
-        let mut split = line.splitn(3, ' ');
-        let original = split.next()?;
-        if split.next()? != "->" || !line.ends_with(':') {
-            return None;
+/// Returns `Err(ParseError)` if the line could not be parsed.
+fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &[u8]) {
+    let bytes = consume_leading_newlines(bytes);
+
+    let result = if bytes.starts_with(b"#") {
+        parse_proguard_header(bytes)
+    } else if bytes.starts_with(b"    ") {
+        parse_proguard_field_or_method(bytes)
+    } else {
+        parse_proguard_class(bytes)
+    };
+
+    match result {
+        Ok((record, bytes)) => (Ok(record), bytes),
+        Err(_) => {
+            let (line, bytes) = split_line(bytes);
+            (
+                Err(ParseError {
+                    line,
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+                bytes,
+            )
         }
-        let mut obfuscated = split.next()?;
-        obfuscated = &obfuscated[..obfuscated.len() - 1];
-        return Some(ProguardRecord::Class {
-            original,
-            obfuscated,
-        });
     }
+}
+
+/// Parses a single Proguard Header from a Proguard File.
+fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+    let bytes = parse_prefix(bytes, b"#")?;
+
+    let (key, bytes) = parse_until(bytes, |c| *c == b':' || is_newline(c))?;
+
+    let (value, bytes) = match parse_prefix(bytes, b":") {
+        Ok(bytes) => parse_until(bytes, is_newline).map(|(v, bytes)| (Some(v), bytes)),
+        Err(_) => Ok((None, bytes)),
+    }?;
+
+    let record = ProguardRecord::Header {
+        key: key.trim(),
+        value: value.map(|v| v.trim()),
+    };
+
+    Ok((record, consume_leading_newlines(bytes)))
+}
+
+/// Parses a single Proguard Field or Method from a Proguard File.
+fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
     // field line or method line:
     // `originalfieldtype originalfieldname -> obfuscatedfieldname`
     // `[startline:endline:]originalreturntype [originalclassname.]originalmethodname(originalargumenttype,...)[:originalstartline[:originalendline]] -> obfuscatedmethodname`
-    line = &line[4..];
-    let mut line_mapping = LineMapping {
-        startline: 0,
-        endline: 0,
-        original_startline: None,
-        original_endline: None,
+    let bytes = parse_prefix(bytes, b"    ")?;
+
+    let (startline, bytes) = match parse_usize(bytes) {
+        Ok((startline, bytes)) => (Some(startline), bytes),
+        Err(_) => (None, bytes),
     };
 
-    // leading line mapping
-    if line.starts_with(char::is_numeric) {
-        let mut nums = line.splitn(3, ':');
-        line_mapping.startline = nums.next()?.parse().ok()?;
-        line_mapping.endline = nums.next()?.parse().ok()?;
-        line = nums.next()?;
-    }
-
-    // split the type, name and obfuscated name
-    let mut split = line.splitn(4, ' ');
-    let ty = split.next()?;
-    let mut original = split.next()?;
-    if split.next()? != "->" {
-        return None;
-    }
-    let obfuscated = split.next()?;
-
-    // split off trailing line mappings
-    let mut nums = original.splitn(3, ':');
-    original = nums.next()?;
-    line_mapping.original_startline = match nums.next() {
-        Some(n) => Some(n.parse().ok()?),
-        _ => None,
-    };
-    line_mapping.original_endline = match nums.next() {
-        Some(n) => Some(n.parse().ok()?),
-        _ => None,
+    let (endline, bytes) = match startline {
+        Some(_) => {
+            let bytes = parse_prefix(bytes, b":")?;
+            let (endline, bytes) = parse_usize(bytes)?;
+            let bytes = parse_prefix(bytes, b":")?;
+            (Some(endline), bytes)
+        }
+        None => (None, bytes),
     };
 
-    // split off the arguments
-    let mut args = original.splitn(2, '(');
-    original = args.next()?;
+    let (ty, bytes) = parse_until_no_newline(bytes, |c| *c == b' ')?;
 
-    Some(match args.next() {
-        None => ProguardRecord::Field {
-            ty,
-            original,
-            obfuscated,
-        },
-        Some(args) => {
-            if !args.ends_with(')') {
-                return None;
+    let bytes = parse_prefix(bytes, b" ")?;
+
+    let (original, bytes) = parse_until_no_newline(bytes, |c| *c == b' ' || *c == b'(')?;
+
+    let (arguments, bytes) = match parse_prefix(bytes, b"(") {
+        Ok(bytes) => {
+            let (arguments, bytes) = parse_until_no_newline(bytes, |c| *c == b')')?;
+            let bytes = parse_prefix(bytes, b")")?;
+            (Some(arguments), bytes)
+        }
+        Err(_) => (None, bytes),
+    };
+
+    let (original_startline, bytes) = match arguments {
+        Some(_) => match parse_prefix(bytes, b":") {
+            Ok(bytes) => {
+                let (original_startline, bytes) = parse_usize(bytes)?;
+                (Some(original_startline), bytes)
             }
-            let arguments = &args[..args.len() - 1];
+            Err(_) => (None, bytes),
+        },
+        None => (None, bytes),
+    };
 
+    let (original_endline, bytes) = match original_startline {
+        Some(_) => match parse_prefix(bytes, b":") {
+            Ok(bytes) => {
+                let (original_endline, bytes) = parse_usize(bytes)?;
+                (Some(original_endline), bytes)
+            }
+            Err(_) => (None, bytes),
+        },
+        None => (None, bytes),
+    };
+
+    let bytes = parse_prefix(bytes, b" -> ")?;
+
+    let (obfuscated, bytes) = parse_until(bytes, is_newline)?;
+
+    let record = match arguments {
+        Some(arguments) => {
             let mut split_class = original.rsplitn(2, '.');
-            original = split_class.next()?;
+            let original = split_class.next().ok_or(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            })?;
             let original_class = split_class.next();
+
+            let line_mapping = match (startline, endline) {
+                (Some(startline), Some(endline)) if startline > 0 && endline > 0 => {
+                    Some(LineMapping {
+                        startline,
+                        endline,
+                        original_startline,
+                        original_endline,
+                    })
+                }
+                _ => None,
+            };
 
             ProguardRecord::Method {
                 ty,
@@ -527,12 +557,479 @@ fn parse_mapping(mut line: &str) -> Option<ProguardRecord> {
                 obfuscated,
                 arguments,
                 original_class,
-                line_mapping: if line_mapping.startline > 0 {
-                    Some(line_mapping)
-                } else {
-                    None
-                },
+                line_mapping,
             }
         }
+        None => ProguardRecord::Field {
+            ty,
+            original,
+            obfuscated,
+        },
+    };
+
+    Ok((record, consume_leading_newlines(bytes)))
+}
+
+/// Parses a single Proguard Class from a Proguard File.
+fn parse_proguard_class(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+    // class line:
+    // `originalclassname -> obfuscatedclassname:`
+    let (original, bytes) = parse_until_no_newline(bytes, |c| *c == b' ')?;
+
+    let bytes = parse_prefix(bytes, b" -> ")?;
+
+    let (obfuscated, bytes) = parse_until_no_newline(bytes, |c| *c == b':')?;
+
+    let bytes = parse_prefix(bytes, b":")?;
+
+    let record = ProguardRecord::Class {
+        original,
+        obfuscated,
+    };
+
+    Ok((record, consume_leading_newlines(bytes)))
+}
+
+fn parse_usize(bytes: &[u8]) -> Result<(usize, &[u8]), ParseError> {
+    let (slice, rest) = match bytes.iter().position(|c| !(*c as char).is_numeric()) {
+        Some(pos) => bytes.split_at(pos),
+        None => (bytes, &[] as &[u8]),
+    };
+
+    match std::str::from_utf8(slice) {
+        Ok(s) => match s.parse() {
+            Ok(value) => Ok((value, rest)),
+            Err(_) => Err(ParseError {
+                line: slice,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        },
+        Err(err) => Err(ParseError {
+            line: slice,
+            kind: ParseErrorKind::Utf8Error(err),
+        }),
+    }
+}
+
+fn parse_prefix<'s>(bytes: &'s [u8], prefix: &'s [u8]) -> Result<&'s [u8], ParseError<'s>> {
+    bytes.strip_prefix(prefix).ok_or(ParseError {
+        line: bytes,
+        kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
     })
+}
+
+fn parse_until<P>(bytes: &[u8], predicate: P) -> Result<(&str, &[u8]), ParseError>
+where
+    P: Fn(&u8) -> bool,
+{
+    let (slice, rest) = match bytes.iter().position(predicate) {
+        Some(pos) => bytes.split_at(pos),
+        None => (bytes, &[] as &[u8]),
+    };
+
+    match std::str::from_utf8(slice) {
+        Ok(s) => Ok((s, rest)),
+        Err(err) => Err(ParseError {
+            line: slice,
+            kind: ParseErrorKind::Utf8Error(err),
+        }),
+    }
+}
+
+fn parse_until_no_newline<P>(bytes: &[u8], predicate: P) -> Result<(&str, &[u8]), ParseError>
+where
+    P: Fn(&u8) -> bool,
+{
+    match parse_until(bytes, |byte| is_newline(byte) || predicate(byte)) {
+        Ok((slice, bytes)) => {
+            if !bytes.is_empty() && is_newline(&bytes[0]) {
+                Err(ParseError {
+                    line: slice.as_bytes(),
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                })
+            } else {
+                Ok((slice, bytes))
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn consume_leading_newlines(bytes: &[u8]) -> &[u8] {
+    match bytes.iter().position(|c| !is_newline(c)) {
+        Some(pos) => &bytes[pos..],
+        None => b"",
+    }
+}
+
+fn split_line(bytes: &[u8]) -> (&[u8], &[u8]) {
+    let pos = match bytes.iter().position(is_newline) {
+        Some(pos) => pos + 1,
+        None => bytes.len(),
+    };
+
+    bytes.split_at(pos)
+}
+
+fn is_newline(byte: &u8) -> bool {
+    *byte == b'\r' || *byte == b'\n'
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_parse_header_with_value() {
+        let bytes = b"# compiler: R8";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Header {
+                key: "compiler",
+                value: Some("R8")
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_header_without_value() {
+        let bytes = b"# common_typos_disable";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Header {
+                key: "common_typos_disable",
+                value: None,
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_header_trims_whitespace() {
+        let bytes = b"#    compiler   :    R8  ";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Header {
+                key: "compiler",
+                value: Some("R8")
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_header_consumes_trailing_newlines() {
+        let bytes = b"# compiler: R8\r\n\r\n";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Header {
+                key: "compiler",
+                value: Some("R8")
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_class() {
+        let bytes = b"android.support.v4.app.RemoteActionCompatParcelizer -> android.support.v4.app.RemoteActionCompatParcelizer:";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Class {
+                original: "android.support.v4.app.RemoteActionCompatParcelizer",
+                obfuscated: "android.support.v4.app.RemoteActionCompatParcelizer"
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_class_consumes_trailing_newlines() {
+        let bytes = b"android.support.v4.app.RemoteActionCompatParcelizer -> android.support.v4.app.RemoteActionCompatParcelizer:\r\n\r\n";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Class {
+                original: "android.support.v4.app.RemoteActionCompatParcelizer",
+                obfuscated: "android.support.v4.app.RemoteActionCompatParcelizer"
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_field() {
+        let bytes = b"    android.app.Activity mActivity -> a";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Field {
+                ty: "android.app.Activity",
+                original: "mActivity",
+                obfuscated: "a",
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_field_consumes_trailing_newlines() {
+        let bytes = b"    android.app.Activity mActivity -> a\r\n\r\n";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Field {
+                ty: "android.app.Activity",
+                original: "mActivity",
+                obfuscated: "a",
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_simple() {
+        let bytes = b"    boolean equals(java.lang.Object,java.lang.Object) -> a";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Method {
+                ty: "boolean",
+                original: "equals",
+                obfuscated: "a",
+                arguments: "java.lang.Object,java.lang.Object",
+                original_class: None,
+                line_mapping: None,
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_with_class() {
+        let bytes = b"    void androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar) -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Method {
+                ty: "void",
+                original: "setSupportActionBar",
+                obfuscated: "onCreate",
+                arguments: "androidx.appcompat.widget.Toolbar",
+                original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
+                line_mapping: None,
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_with_start_end_lines() {
+        let bytes = b"    14:15:void androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar) -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Method {
+                ty: "void",
+                original: "setSupportActionBar",
+                obfuscated: "onCreate",
+                arguments: "androidx.appcompat.widget.Toolbar",
+                original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
+                line_mapping: Some(LineMapping {
+                    startline: 14,
+                    endline: 15,
+                    original_startline: None,
+                    original_endline: None,
+                }),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_with_start_end_original_start_lines() {
+        let bytes = b"    14:15:void androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar):436 -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Method {
+                ty: "void",
+                original: "setSupportActionBar",
+                obfuscated: "onCreate",
+                arguments: "androidx.appcompat.widget.Toolbar",
+                original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
+                line_mapping: Some(LineMapping {
+                    startline: 14,
+                    endline: 15,
+                    original_startline: Some(436),
+                    original_endline: None,
+                }),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_with_start_end_original_start_original_end_lines() {
+        let bytes = b"    14:15:void androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar):436:437 -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Method {
+                ty: "void",
+                original: "setSupportActionBar",
+                obfuscated: "onCreate",
+                arguments: "androidx.appcompat.widget.Toolbar",
+                original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
+                line_mapping: Some(LineMapping {
+                    startline: 14,
+                    endline: 15,
+                    original_startline: Some(436),
+                    original_endline: Some(437),
+                }),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_class_with_bad_delimiter() {
+        // intentionally removed the spaces from the delimiter
+        let bytes = b"android.support.v4.app.RemoteActionCompatParcelizer->android.support.v4.app.RemoteActionCompatParcelizer:";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_class_without_trailing_colon() {
+        // intentionally removed trailing colon
+        let bytes = b"android.support.v4.app.RemoteActionCompatParcelizer -> android.support.v4.app.RemoteActionCompatParcelizer";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_field_insufficient_leading_spaces() {
+        // only 2 leading spaces instead of 4
+        let bytes = b"  android.app.Activity mActivity -> a";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_with_only_startline_no_endline() {
+        let bytes = b"    14:void androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar) -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_method_without_type() {
+        let bytes = b"    14:15:androidx.appcompat.app.AppCompatDelegateImpl.setSupportActionBar(androidx.appcompat.widget.Toolbar) -> onCreate";
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            }),
+        );
+    }
+
+    #[test]
+    fn try_parse_iter() {
+        let bytes = b"\
+# compiler: R8
+# common_typos_disable
+
+androidx.activity.OnBackPressedCallback->c.a.b:
+androidx.activity.OnBackPressedCallback -> c.a.b:
+    boolean mEnabled -> a
+  boolean mEnabled -> a
+    java.util.ArrayDeque mOnBackPressedCallbacks -> b
+    1:4:void onBackPressed():184:187 -> c
+androidx.activity.OnBackPressedCallback 
+-> c.a.b:
+        ";
+
+        let mapping: Vec<Result<ProguardRecord, ParseError>> =
+            ProguardMapping::new(bytes).iter().collect();
+        assert_eq!(
+            mapping,
+            vec![
+                Ok(ProguardRecord::Header {
+                    key: "compiler",
+                    value: Some("R8"),
+                }),
+                Ok(ProguardRecord::Header {
+                    key: "common_typos_disable",
+                    value: None,
+                }),
+                Err(ParseError {
+                    line: b"androidx.activity.OnBackPressedCallback->c.a.b:\n",
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+                Ok(ProguardRecord::Class {
+                    original: "androidx.activity.OnBackPressedCallback",
+                    obfuscated: "c.a.b",
+                }),
+                Ok(ProguardRecord::Field {
+                    ty: "boolean",
+                    original: "mEnabled",
+                    obfuscated: "a",
+                }),
+                Err(ParseError {
+                    line: b"  boolean mEnabled -> a\n",
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+                Ok(ProguardRecord::Field {
+                    ty: "java.util.ArrayDeque",
+                    original: "mOnBackPressedCallbacks",
+                    obfuscated: "b",
+                }),
+                Ok(ProguardRecord::Method {
+                    ty: "void",
+                    original: "onBackPressed",
+                    obfuscated: "c",
+                    arguments: "",
+                    original_class: None,
+                    line_mapping: Some(LineMapping {
+                        startline: 1,
+                        endline: 4,
+                        original_startline: Some(184),
+                        original_endline: Some(187),
+                    }),
+                }),
+                Err(ParseError {
+                    line: b"androidx.activity.OnBackPressedCallback \n",
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+                Err(ParseError {
+                    line: b"-> c.a.b:\n",
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+                Err(ParseError {
+                    line: b"        ",
+                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                }),
+            ],
+        );
+    }
 }

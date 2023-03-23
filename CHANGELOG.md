@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.0.1
+
+### Various fixes & improvements
+
+- perf(proguard): Try to optimize proguard mapping parsing (#26) by @Zylphrex
+
 ## 5.0.0
 
 **Breaking Changes**:

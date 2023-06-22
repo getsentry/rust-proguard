@@ -10,8 +10,11 @@ fn test_method_matches_callback() {
     //   - res/mapping-callback_EditActivity.kt
     let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_CALLBACK));
 
-    let mut mapped =
-        mapper.remap_frame(&StackFrame::new("io.sentry.samples.instrumentation.ui.g", "onMenuItemClick", 28));
+    let mut mapped = mapper.remap_frame(&StackFrame::new(
+        "io.sentry.samples.instrumentation.ui.g",
+        "onMenuItemClick",
+        28,
+    ));
 
     assert_eq!(
         mapped.next().unwrap(),
@@ -39,8 +42,11 @@ fn test_method_matches_callback_extra_class() {
     //   - res/mapping-callback-extra-class_TestSourceContext.kt
     let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_CALLBACK_EXTRA_CLASS));
 
-    let mut mapped =
-        mapper.remap_frame(&StackFrame::new("io.sentry.samples.instrumentation.ui.g", "onMenuItemClick", 28));
+    let mut mapped = mapper.remap_frame(&StackFrame::new(
+        "io.sentry.samples.instrumentation.ui.g",
+        "onMenuItemClick",
+        28,
+    ));
 
     assert_eq!(
         mapped.next().unwrap(),
@@ -83,8 +89,11 @@ fn test_method_matches_callback_inner_class() {
     //   - res/mapping-callback-inner-class_EditActivity.kt
     let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_CALLBACK_INNER_CLASS));
 
-    let mut mapped =
-        mapper.remap_frame(&StackFrame::new("io.sentry.samples.instrumentation.ui.g", "onMenuItemClick", 28));
+    let mut mapped = mapper.remap_frame(&StackFrame::new(
+        "io.sentry.samples.instrumentation.ui.g",
+        "onMenuItemClick",
+        28,
+    ));
 
     assert_eq!(
         mapped.next().unwrap(),

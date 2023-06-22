@@ -57,7 +57,11 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
             let line = if member.original_endline.is_none() {
                 member.original_startline
             } else {
-                member.original_startline + frame.line - member.startline
+                if member.original_endline.unwrap() == member.original_startline {
+                    member.original_startline
+                } else {
+                    member.original_startline + frame.line - member.startline
+                }
             };
             // when an inlined function is from a foreign class, we
             // don’t know the file it is defined in.

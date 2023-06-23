@@ -1,5 +1,15 @@
 # Changelog
 
+## 5.0.2
+
+### Various fixes & improvements
+
+- Update src/mapper.rs (#27) by @adinauer
+- reduce mapping files to relevant parts (#27) by @adinauer
+- make CI happier (#27) by @adinauer
+- fmt (#27) by @adinauer
+- Fix line number mismatch for callbacks (#27) by @adinauer
+
 ## 5.0.1
 
 ### Various fixes & improvements

@@ -54,7 +54,9 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
             }
             // parents of inlined frames don’t have an `endline`, and
             // the top inlined frame need to be correctly offset.
-            let line = if member.original_endline.is_none() {
+            let line = if member.original_endline.is_none()
+                || member.original_endline == Some(member.original_startline)
+            {
                 member.original_startline
             } else {
                 member.original_startline + frame.line - member.startline

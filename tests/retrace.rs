@@ -106,3 +106,26 @@ fn test_remap_kotlin() {
             .trim()
     );
 }
+
+#[test]
+fn test_remap_just_method() {
+    let mapper = ProguardMapper::from(
+        r#"com.exmaple.app.MainActivity -> a.b.c.d:
+    com.example1.domain.MyBean myBean -> p
+    1:1:void <init>():11:11 -> <init>
+    1:1:void buttonClicked(android.view.View):29:29 -> buttonClicked
+    2:2:void com.example1.domain.MyBean.doWork():16:16 -> buttonClicked
+    2:2:void buttonClicked(android.view.View):29 -> buttonClicked
+    1:1:void onCreate(android.os.Bundle):17:17 -> onCreate
+    2:5:void onCreate(android.os.Bundle):22:25 -> onCreate"#,
+    );
+
+    let unambiguous = mapper.remap_method("a.b.c.d", "onCreate");
+    assert_eq!(
+        unambiguous,
+        Some(("com.exmaple.app.MainActivity", "onCreate"))
+    );
+
+    let ambiguous = mapper.remap_method("a.b.c.d", "buttonClicked");
+    assert_eq!(ambiguous, None);
+}

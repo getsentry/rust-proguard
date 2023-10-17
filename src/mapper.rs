@@ -47,7 +47,7 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
         let (frame, ref mut members) = self.inner.as_mut()?;
 
         for member in members {
-            // skip any members which do not match our the frames line
+            // skip any members which do not match our frames line
             if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline)
             {
                 continue;
@@ -190,6 +190,26 @@ impl<'s> ProguardMapper<'s> {
         self.classes.get(class).map(|class| class.original)
     }
 
+    /// Remaps an obfuscated Class Method.
+    ///
+    /// The `class` argument has to be the fully-qualified obfuscated name of the
+    /// class, with its complete module prefix.
+    ///
+    /// If the `method` can be resolved unambiguously, it will be returned
+    /// alongside the remapped `class`, otherwise `None` is being returned.
+    pub fn remap_method(&'s self, class: &str, method: &str) -> Option<(&'s str, &'s str)> {
+        let class = self.classes.get(class)?;
+        let mut members = class.members.get(method)?.iter();
+        let first = members.next()?;
+
+        // We conservatively check that all the mappings point to the same method,
+        // as we don’t have line numbers to disambiguate.
+        // We could potentially skip inlined functions here, but lets rather be conservative.
+        let all_matching = members.all(|member| member.original == first.original);
+
+        all_matching.then_some((class.original, first.original))
+    }
+
     /// Remaps a single Stackframe.
     ///
     /// Returns zero or more [`StackFrame`]s, based on the information in
@@ -231,7 +251,7 @@ impl<'s> ProguardMapper<'s> {
         })
     }
 
-    /// Remaps a complete Java StackTrace, similar to [`Self::remap_stacktrace`] but instead works on
+    /// Remaps a complete Java StackTrace, similar to [`Self::remap_stacktrace_typed`] but instead works on
     /// strings as input and output.
     pub fn remap_stacktrace(&self, input: &str) -> Result<String, std::fmt::Error> {
         let mut stacktrace = String::new();

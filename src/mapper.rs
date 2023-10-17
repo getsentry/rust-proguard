@@ -195,9 +195,9 @@ impl<'s> ProguardMapper<'s> {
     /// The `class` argument has to be the fully-qualified obfuscated name of the
     /// class, with its complete module prefix.
     ///
-    /// The `method` will be resolved if that can be done unambiguously,
-    /// otherwise `None` is being returned.
-    pub fn remap_method(&'s self, class: &str, method: &str) -> Option<&'s str> {
+    /// If the `method` can be resolved unambiguously, it will be returned
+    /// alongside the remapped `class`, otherwise `None` is being returned.
+    pub fn remap_method(&'s self, class: &str, method: &str) -> Option<(&'s str, &'s str)> {
         let class = self.classes.get(class)?;
         let mut members = class.members.get(method)?.iter();
         let first = members.next()?;
@@ -207,7 +207,7 @@ impl<'s> ProguardMapper<'s> {
         // We could potentially skip inlined functions here, but lets rather be conservative.
         let all_matching = members.all(|member| member.original == first.original);
 
-        all_matching.then_some(first.original)
+        all_matching.then_some((class.original, first.original))
     }
 
     /// Remaps a single Stackframe.

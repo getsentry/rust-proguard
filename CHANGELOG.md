@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.1.0
+
+### Various fixes & improvements
+
+- Allow remapping just a method without line numbers (#30) by @Swatinem
+
 ## 5.0.2
 
 ### Various fixes & improvements

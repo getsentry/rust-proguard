@@ -99,22 +99,21 @@ fn iterate_without_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
 ) -> Option<StackFrame<'a>> {
-    match members.next() {
-        Some(member) => {
-            let class = match member.original_class {
-                Some(class) => class,
-                _ => frame.class,
-            };
-            Some(StackFrame {
-                class,
-                method: member.original,
-                file: None,
-                line: 0,
-                parameters: frame.parameters,
-            })
-        }
-        None => None,
-    }
+    let member = members.next()?;
+
+    let class = match member.original_class {
+        Some(class) => class,
+        _ => frame.class,
+    };
+    Some(StackFrame {
+        class,
+        method: member.original,
+        file: None,
+        line: 0,
+        parameters: frame.parameters,
+    })
+
+
 }
 
 impl FusedIterator for RemappedFrameIter<'_> {}

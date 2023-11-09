@@ -47,7 +47,7 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     type Item = StackFrame<'m>;
     fn next(&mut self) -> Option<Self::Item> {
         let (frame, ref mut members) = self.inner.as_mut()?;
-        if frame.parameters.is_none(){
+        if frame.parameters.is_none() {
             iterate_with_lines(frame, members)
         } else {
             iterate_without_lines(frame, members)
@@ -55,12 +55,13 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     }
 }
 
-fn iterate_with_lines<'a>(frame: &mut StackFrame<'a>, members: &mut core::slice::Iter<'_, MemberMapping<'a>>) -> Option<StackFrame<'a>>{
-
+fn iterate_with_lines<'a>(
+    frame: &mut StackFrame<'a>,
+    members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
+) -> Option<StackFrame<'a>> {
     for member in members {
         // skip any members which do not match our frames line
-        if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline)
-        {
+        if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline) {
             continue;
         }
         // parents of inlined frames don’t have an `endline`, and
@@ -94,7 +95,10 @@ fn iterate_with_lines<'a>(frame: &mut StackFrame<'a>, members: &mut core::slice:
     None
 }
 
-fn iterate_without_lines<'a>(frame: &mut StackFrame<'a>, members: &mut core::slice::Iter<'_, MemberMapping<'a>>) -> Option<StackFrame<'a>>{
+fn iterate_without_lines<'a>(
+    frame: &mut StackFrame<'a>,
+    members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
+) -> Option<StackFrame<'a>> {
     match members.next() {
         Some(member) => {
             let class = match member.original_class {
@@ -109,11 +113,8 @@ fn iterate_without_lines<'a>(frame: &mut StackFrame<'a>, members: &mut core::sli
                 parameters: frame.parameters,
             })
         }
-        None => None
+        None => None,
     }
-
-
-
 }
 
 impl FusedIterator for RemappedFrameIter<'_> {}
@@ -144,10 +145,10 @@ impl<'s> ProguardMapper<'s> {
             members: HashMap::new(),
             members_with_params: HashMap::new(),
         };
-        let mut unique_methods: HashMap<String, bool> = HashMap::new(); 
+        let mut unique_methods: HashMap<String, bool> = HashMap::new();
 
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
-        while let Some(record) =  records.next() {
+        while let Some(record) = records.next() {
             match record {
                 ProguardRecord::Class {
                     original,
@@ -202,34 +203,39 @@ impl<'s> ProguardMapper<'s> {
                     };
                     members.push(member_mapping.clone());
 
-				    // If the next line has the same leading line range then this method 
-                    // has been inlined by the code minification process, as a result 
+                    // If the next line has the same leading line range then this method
+                    // has been inlined by the code minification process, as a result
                     // it can't show in method traces and can be safely ignored.
                     if let Some(ProguardRecord::Method {
                         line_mapping: Some(next_line),
                         ..
-                    }) = records.peek() {
-       
+                    }) = records.peek()
+                    {
                         if let Some(current_line_mapping) = current_line {
-                            if (current_line_mapping.startline == next_line.startline) && (current_line_mapping.endline == next_line.endline) {
+                            if (current_line_mapping.startline == next_line.startline)
+                                && (current_line_mapping.endline == next_line.endline)
+                            {
                                 continue;
                             }
                         }
                     }
-                    
-                    let key =  format!("{}-{}-{}-{}",class.obfuscated, obfuscated, arguments, original);
-                    if let std::collections::hash_map::Entry::Vacant(e) = unique_methods.entry(key) {
+
+                    let key = format!(
+                        "{}-{}-{}-{}",
+                        class.obfuscated, obfuscated, arguments, original
+                    );
+                    if let std::collections::hash_map::Entry::Vacant(e) = unique_methods.entry(key)
+                    {
                         class
-                        .members_with_params
-                        .entry(obfuscated)
-                        .or_insert_with(|| HashMap::with_capacity(1))
-                        .entry(arguments)
-                        .or_insert_with(|| Vec::with_capacity(1))
-                        .push(member_mapping);
-                        
+                            .members_with_params
+                            .entry(obfuscated)
+                            .or_insert_with(|| HashMap::with_capacity(1))
+                            .entry(arguments)
+                            .or_insert_with(|| Vec::with_capacity(1))
+                            .push(member_mapping);
+
                         e.insert(true);
                     }
-                    
                 } // end ProguardRecord::Method
                 _ => {}
             }
@@ -296,12 +302,11 @@ impl<'s> ProguardMapper<'s> {
                 }
                 Some(parameters) => {
                     if let Some(members) = class.members_with_params.get(frame.method) {
-                        if let Some(typed_members) = members.get(parameters){
-                        let mut frame = frame.clone();
-                        frame.class = class.original;
-                        return RemappedFrameIter::members(frame, typed_members.iter());
+                        if let Some(typed_members) = members.get(parameters) {
+                            let mut frame = frame.clone();
+                            frame.class = class.original;
+                            return RemappedFrameIter::members(frame, typed_members.iter());
                         }
-    
                     }
                 }
             }

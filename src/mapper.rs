@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
@@ -112,8 +113,6 @@ fn iterate_without_lines<'a>(
         line: 0,
         parameters: frame.parameters,
     })
-
-
 }
 
 impl FusedIterator for RemappedFrameIter<'_> {}
@@ -144,7 +143,7 @@ impl<'s> ProguardMapper<'s> {
             members: HashMap::new(),
             members_with_params: HashMap::new(),
         };
-        let mut unique_methods: HashMap<String, bool> = HashMap::new();
+        let mut unique_methods: HashSet<(&str, &str, &str, &str)> = HashSet::new();
 
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {
@@ -219,12 +218,8 @@ impl<'s> ProguardMapper<'s> {
                         }
                     }
 
-                    let key = format!(
-                        "{}-{}-{}-{}",
-                        class.obfuscated, obfuscated, arguments, original
-                    );
-                    if let std::collections::hash_map::Entry::Vacant(e) = unique_methods.entry(key)
-                    {
+                    let key = (class.obfuscated, obfuscated, arguments, original);
+                    if unique_methods.insert(key) {
                         class
                             .members_with_params
                             .entry(obfuscated)
@@ -232,8 +227,6 @@ impl<'s> ProguardMapper<'s> {
                             .entry(arguments)
                             .or_insert_with(|| Vec::with_capacity(1))
                             .push(member_mapping);
-
-                        e.insert(true);
                     }
                 } // end ProguardRecord::Method
                 _ => {}

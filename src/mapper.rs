@@ -1,11 +1,12 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
 use crate::mapping::{ProguardMapping, ProguardRecord};
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct MemberMapping<'s> {
     startline: usize,
     endline: usize,
@@ -16,10 +17,17 @@ struct MemberMapping<'s> {
 }
 
 #[derive(Clone, Debug)]
+struct ClassMembers<'s> {
+    all_mappings: Vec<MemberMapping<'s>>,
+    // method_params -> Vec[MemberMapping]
+    mappings_by_params: HashMap<&'s str, Vec<MemberMapping<'s>>>,
+}
+
+#[derive(Clone, Debug)]
 struct ClassMapping<'s> {
     original: &'s str,
     obfuscated: &'s str,
-    members: HashMap<&'s str, Vec<MemberMapping<'s>>>,
+    members: HashMap<&'s str, ClassMembers<'s>>,
 }
 
 type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
@@ -45,43 +53,71 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     type Item = StackFrame<'m>;
     fn next(&mut self) -> Option<Self::Item> {
         let (frame, ref mut members) = self.inner.as_mut()?;
-
-        for member in members {
-            // skip any members which do not match our frames line
-            if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline)
-            {
-                continue;
-            }
-            // parents of inlined frames don’t have an `endline`, and
-            // the top inlined frame need to be correctly offset.
-            let line = if member.original_endline.is_none()
-                || member.original_endline == Some(member.original_startline)
-            {
-                member.original_startline
-            } else {
-                member.original_startline + frame.line - member.startline
-            };
-            // when an inlined function is from a foreign class, we
-            // don’t know the file it is defined in.
-            let file = if member.original_class.is_some() {
-                None
-            } else {
-                frame.file
-            };
-            let class = match member.original_class {
-                Some(class) => class,
-                _ => frame.class,
-            };
-            return Some(StackFrame {
-                class,
-                method: member.original,
-                file,
-                line,
-            });
+        if frame.parameters.is_none() {
+            iterate_with_lines(frame, members)
+        } else {
+            iterate_without_lines(frame, members)
         }
-
-        None
     }
+}
+
+fn iterate_with_lines<'a>(
+    frame: &mut StackFrame<'a>,
+    members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
+) -> Option<StackFrame<'a>> {
+    for member in members {
+        // skip any members which do not match our frames line
+        if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline) {
+            continue;
+        }
+        // parents of inlined frames don’t have an `endline`, and
+        // the top inlined frame need to be correctly offset.
+        let line = if member.original_endline.is_none()
+            || member.original_endline == Some(member.original_startline)
+        {
+            member.original_startline
+        } else {
+            member.original_startline + frame.line - member.startline
+        };
+        // when an inlined function is from a foreign class, we
+        // don’t know the file it is defined in.
+        let file = if member.original_class.is_some() {
+            None
+        } else {
+            frame.file
+        };
+        let class = match member.original_class {
+            Some(class) => class,
+            _ => frame.class,
+        };
+        return Some(StackFrame {
+            class,
+            method: member.original,
+            file,
+            line,
+            parameters: frame.parameters,
+        });
+    }
+    None
+}
+
+fn iterate_without_lines<'a>(
+    frame: &mut StackFrame<'a>,
+    members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
+) -> Option<StackFrame<'a>> {
+    let member = members.next()?;
+
+    let class = match member.original_class {
+        Some(class) => class,
+        _ => frame.class,
+    };
+    Some(StackFrame {
+        class,
+        method: member.original,
+        file: None,
+        line: 0,
+        parameters: frame.parameters,
+    })
 }
 
 impl FusedIterator for RemappedFrameIter<'_> {}
@@ -111,8 +147,10 @@ impl<'s> ProguardMapper<'s> {
             obfuscated: "",
             members: HashMap::new(),
         };
+        let mut unique_methods: HashSet<(&str, &str, &str, &str)> = HashSet::new();
 
-        for record in mapping.iter().filter_map(Result::ok) {
+        let mut records = mapping.iter().filter_map(Result::ok).peekable();
+        while let Some(record) = records.next() {
             match record {
                 ProguardRecord::Class {
                     original,
@@ -132,8 +170,10 @@ impl<'s> ProguardMapper<'s> {
                     obfuscated,
                     original_class,
                     line_mapping,
+                    arguments,
                     ..
                 } => {
+                    let current_line = line_mapping.clone();
                     // in case the mapping has no line records, we use `0` here.
                     let (startline, endline) =
                         line_mapping.as_ref().map_or((0, 0), |line_mapping| {
@@ -152,16 +192,47 @@ impl<'s> ProguardMapper<'s> {
                     let members = class
                         .members
                         .entry(obfuscated)
-                        .or_insert_with(|| Vec::with_capacity(1));
-                    members.push(MemberMapping {
+                        .or_insert_with(|| ClassMembers {
+                            all_mappings: Vec::with_capacity(1),
+                            mappings_by_params: Default::default(),
+                        });
+
+                    let member_mapping = MemberMapping {
                         startline,
                         endline,
                         original_class,
                         original,
                         original_startline,
                         original_endline,
-                    });
-                }
+                    };
+                    members.all_mappings.push(member_mapping.clone());
+
+                    // If the next line has the same leading line range then this method
+                    // has been inlined by the code minification process, as a result
+                    // it can't show in method traces and can be safely ignored.
+                    if let Some(ProguardRecord::Method {
+                        line_mapping: Some(next_line),
+                        ..
+                    }) = records.peek()
+                    {
+                        if let Some(current_line_mapping) = current_line {
+                            if (current_line_mapping.startline == next_line.startline)
+                                && (current_line_mapping.endline == next_line.endline)
+                            {
+                                continue;
+                            }
+                        }
+                    }
+
+                    let key = (class.obfuscated, obfuscated, arguments, original);
+                    if unique_methods.insert(key) {
+                        members
+                            .mappings_by_params
+                            .entry(arguments)
+                            .or_insert_with(|| Vec::with_capacity(1))
+                            .push(member_mapping);
+                    }
+                } // end ProguardRecord::Method
                 _ => {}
             }
         }
@@ -199,7 +270,7 @@ impl<'s> ProguardMapper<'s> {
     /// alongside the remapped `class`, otherwise `None` is being returned.
     pub fn remap_method(&'s self, class: &str, method: &str) -> Option<(&'s str, &'s str)> {
         let class = self.classes.get(class)?;
-        let mut members = class.members.get(method)?.iter();
+        let mut members = class.members.get(method)?.all_mappings.iter();
         let first = members.next()?;
 
         // We conservatively check that all the mappings point to the same method,
@@ -216,14 +287,27 @@ impl<'s> ProguardMapper<'s> {
     /// the proguard mapping. This can return more than one frame in the case
     /// of inlined functions. In that case, frames are sorted top to bottom.
     pub fn remap_frame(&'s self, frame: &StackFrame<'s>) -> RemappedFrameIter<'s> {
-        if let Some(class) = self.classes.get(frame.class) {
-            if let Some(members) = class.members.get(frame.method) {
-                let mut frame = frame.clone();
-                frame.class = class.original;
-                return RemappedFrameIter::members(frame, members.iter());
+        let Some(class) = self.classes.get(frame.class) else {
+            return RemappedFrameIter::empty();
+        };
+        let Some(members) = class.members.get(frame.method) else {
+            return RemappedFrameIter::empty();
+        };
+
+        let mut frame = frame.clone();
+        frame.class = class.original;
+
+        let mappings = if let Some(parameters) = frame.parameters {
+            if let Some(typed_members) = members.mappings_by_params.get(parameters) {
+                typed_members.iter()
+            } else {
+                return RemappedFrameIter::empty();
             }
-        }
-        RemappedFrameIter::empty()
+        } else {
+            members.all_mappings.iter()
+        };
+
+        return RemappedFrameIter::members(frame, mappings);
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.
@@ -389,12 +473,14 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     method: "onClick",
                     line: 2,
                     file: Some("SourceFile"),
+                    parameters: None,
                 },
                 StackFrame {
                     class: "android.view.View",
                     method: "performClick",
                     line: 7393,
                     file: Some("View.java"),
+                    parameters: None,
                 },
             ],
             cause: Some(Box::new(StackTrace {
@@ -407,6 +493,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     method: "onClick",
                     line: 1,
                     file: Some("SourceFile"),
+                    parameters: None,
                 }],
                 cause: None,
             })),

@@ -19,6 +19,7 @@ struct MemberMapping<'s> {
 #[derive(Clone, Debug)]
 struct ClassMembers<'s> {
     all_mappings: Vec<MemberMapping<'s>>,
+    // method_params -> Vec[MemberMapping]
     mappings_by_params: HashMap<&'s str, Vec<MemberMapping<'s>>>,
 }
 

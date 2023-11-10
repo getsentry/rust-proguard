@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.0
+
+- No documented changes.
+
 ## 5.1.0
 
 ### Various fixes & improvements

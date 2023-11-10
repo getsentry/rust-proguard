@@ -17,12 +17,16 @@ struct MemberMapping<'s> {
 }
 
 #[derive(Clone, Debug)]
+struct ClassMembers<'s> {
+    all_mappings: Vec<MemberMapping<'s>>,
+    mappings_by_params: HashMap<&'s str, Vec<MemberMapping<'s>>>,
+}
+
+#[derive(Clone, Debug)]
 struct ClassMapping<'s> {
     original: &'s str,
     obfuscated: &'s str,
-    members: HashMap<&'s str, Vec<MemberMapping<'s>>>,
-    // obfuscated_method_name -> [parameters_types -> Vec(original_method_name)]
-    members_with_params: HashMap<&'s str, HashMap<&'s str, Vec<MemberMapping<'s>>>>,
+    members: HashMap<&'s str, ClassMembers<'s>>,
 }
 
 type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
@@ -141,7 +145,6 @@ impl<'s> ProguardMapper<'s> {
             original: "",
             obfuscated: "",
             members: HashMap::new(),
-            members_with_params: HashMap::new(),
         };
         let mut unique_methods: HashSet<(&str, &str, &str, &str)> = HashSet::new();
 
@@ -159,7 +162,6 @@ impl<'s> ProguardMapper<'s> {
                         original,
                         obfuscated,
                         members: HashMap::new(),
-                        members_with_params: HashMap::new(),
                     }
                 }
                 ProguardRecord::Method {
@@ -189,7 +191,10 @@ impl<'s> ProguardMapper<'s> {
                     let members = class
                         .members
                         .entry(obfuscated)
-                        .or_insert_with(|| Vec::with_capacity(1));
+                        .or_insert_with(|| ClassMembers {
+                            all_mappings: Vec::with_capacity(1),
+                            mappings_by_params: Default::default(),
+                        });
 
                     let member_mapping = MemberMapping {
                         startline,
@@ -199,7 +204,7 @@ impl<'s> ProguardMapper<'s> {
                         original_startline,
                         original_endline,
                     };
-                    members.push(member_mapping.clone());
+                    members.all_mappings.push(member_mapping.clone());
 
                     // If the next line has the same leading line range then this method
                     // has been inlined by the code minification process, as a result
@@ -220,10 +225,8 @@ impl<'s> ProguardMapper<'s> {
 
                     let key = (class.obfuscated, obfuscated, arguments, original);
                     if unique_methods.insert(key) {
-                        class
-                            .members_with_params
-                            .entry(obfuscated)
-                            .or_insert_with(|| HashMap::with_capacity(1))
+                        members
+                            .mappings_by_params
                             .entry(arguments)
                             .or_insert_with(|| Vec::with_capacity(1))
                             .push(member_mapping);
@@ -266,7 +269,7 @@ impl<'s> ProguardMapper<'s> {
     /// alongside the remapped `class`, otherwise `None` is being returned.
     pub fn remap_method(&'s self, class: &str, method: &str) -> Option<(&'s str, &'s str)> {
         let class = self.classes.get(class)?;
-        let mut members = class.members.get(method)?.iter();
+        let mut members = class.members.get(method)?.all_mappings.iter();
         let first = members.next()?;
 
         // We conservatively check that all the mappings point to the same method,
@@ -283,27 +286,27 @@ impl<'s> ProguardMapper<'s> {
     /// the proguard mapping. This can return more than one frame in the case
     /// of inlined functions. In that case, frames are sorted top to bottom.
     pub fn remap_frame(&'s self, frame: &StackFrame<'s>) -> RemappedFrameIter<'s> {
-        if let Some(class) = self.classes.get(frame.class) {
-            match frame.parameters {
-                None => {
-                    if let Some(members) = class.members.get(frame.method) {
-                        let mut frame = frame.clone();
-                        frame.class = class.original;
-                        return RemappedFrameIter::members(frame, members.iter());
-                    }
-                }
-                Some(parameters) => {
-                    if let Some(members) = class.members_with_params.get(frame.method) {
-                        if let Some(typed_members) = members.get(parameters) {
-                            let mut frame = frame.clone();
-                            frame.class = class.original;
-                            return RemappedFrameIter::members(frame, typed_members.iter());
-                        }
-                    }
-                }
+        let Some(class) = self.classes.get(frame.class) else {
+            return RemappedFrameIter::empty();
+        };
+        let Some(members) = class.members.get(frame.method) else {
+            return RemappedFrameIter::empty();
+        };
+
+        let mut frame = frame.clone();
+        frame.class = class.original;
+
+        let mappings = if let Some(parameters) = frame.parameters {
+            if let Some(typed_members) = members.mappings_by_params.get(parameters) {
+                typed_members.iter()
+            } else {
+                return RemappedFrameIter::empty();
             }
-        }
-        return RemappedFrameIter::empty();
+        } else {
+            members.all_mappings.iter()
+        };
+
+        return RemappedFrameIter::members(frame, mappings);
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.

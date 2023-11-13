@@ -242,6 +242,11 @@ impl<'s> StackFrame<'s> {
     pub fn line(&self) -> usize {
         self.line
     }
+
+    /// The parameters of the StackFrame
+    pub fn parameters(&self) -> Option<&str> {
+        self.parameters
+    }
 }
 
 impl<'s> Display for StackFrame<'s> {

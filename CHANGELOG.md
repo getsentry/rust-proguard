@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.3.0
+
+### Various fixes & improvements
+
+- Add getter method for private parameters struct field (#32) by @viglia
+- release: 5.2.0 (8032053d) by @getsentry-bot
+
 ## 5.2.0
 
 - No documented changes.

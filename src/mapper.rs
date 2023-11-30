@@ -138,10 +138,10 @@ impl<'s> From<&'s str> for ProguardMapper<'s> {
     }
 }
 
-impl<'s> From<(&'s str, Option<bool>)> for ProguardMapper<'s> {
-    fn from(t: (&'s str, Option<bool>)) -> Self {
+impl<'s> From<(&'s str, bool)> for ProguardMapper<'s> {
+    fn from(t: (&'s str,bool)) -> Self {
         let mapping = ProguardMapping::new(t.0.as_ref());
-        Self::new(mapping, t.1.unwrap_or(false))
+        Self::new(mapping, t.1)
     }
 }
 

@@ -139,7 +139,7 @@ impl<'s> From<&'s str> for ProguardMapper<'s> {
 }
 
 impl<'s> From<(&'s str, bool)> for ProguardMapper<'s> {
-    fn from(t: (&'s str,bool)) -> Self {
+    fn from(t: (&'s str, bool)) -> Self {
         let mapping = ProguardMapping::new(t.0.as_ref());
         Self::new(mapping, t.1)
     }
@@ -181,9 +181,11 @@ impl<'s> ProguardMapper<'s> {
                     arguments,
                     ..
                 } => {
-                    let current_line = if initialize_param_mapping{
+                    let current_line = if initialize_param_mapping {
                         line_mapping.clone()
-                    } else { None };
+                    } else {
+                        None
+                    };
                     // in case the mapping has no line records, we use `0` here.
                     let (startline, endline) =
                         line_mapping.as_ref().map_or((0, 0), |line_mapping| {
@@ -218,7 +220,7 @@ impl<'s> ProguardMapper<'s> {
                     members.all_mappings.push(member_mapping.clone());
 
                     if !initialize_param_mapping {
-                        continue
+                        continue;
                     }
                     // If the next line has the same leading line range then this method
                     // has been inlined by the code minification process, as a result

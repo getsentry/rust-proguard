@@ -147,7 +147,7 @@ impl<'s> ProguardMapper<'s> {
             obfuscated: "",
             members: HashMap::new(),
         };
-        let mut unique_methods: HashSet<(&str, &str, &str, &str)> = HashSet::new();
+        let mut unique_methods: HashSet<(&str, &str, &str)> = HashSet::new();
 
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {
@@ -163,7 +163,8 @@ impl<'s> ProguardMapper<'s> {
                         original,
                         obfuscated,
                         members: HashMap::new(),
-                    }
+                    };
+                    unique_methods.clear();
                 }
                 ProguardRecord::Method {
                     original,
@@ -224,7 +225,7 @@ impl<'s> ProguardMapper<'s> {
                         }
                     }
 
-                    let key = (class.obfuscated, obfuscated, arguments, original);
+                    let key = (obfuscated, arguments, original);
                     if unique_methods.insert(key) {
                         members
                             .mappings_by_params

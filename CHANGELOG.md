@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.4.0
+
+### Various fixes & improvements
+
+- enhance: make mapping by params initialization optional (#34) by @viglia
+- Clear `unique_methods` per `class` (#33) by @Swatinem
+
 ## 5.3.0
 
 ### Various fixes & improvements

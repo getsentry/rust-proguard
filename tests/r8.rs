@@ -21,7 +21,7 @@ fn test_basic_r8() {
     assert!(mapping.is_valid());
     assert!(mapping.has_line_info());
 
-    let mapper = ProguardMapper::new(mapping);
+    let mapper = ProguardMapper::new(mapping, false);
 
     let class = mapper.remap_class("a.a.a.a.c");
     assert_eq!(class, Some("android.arch.core.executor.ArchTaskExecutor"));
@@ -29,7 +29,7 @@ fn test_basic_r8() {
 
 #[test]
 fn test_extra_methods() {
-    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_R8));
+    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_R8), false);
 
     let mut mapped = mapper.remap_frame(&StackFrame::new("a.a.a.b.c$a", "<init>", 1));
 
@@ -46,7 +46,7 @@ fn test_extra_methods() {
 
 #[test]
 fn test_method_matches() {
-    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_R8));
+    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_R8), false);
 
     let mut mapped = mapper.remap_frame(&StackFrame::new("a.a.a.b.c", "a", 1));
 

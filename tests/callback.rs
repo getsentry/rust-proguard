@@ -8,7 +8,7 @@ static MAPPING_CALLBACK_INNER_CLASS: &[u8] = include_bytes!("res/mapping-callbac
 fn test_method_matches_callback() {
     // see the following files for sources used when creating the mapping file:
     //   - res/mapping-callback_EditActivity.kt
-    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_CALLBACK));
+    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_CALLBACK), false);
 
     let mut mapped = mapper.remap_frame(&StackFrame::new(
         "io.sentry.samples.instrumentation.ui.g",
@@ -40,7 +40,7 @@ fn test_method_matches_callback_extra_class() {
     // see the following files for sources used when creating the mapping file:
     //   - res/mapping-callback-extra-class_EditActivity.kt
     //   - res/mapping-callback-extra-class_TestSourceContext.kt
-    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_CALLBACK_EXTRA_CLASS));
+    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_CALLBACK_EXTRA_CLASS), false);
 
     let mut mapped = mapper.remap_frame(&StackFrame::new(
         "io.sentry.samples.instrumentation.ui.g",
@@ -87,7 +87,7 @@ fn test_method_matches_callback_extra_class() {
 fn test_method_matches_callback_inner_class() {
     // see the following files for sources used when creating the mapping file:
     //   - res/mapping-callback-inner-class_EditActivity.kt
-    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_CALLBACK_INNER_CLASS));
+    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_CALLBACK_INNER_CLASS), false);
 
     let mut mapped = mapper.remap_frame(&StackFrame::new(
         "io.sentry.samples.instrumentation.ui.g",

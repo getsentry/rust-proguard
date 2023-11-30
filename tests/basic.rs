@@ -20,7 +20,7 @@ fn test_basic() {
     assert!(mapping.is_valid());
     assert!(mapping.has_line_info());
 
-    let mapper = ProguardMapper::new(mapping);
+    let mapper = ProguardMapper::new(mapping, false);
 
     let class = mapper.remap_class("android.support.constraint.ConstraintLayout$a");
     assert_eq!(
@@ -35,7 +35,7 @@ fn test_basic_win() {
     assert!(mapping.is_valid());
     assert!(mapping.has_line_info());
 
-    let mapper = ProguardMapper::new(mapping);
+    let mapper = ProguardMapper::new(mapping, false);
 
     let class = mapper.remap_class("android.support.constraint.ConstraintLayout$a");
     assert_eq!(
@@ -46,7 +46,7 @@ fn test_basic_win() {
 
 #[test]
 fn test_method_matches() {
-    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING));
+    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING), false);
 
     let mut mapped =
         mapper.remap_frame(&StackFrame::new("android.support.constraint.a.a", "a", 320));
@@ -77,7 +77,7 @@ fn test_method_matches() {
 
 #[test]
 fn test_method_matches_win() {
-    let mapper = ProguardMapper::new(ProguardMapping::new(&MAPPING_WIN[..]));
+    let mapper = ProguardMapper::new(ProguardMapping::new(&MAPPING_WIN[..]), false);
 
     let mut mapped =
         mapper.remap_frame(&StackFrame::new("android.support.constraint.a.a", "a", 320));
@@ -119,7 +119,7 @@ fn test_inlines() {
         );
     }
 
-    let mapper = ProguardMapper::new(mapping);
+    let mapper = ProguardMapper::new(mapping, false);
 
     let raw = r#"java.lang.RuntimeException: Button press caused an exception!
     at io.sentry.sample.MainActivity.t(MainActivity.java:1)

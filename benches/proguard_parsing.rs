@@ -4,7 +4,7 @@ use proguard::{ProguardMapper, ProguardMapping};
 static MAPPING: &[u8] = include_bytes!("../tests/res/mapping.txt");
 
 fn proguard_mapper(mapping: ProguardMapping) -> ProguardMapper {
-    ProguardMapper::new(mapping)
+    ProguardMapper::new(mapping, false)
 }
 
 fn criterion_benchmark(c: &mut Criterion) {

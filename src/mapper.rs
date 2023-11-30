@@ -134,20 +134,37 @@ pub struct ProguardMapper<'s> {
 impl<'s> From<&'s str> for ProguardMapper<'s> {
     fn from(s: &'s str) -> Self {
         let mapping = ProguardMapping::new(s.as_ref());
-        Self::new(mapping, false)
+        Self::new(mapping)
     }
 }
 
 impl<'s> From<(&'s str, bool)> for ProguardMapper<'s> {
     fn from(t: (&'s str, bool)) -> Self {
         let mapping = ProguardMapping::new(t.0.as_ref());
-        Self::new(mapping, t.1)
+        Self::new_with_param_mapping(mapping, t.1)
     }
 }
 
 impl<'s> ProguardMapper<'s> {
     /// Create a new ProguardMapper.
-    pub fn new(mapping: ProguardMapping<'s>, initialize_param_mapping: bool) -> Self {
+    pub fn new(mapping: ProguardMapping<'s>) -> Self {
+        Self::create_proguard_mapper(mapping, false)
+    }
+
+    /// Create a new ProguardMapper with the extra mappings_by_params.
+    /// This is useful when we want to deobfuscate frames with missing
+    /// line information
+    pub fn new_with_param_mapping(
+        mapping: ProguardMapping<'s>,
+        initialize_param_mapping: bool,
+    ) -> Self {
+        Self::create_proguard_mapper(mapping, initialize_param_mapping)
+    }
+
+    fn create_proguard_mapper(
+        mapping: ProguardMapping<'s>,
+        initialize_param_mapping: bool,
+    ) -> Self {
         let mut classes = HashMap::new();
         let mut class = ClassMapping {
             original: "",

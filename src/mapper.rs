@@ -138,9 +138,33 @@ impl<'s> From<&'s str> for ProguardMapper<'s> {
     }
 }
 
+impl<'s> From<(&'s str, bool)> for ProguardMapper<'s> {
+    fn from(t: (&'s str, bool)) -> Self {
+        let mapping = ProguardMapping::new(t.0.as_ref());
+        Self::new_with_param_mapping(mapping, t.1)
+    }
+}
+
 impl<'s> ProguardMapper<'s> {
     /// Create a new ProguardMapper.
     pub fn new(mapping: ProguardMapping<'s>) -> Self {
+        Self::create_proguard_mapper(mapping, false)
+    }
+
+    /// Create a new ProguardMapper with the extra mappings_by_params.
+    /// This is useful when we want to deobfuscate frames with missing
+    /// line information
+    pub fn new_with_param_mapping(
+        mapping: ProguardMapping<'s>,
+        initialize_param_mapping: bool,
+    ) -> Self {
+        Self::create_proguard_mapper(mapping, initialize_param_mapping)
+    }
+
+    fn create_proguard_mapper(
+        mapping: ProguardMapping<'s>,
+        initialize_param_mapping: bool,
+    ) -> Self {
         let mut classes = HashMap::new();
         let mut class = ClassMapping {
             original: "",
@@ -174,7 +198,11 @@ impl<'s> ProguardMapper<'s> {
                     arguments,
                     ..
                 } => {
-                    let current_line = line_mapping.clone();
+                    let current_line = if initialize_param_mapping {
+                        line_mapping.clone()
+                    } else {
+                        None
+                    };
                     // in case the mapping has no line records, we use `0` here.
                     let (startline, endline) =
                         line_mapping.as_ref().map_or((0, 0), |line_mapping| {
@@ -208,6 +236,9 @@ impl<'s> ProguardMapper<'s> {
                     };
                     members.all_mappings.push(member_mapping.clone());
 
+                    if !initialize_param_mapping {
+                        continue;
+                    }
                     // If the next line has the same leading line range then this method
                     // has been inlined by the code minification process, as a result
                     // it can't show in method traces and can be safely ignored.

@@ -186,7 +186,7 @@ impl<'s> StackFrame<'s> {
         }
     }
 
-    /// Create a new StackFrame with farguments information and no line.
+    /// Create a new StackFrame with arguments information and no line.
     /// This is useful for when we try to do deobfuscation with no line information.
     pub fn with_parameters(class: &'s str, method: &'s str, arguments: &'s str) -> Self {
         Self {
@@ -196,6 +196,19 @@ impl<'s> StackFrame<'s> {
             file: None,
             parameters: Some(arguments),
             signature: None,
+        }
+    }
+
+    /// Create a new StackFrame with signature information and no line.
+    /// This is useful for when we try to do deobfuscation with no line information.
+    pub fn with_signature(class: &'s str, method: &'s str, signature: String) -> Self {
+        Self {
+            class,
+            method,
+            line: 0,
+            file: None,
+            parameters: None,
+            signature: Some(signature),
         }
     }
 

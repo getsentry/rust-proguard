@@ -115,7 +115,7 @@ pub fn deobfuscate_bytecode_signature(
     let parameter_java_types: Vec<String> = parameter_types
         .into_iter()
         .filter(|params| !params.is_empty())
-        .map(|params| byte_code_type_to_java_type(params.as_str(), mapper).unwrap_or_default())
+        .filter_map(|params| byte_code_type_to_java_type(params.as_str(), mapper))
         .collect();
 
     let return_java_type = if !return_type.is_empty() {

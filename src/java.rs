@@ -15,7 +15,7 @@ fn java_base_types(encoded_ty: char) -> Option<&'static str> {
     }
 }
 
-fn byte_code_type_to_java_type(byte_code_type: &str, mappers: &[&ProguardMapper]) -> String {
+fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) -> String {
     let mut chrs = byte_code_type.chars();
     let token = chrs.next().unwrap_or_default();
     if token == 'L' {
@@ -26,19 +26,18 @@ fn byte_code_type_to_java_type(byte_code_type: &str, mappers: &[&ProguardMapper]
         }
         chrs.next_back(); // remove final `;`
         let obfuscated = chrs.collect::<String>().replace('/', ".");
-        // if mappers.len() > 0 {}
-        for mapper in mappers {
-            if let Some(mapped) = mapper.remap_class(&obfuscated) {
-                return mapped.to_string();
-            }
+
+        if let Some(mapped) = mapper.remap_class(&obfuscated) {
+            return mapped.to_string();
         }
+
         return obfuscated;
     } else if token == '[' {
         let type_sig = chrs.clone().collect::<String>();
         if !type_sig.is_empty() {
             return format!(
                 "{}[]",
-                byte_code_type_to_java_type(chrs.collect::<String>().as_str(), mappers)
+                byte_code_type_to_java_type(chrs.collect::<String>().as_str(), mapper)
             );
         }
     } else if let Some(ty) = java_base_types(token) {
@@ -109,17 +108,17 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<String>, 
 /// parameters and the second one is the return type
 pub fn deobfuscate_bytecode_signature(
     signature: &str,
-    mappers: &[&ProguardMapper],
+    mapper: &ProguardMapper,
 ) -> Option<(Vec<String>, String)> {
     let (parameter_types, return_type) = parse_obfuscated_bytecode_signature(signature)?;
     let parameter_java_types: Vec<String> = parameter_types
         .into_iter()
         .filter(|params| !params.is_empty())
-        .map(|params| byte_code_type_to_java_type(params.as_str(), mappers))
+        .map(|params| byte_code_type_to_java_type(params.as_str(), mapper))
         .collect();
 
     let return_java_type = if !return_type.is_empty() {
-        byte_code_type_to_java_type(return_type.as_str(), mappers)
+        byte_code_type_to_java_type(return_type.as_str(), mapper)
     } else {
         "".to_string()
     };
@@ -146,7 +145,8 @@ pub fn format_signature(types: &Option<(Vec<String>, String)>) -> Option<String>
 #[cfg(test)]
 mod tests {
     use crate::{
-        deobfuscate_bytecode_signature, format_signature, java::byte_code_type_to_java_type,
+        format_signature,
+        java::{byte_code_type_to_java_type},
         ProguardMapper, ProguardMapping,
     };
     use std::collections::HashMap;
@@ -179,7 +179,7 @@ mod tests {
 
         for (ty, expected) in tests {
             assert_eq!(
-                byte_code_type_to_java_type(ty, &[&mapper]),
+                byte_code_type_to_java_type(ty, &mapper),
                 expected.to_string()
             );
         }
@@ -217,12 +217,12 @@ mod tests {
         let tests_invalid = vec!["", "()", "(L)"];
 
         for (obfuscated, expected) in tests_valid {
-            let signature = deobfuscate_bytecode_signature(obfuscated, &[&mapper]);
+            let signature = mapper.deobfuscate_signature(obfuscated);
             assert_eq!(format_signature(&signature), Some(expected.to_string()));
         }
 
         for obfuscated in tests_invalid {
-            let signature = deobfuscate_bytecode_signature(obfuscated, &[&mapper]);
+            let signature = mapper.deobfuscate_signature(obfuscated);
             assert_eq!(format_signature(&signature), None);
         }
     }

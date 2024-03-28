@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
+use crate::java;
 use crate::mapping::{ProguardMapping, ProguardRecord};
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
 
@@ -291,6 +292,12 @@ impl<'s> ProguardMapper<'s> {
     /// ```
     pub fn remap_class(&'s self, class: &str) -> Option<&'s str> {
         self.classes.get(class).map(|class| class.original)
+    }
+
+    /// returns a tuple where the first element is the list of the function
+    /// parameters and the second one is the return type
+    pub fn deobfuscate_signature(&'s self, signature: &str) -> Option<(Vec<String>, String)> {
+        java::deobfuscate_bytecode_signature(signature, self)
     }
 
     /// Remaps an obfuscated Class Method.

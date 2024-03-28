@@ -40,7 +40,7 @@ mod mapper;
 mod mapping;
 mod stacktrace;
 
-pub use java::{deobfuscate_bytecode_signature, format_signature};
+pub use java::format_signature;
 pub use mapper::{ProguardMapper, RemappedFrameIter};
 pub use mapping::{
     LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord,

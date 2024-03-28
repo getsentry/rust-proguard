@@ -145,9 +145,7 @@ pub fn format_signature(types: &Option<(Vec<String>, String)>) -> Option<String>
 #[cfg(test)]
 mod tests {
     use crate::{
-        format_signature,
-        java::{byte_code_type_to_java_type},
-        ProguardMapper, ProguardMapping,
+        format_signature, java::byte_code_type_to_java_type, ProguardMapper, ProguardMapping,
     };
     use std::collections::HashMap;
 

@@ -15,35 +15,36 @@ fn java_base_types(encoded_ty: char) -> Option<&'static str> {
     }
 }
 
-fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) -> String {
+fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) -> Option<String> {
     let mut chrs = byte_code_type.chars();
     let token = chrs.next().unwrap_or_default();
     if token == 'L' {
         // invalid signature
         let l = chrs.clone().last();
         if l.is_none() || l.unwrap() != ';' {
-            return "".to_string();
+            return None;
         }
         chrs.next_back(); // remove final `;`
         let obfuscated = chrs.collect::<String>().replace('/', ".");
 
         if let Some(mapped) = mapper.remap_class(&obfuscated) {
-            return mapped.to_string();
+            return Some(mapped.to_string());
         }
 
-        return obfuscated;
+        return Some(obfuscated);
     } else if token == '[' {
         let type_sig = chrs.clone().collect::<String>();
         if !type_sig.is_empty() {
-            return format!(
+            return Some(format!(
                 "{}[]",
                 byte_code_type_to_java_type(chrs.collect::<String>().as_str(), mapper)
-            );
+                    .unwrap_or_default()
+            ));
         }
     } else if let Some(ty) = java_base_types(token) {
-        return ty.to_string();
+        return Some(ty.to_string());
     }
-    byte_code_type.to_string()
+    Some(byte_code_type.to_string())
 }
 
 // parse_obfuscated_bytecode_signature will parse an obfuscated signatures into parameter
@@ -114,11 +115,11 @@ pub fn deobfuscate_bytecode_signature(
     let parameter_java_types: Vec<String> = parameter_types
         .into_iter()
         .filter(|params| !params.is_empty())
-        .map(|params| byte_code_type_to_java_type(params.as_str(), mapper))
+        .map(|params| byte_code_type_to_java_type(params.as_str(), mapper).unwrap_or_default())
         .collect();
 
     let return_java_type = if !return_type.is_empty() {
-        byte_code_type_to_java_type(return_type.as_str(), mapper)
+        byte_code_type_to_java_type(return_type.as_str(), mapper).unwrap_or_default()
     } else {
         "".to_string()
     };
@@ -177,7 +178,7 @@ mod tests {
 
         for (ty, expected) in tests {
             assert_eq!(
-                byte_code_type_to_java_type(ty, &mapper),
+                byte_code_type_to_java_type(ty, &mapper).unwrap_or_default(),
                 expected.to_string()
             );
         }

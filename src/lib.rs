@@ -35,6 +35,7 @@
 
 #![warn(missing_docs)]
 
+mod java;
 mod mapper;
 mod mapping;
 mod stacktrace;

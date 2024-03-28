@@ -17,7 +17,7 @@ fn java_base_types(encoded_ty: char) -> Option<&'static str> {
 
 fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) -> Option<String> {
     let mut chrs = byte_code_type.chars();
-    let token = chrs.next().unwrap_or_default();
+    let token = chrs.next()?;
     if token == 'L' {
         // invalid signature
         let l = chrs.clone().last();
@@ -118,11 +118,7 @@ pub fn deobfuscate_bytecode_signature(
         .filter_map(|params| byte_code_type_to_java_type(params.as_str(), mapper))
         .collect();
 
-    let return_java_type = if !return_type.is_empty() {
-        byte_code_type_to_java_type(return_type.as_str(), mapper).unwrap_or_default()
-    } else {
-        "".to_string()
-    };
+    let return_java_type = byte_code_type_to_java_type(return_type.as_str(), mapper)?;
 
     Some((parameter_java_types, return_java_type))
 }

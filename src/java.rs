@@ -15,10 +15,7 @@ fn java_base_types(encoded_ty: char) -> Option<&'static str> {
     }
 }
 
-fn byte_code_type_to_java_type(
-    byte_code_type: &str,
-    mappers: &[&ProguardMapper],
-) -> String {
+fn byte_code_type_to_java_type(byte_code_type: &str, mappers: &[&ProguardMapper]) -> String {
     let mut chrs = byte_code_type.chars();
     let token = chrs.next().unwrap_or_default();
     if token == 'L' {
@@ -44,7 +41,6 @@ fn byte_code_type_to_java_type(
                 byte_code_type_to_java_type(chrs.collect::<String>().as_str(), mappers)
             );
         }
-
     } else if let Some(ty) = java_base_types(token) {
         return ty.to_string();
     }
@@ -101,7 +97,7 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<String>, 
             } else {
                 types.push(token.to_string());
             }
-        }  else {
+        } else {
             tmp_buf.clear();
         }
     }
@@ -116,9 +112,11 @@ pub fn deobfuscate_bytecode_signature(
     mappers: &[&ProguardMapper],
 ) -> Option<(Vec<String>, String)> {
     let (parameter_types, return_type) = parse_obfuscated_bytecode_signature(signature)?;
-    let parameter_java_types: Vec<String> = parameter_types.into_iter().filter(
-        |params| !params.is_empty()
-    ).map(|params| byte_code_type_to_java_type(params.as_str(), mappers)).collect();
+    let parameter_java_types: Vec<String> = parameter_types
+        .into_iter()
+        .filter(|params| !params.is_empty())
+        .map(|params| byte_code_type_to_java_type(params.as_str(), mappers))
+        .collect();
 
     let return_java_type = if !return_type.is_empty() {
         byte_code_type_to_java_type(return_type.as_str(), mappers)
@@ -147,9 +145,9 @@ pub fn format_signature(types: &Option<(Vec<String>, String)>) -> Option<String>
 
 #[cfg(test)]
 mod tests {
-    use crate::{ProguardMapping, ProguardMapper};
-    use std::collections::HashMap;
     use crate::java::*;
+    use crate::{ProguardMapper, ProguardMapping};
+    use std::collections::HashMap;
 
     #[test]
     fn test_byte_code_type_to_java_type() {

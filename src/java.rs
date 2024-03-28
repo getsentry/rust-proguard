@@ -105,8 +105,8 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<String>, 
     Some((types, return_type.to_string()))
 }
 
-// returns a tuple where the first element is the list of the function
-// parameters and the second one is the return type
+/// returns a tuple where the first element is the list of the function
+/// parameters and the second one is the return type
 pub fn deobfuscate_bytecode_signature(
     signature: &str,
     mappers: &[&ProguardMapper],
@@ -127,7 +127,7 @@ pub fn deobfuscate_bytecode_signature(
     Some((parameter_java_types, return_java_type))
 }
 
-// format_signature formats the types into a human-readable signature
+/// formats types (param_type list, return_type) into a human-readable signature
 pub fn format_signature(types: &Option<(Vec<String>, String)>) -> Option<String> {
     if types.is_none() {
         return None;
@@ -145,8 +145,10 @@ pub fn format_signature(types: &Option<(Vec<String>, String)>) -> Option<String>
 
 #[cfg(test)]
 mod tests {
-    use crate::java::*;
-    use crate::{ProguardMapper, ProguardMapping};
+    use crate::{
+        deobfuscate_bytecode_signature, format_signature, java::byte_code_type_to_java_type,
+        ProguardMapper, ProguardMapping,
+    };
     use std::collections::HashMap;
 
     #[test]

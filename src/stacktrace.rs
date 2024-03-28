@@ -158,7 +158,6 @@ pub struct StackFrame<'s> {
     pub(crate) line: usize,
     pub(crate) file: Option<&'s str>,
     pub(crate) parameters: Option<&'s str>,
-    pub(crate) signature: Option<String>,
 }
 
 impl<'s> StackFrame<'s> {
@@ -170,7 +169,6 @@ impl<'s> StackFrame<'s> {
             line,
             file: None,
             parameters: None,
-            signature: None,
         }
     }
 
@@ -182,7 +180,6 @@ impl<'s> StackFrame<'s> {
             line,
             file: Some(file),
             parameters: None,
-            signature: None,
         }
     }
 
@@ -195,20 +192,6 @@ impl<'s> StackFrame<'s> {
             line: 0,
             file: None,
             parameters: Some(arguments),
-            signature: None,
-        }
-    }
-
-    /// Create a new StackFrame with signature information and no line.
-    /// This is useful for when we try to do deobfuscation with no line information.
-    pub fn with_signature(class: &'s str, method: &'s str, signature: String) -> Self {
-        Self {
-            class,
-            method,
-            line: 0,
-            file: None,
-            parameters: None,
-            signature: Some(signature),
         }
     }
 
@@ -300,7 +283,6 @@ pub(crate) fn parse_frame(line: &str) -> Option<StackFrame> {
         file: Some(file),
         line,
         parameters: None,
-        signature: None,
     })
 }
 
@@ -408,7 +390,6 @@ mod tests {
                 line: 5,
                 file: Some("Util.java"),
                 parameters: None,
-                signature: None,
             }],
             cause: Some(Box::new(StackTrace {
                 exception: Some(Throwable {
@@ -421,7 +402,6 @@ mod tests {
                     line: 115,
                     file: None,
                     parameters: None,
-                    signature: None,
                 }],
                 cause: None,
             })),
@@ -445,7 +425,6 @@ Caused by: com.example.Other: Invalid data
             line: 1,
             file: Some("SourceFile"),
             parameters: None,
-            signature: None,
         });
 
         assert_eq!(expect, stack_frame);
@@ -469,7 +448,6 @@ Caused by: com.example.Other: Invalid data
             line: 1,
             file: None,
             parameters: None,
-            signature: None,
         };
 
         assert_eq!(
@@ -483,7 +461,6 @@ Caused by: com.example.Other: Invalid data
             line: 1,
             file: Some("SourceFile"),
             parameters: None,
-            signature: None,
         };
 
         assert_eq!(

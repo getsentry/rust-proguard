@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
-use crate::java;
 use crate::mapping::{ProguardMapping, ProguardRecord};
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
 
@@ -97,7 +96,6 @@ fn iterate_with_lines<'a>(
             file,
             line,
             parameters: frame.parameters,
-            signature: frame.signature.clone(),
         });
     }
     None
@@ -119,7 +117,6 @@ fn iterate_without_lines<'a>(
         file: None,
         line: 0,
         parameters: frame.parameters,
-        signature: frame.signature.clone(),
     })
 }
 
@@ -332,19 +329,8 @@ impl<'s> ProguardMapper<'s> {
         let mut frame = frame.clone();
         frame.class = class.original;
 
-        let types = &frame.signature.and_then(|signature| {
-            java::deobfuscate_bytecode_signature(signature.as_str(), &[self])
-        });
-
-        frame.signature = java::format_signature(types);
-
-        let binding = types.as_ref().map(|(params, _)| params.join(","));
-
-        // try using the signature if set, otherwise fall back on frame.parameters
-        let parameters = binding.as_deref().or(frame.parameters);
-
-        let mappings = if let Some(params) = parameters {
-            if let Some(typed_members) = members.mappings_by_params.get(params) {
+        let mappings = if let Some(parameters) = frame.parameters {
+            if let Some(typed_members) = members.mappings_by_params.get(parameters) {
                 typed_members.iter()
             } else {
                 return RemappedFrameIter::empty();
@@ -520,7 +506,6 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 2,
                     file: Some("SourceFile"),
                     parameters: None,
-                    signature: None,
                 },
                 StackFrame {
                     class: "android.view.View",
@@ -528,7 +513,6 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 7393,
                     file: Some("View.java"),
                     parameters: None,
-                    signature: None,
                 },
             ],
             cause: Some(Box::new(StackTrace {
@@ -542,7 +526,6 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 1,
                     file: Some("SourceFile"),
                     parameters: None,
-                    signature: None,
                 }],
                 cause: None,
             })),

@@ -130,9 +130,9 @@ pub fn deobfuscate_bytecode_signature(
 }
 
 // format_signature formats the types into a human-readable signature
-pub fn format_signature(types: &Option<(Vec<String>, String)>) -> String {
+pub fn format_signature(types: &Option<(Vec<String>, String)>) -> Option<String> {
     if types.is_none() {
-        return "".to_string();
+        return None;
     }
 
     let (parameter_java_types, return_java_type) = types.as_ref().unwrap();
@@ -142,7 +142,7 @@ pub fn format_signature(types: &Option<(Vec<String>, String)>) -> String {
         signature += format!(": {}", return_java_type).as_str();
     }
 
-    signature
+    Some(signature)
 }
 
 #[cfg(test)]
@@ -193,11 +193,7 @@ mod tests {
         let mapping = ProguardMapping::new(proguard_source);
         let mapper = ProguardMapper::new(mapping);
 
-        let tests = HashMap::from([
-            // invalid signatures
-            ("", ""),
-            ("()", ""),
-            ("(L)", ""),
+        let tests_valid = HashMap::from([
             // valid signatures
             ("()V", "()"),
             ("([I)V", "(int[])"),
@@ -217,9 +213,17 @@ mod tests {
             ),
         ]);
 
-        for (obfuscated, expected) in tests {
+        // invalid signatures
+        let tests_invalid = vec!["", "()", "(L)"];
+
+        for (obfuscated, expected) in tests_valid {
             let signature = deobfuscate_bytecode_signature(obfuscated, &[&mapper]);
-            assert_eq!(format_signature(&signature), expected.to_string(),);
+            assert_eq!(format_signature(&signature), Some(expected.to_string()));
+        }
+
+        for obfuscated in tests_invalid {
+            let signature = deobfuscate_bytecode_signature(obfuscated, &[&mapper]);
+            assert_eq!(format_signature(&signature), None);
         }
     }
 }

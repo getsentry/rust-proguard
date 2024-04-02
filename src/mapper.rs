@@ -63,6 +63,12 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     }
 }
 
+fn extract_class_name(full_path: &str) -> Option<&str> {
+    let after_last_period = full_path.split('.').last()?;
+    // If the class is an inner class, we need to extract the outer class name
+    after_last_period.split('$').next()
+}
+
 fn iterate_with_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
@@ -82,7 +88,12 @@ fn iterate_with_lines<'a>(
             member.original_startline + frame.line - member.startline
         };
         let file = if member.original_file.is_some() {
-            member.original_file
+            let file_name = member.original_file.unwrap();
+            if file_name.eq("R8$$SyntheticClass") {
+                extract_class_name(member.original_class.unwrap_or(frame.class))
+            } else {
+                member.original_file
+            }
         } else if member.original_class.is_some() {
             // when an inlined function is from a foreign class, we
             // don’t know the file it is defined in.
@@ -181,10 +192,7 @@ impl<'s> ProguardMapper<'s> {
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {
             match record {
-                ProguardRecord::Header {
-                    key,
-                    value
-                } => {
+                ProguardRecord::Header { key, value } => {
                     if key == "sourceFile" {
                         class.file_name = value;
                     }

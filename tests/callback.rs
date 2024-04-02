@@ -22,7 +22,7 @@ fn test_method_matches_callback() {
             "io.sentry.samples.instrumentation.ui.EditActivity",
             "onCreate$lambda$1",
             37,
-            "R8$$SyntheticClass",
+            "EditActivity",
         )
     );
     assert_eq!(
@@ -31,7 +31,7 @@ fn test_method_matches_callback() {
             "io.sentry.samples.instrumentation.ui.EditActivity$$InternalSyntheticLambda$1$ebaa538726b99bb77e0f5e7c86443911af17d6e5be2b8771952ae0caa4ff2ac7$0",
             "onMenuItemClick",
             0,
-            "R8$$SyntheticClass",
+            "EditActivity",
         )
     );
     assert_eq!(mapped.next(), None);
@@ -56,7 +56,7 @@ fn test_method_matches_callback_extra_class() {
             "io.sentry.samples.instrumentation.ui.TestSourceContext",
             "test2",
             10,
-                "R8$$SyntheticClass",
+            "TestSourceContext",
         )
     );
     assert_eq!(
@@ -65,7 +65,7 @@ fn test_method_matches_callback_extra_class() {
             "io.sentry.samples.instrumentation.ui.TestSourceContext",
             "test",
             6,
-            "R8$$SyntheticClass",
+            "TestSourceContext",
         )
     );
     assert_eq!(
@@ -74,7 +74,7 @@ fn test_method_matches_callback_extra_class() {
             "io.sentry.samples.instrumentation.ui.EditActivity",
             "onCreate$lambda$1",
             38,
-            "R8$$SyntheticClass",
+            "EditActivity",
         )
     );
     assert_eq!(
@@ -83,7 +83,7 @@ fn test_method_matches_callback_extra_class() {
             "io.sentry.samples.instrumentation.ui.EditActivity$$InternalSyntheticLambda$1$ebaa538726b99bb77e0f5e7c86443911af17d6e5be2b8771952ae0caa4ff2ac7$0",
             "onMenuItemClick",
             0,
-            "R8$$SyntheticClass",
+            "EditActivity",
         )
     );
     assert_eq!(mapped.next(), None);
@@ -107,7 +107,7 @@ fn test_method_matches_callback_inner_class() {
             "io.sentry.samples.instrumentation.ui.EditActivity$InnerEditActivityClass",
             "testInner",
             19,
-            "R8$$SyntheticClass",
+            "EditActivity",
         )
     );
     assert_eq!(
@@ -116,7 +116,7 @@ fn test_method_matches_callback_inner_class() {
             "io.sentry.samples.instrumentation.ui.EditActivity",
             "onCreate$lambda$1",
             45,
-            "R8$$SyntheticClass",
+            "EditActivity",
         )
     );
     assert_eq!(
@@ -125,7 +125,7 @@ fn test_method_matches_callback_inner_class() {
             "io.sentry.samples.instrumentation.ui.EditActivity$$InternalSyntheticLambda$1$ebaa538726b99bb77e0f5e7c86443911af17d6e5be2b8771952ae0caa4ff2ac7$0",
             "onMenuItemClick",
             0,
-            "R8$$SyntheticClass",
+            "EditActivity",
         )
     );
     assert_eq!(mapped.next(), None);

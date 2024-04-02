@@ -448,7 +448,7 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &
     }
 }
 
-const SOURCE_FILE_PREFIX: &'static [u8; 32] = br#" {"id":"sourceFile","fileName":""#;
+const SOURCE_FILE_PREFIX: &[u8; 32] = br#" {"id":"sourceFile","fileName":""#;
 
 /// Parses a single Proguard Header from a Proguard File.
 fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
@@ -456,7 +456,9 @@ fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseE
 
     if bytes.starts_with(SOURCE_FILE_PREFIX) {
         let (value, bytes) = match parse_prefix(bytes, SOURCE_FILE_PREFIX) {
-            Ok(bytes) => parse_until(bytes, |c| *c == b'"').map(|(value, bytes)| (Some(value), bytes)),
+            Ok(bytes) => {
+                parse_until(bytes, |c| *c == b'"').map(|(value, bytes)| (Some(value), bytes))
+            }
             Err(_) => Ok((None, bytes)),
         }?;
 

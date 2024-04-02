@@ -114,16 +114,27 @@ fn test_remap_source_file() {
 	at a.c.onClick(SourceFile:1)
 	at android.view.View.performClick(View.java:7659)
 	at android.view.View.performClickInternal(View.java:7636)
-	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#.trim()
+	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#
     );
 
+    /**
+    Ideally, should be (output from `retrace` tool):
+    Caused by: java.lang.Exception: Hello from main!
+   	at io.wzieba.r8fullmoderenamessources.Foobar.foo(Foobar.java:10)
+   	at io.wzieba.r8fullmoderenamessources.MainActivity.onCreate$lambda$1$lambda$0(MainActivity.java:14)
+   	at io.wzieba.r8fullmoderenamessources.MainActivity.$r8$lambda$pOQDVg57r6gG0-DzwbGf17BfNbs(MainActivity.java:0)
+   	at io.wzieba.r8fullmoderenamessources.MainActivity$$ExternalSyntheticLambda0.onClick(MainActivity.java:0)
+   	at android.view.View.performClick(View.java:7659)
+   	at android.view.View.performClickInternal(View.java:7636)
+   	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)
+     */
     assert_eq!(r#"
     Caused by: java.lang.Exception: Hello from main!
-	at io.wzieba.r8fullmoderenamessources.Foobar.foo(Foobar.java:10)
-	at io.wzieba.r8fullmoderenamessources.MainActivity.onCreate$lambda$1$lambda$0(MainActivity.java:14)
-	at io.wzieba.r8fullmoderenamessources.MainActivity.$r8$lambda$pOQDVg57r6gG0-DzwbGf17BfNbs(MainActivity.java:0)
-	at io.wzieba.r8fullmoderenamessources.MainActivity$$ExternalSyntheticLambda0.onClick(MainActivity.java:0)
+    at io.wzieba.r8fullmoderenamessources.Foobar.foo(Foobar.kt:10)
+    at io.wzieba.r8fullmoderenamessources.MainActivity.onCreate$lambda$1$lambda$0(MainActivity.kt:14)
+    at io.wzieba.r8fullmoderenamessources.MainActivity.$r8$lambda$pOQDVg57r6gG0-DzwbGf17BfNbs(MainActivity.kt:0)
+    at io.wzieba.r8fullmoderenamessources.MainActivity$$ExternalSyntheticLambda0.onClick(R8$$SyntheticClass:0)
 	at android.view.View.performClick(View.java:7659)
 	at android.view.View.performClickInternal(View.java:7636)
-	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#.trim(), test.unwrap());
+	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#.trim(), test.unwrap().trim());
 }

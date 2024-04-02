@@ -448,35 +448,25 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &
     }
 }
 
+const SOURCE_FILE_PREFIX: &'static [u8; 32] = br#" {"id":"sourceFile","fileName":""#;
+
 /// Parses a single Proguard Header from a Proguard File.
 fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
     let bytes = parse_prefix(bytes, b"#")?;
 
-    if bytes.starts_with(b" {") {
-        // Parse as JSON-like string
-        let (json_str, bytes) = parse_until(bytes, |c| *c == b'}')?;
-        let bytes = parse_prefix(bytes, b"}")?;
-
-        // Remove the curly braces and split the string to extract key and value
-        let json_str = json_str.trim_matches(|c| c == '{' || c == '}');
-        let parts: Vec<&str> = json_str.split(|c| c == ':' || c == '\"').collect();
-
-        if parts.len() < 10 {
-            return Err(ParseError {
-                line: bytes,
-                kind: ParseErrorKind::ParseError("Invalid JSON format"),
-            });
-        }
-
-        let key = parts[4].trim();
-        let value = parts[9].trim();
+    if bytes.starts_with(SOURCE_FILE_PREFIX) {
+        let (value, bytes) = match parse_prefix(bytes, SOURCE_FILE_PREFIX) {
+            Ok(bytes) => parse_until(bytes, |c| *c == b'"').map(|(value, bytes)| (Some(value), bytes)),
+            Err(_) => Ok((None, bytes)),
+        }?;
 
         let record = ProguardRecord::Header {
-            key,
-            value: Some(value),
+            key: "sourceFile",
+            value,
         };
 
-        Ok((record, consume_leading_newlines(bytes)))
+        // remove `"}` at the end to treat the whole line as consumed
+        Ok((record, consume_leading_newlines(&bytes[..bytes.len() - 2])))
     } else {
         // Existing logic for `key: value` format
         let (key, bytes) = parse_until(bytes, |c| *c == b':' || is_newline(c))?;

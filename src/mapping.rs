@@ -452,19 +452,47 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &
 fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
     let bytes = parse_prefix(bytes, b"#")?;
 
-    let (key, bytes) = parse_until(bytes, |c| *c == b':' || is_newline(c))?;
+    if bytes.starts_with(b" {") {
+        // Parse as JSON-like string
+        let (json_str, bytes) = parse_until(bytes, |c| *c == b'}')?;
+        let bytes = parse_prefix(bytes, b"}")?;
 
-    let (value, bytes) = match parse_prefix(bytes, b":") {
-        Ok(bytes) => parse_until(bytes, is_newline).map(|(v, bytes)| (Some(v), bytes)),
-        Err(_) => Ok((None, bytes)),
-    }?;
+        // Remove the curly braces and split the string to extract key and value
+        let json_str = json_str.trim_matches(|c| c == '{' || c == '}');
+        let parts: Vec<&str> = json_str.split(|c| c == ':' || c == '\"').collect();
 
-    let record = ProguardRecord::Header {
-        key: key.trim(),
-        value: value.map(|v| v.trim()),
-    };
+        if parts.len() < 10 {
+            return Err(ParseError {
+                line: bytes,
+                kind: ParseErrorKind::ParseError("Invalid JSON format"),
+            });
+        }
 
-    Ok((record, consume_leading_newlines(bytes)))
+        let key = parts[4].trim();
+        let value = parts[9].trim();
+
+        let record = ProguardRecord::Header {
+            key,
+            value: Some(value),
+        };
+
+        Ok((record, consume_leading_newlines(bytes)))
+    } else {
+        // Existing logic for `key: value` format
+        let (key, bytes) = parse_until(bytes, |c| *c == b':' || is_newline(c))?;
+
+        let (value, bytes) = match parse_prefix(bytes, b":") {
+            Ok(bytes) => parse_until(bytes, is_newline).map(|(v, bytes)| (Some(v), bytes)),
+            Err(_) => Ok((None, bytes)),
+        }?;
+
+        let record = ProguardRecord::Header {
+            key: key.trim(),
+            value: value.map(|v| v.trim()),
+        };
+
+        Ok((record, consume_leading_newlines(bytes)))
+    }
 }
 
 /// Parses a single Proguard Field or Method from a Proguard File.
@@ -727,6 +755,19 @@ mod tests {
             Ok(ProguardRecord::Header {
                 key: "compiler",
                 value: Some("R8")
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_header_source_file() {
+        let bytes = br#"# {"id":"sourceFile","fileName":"Foobar.kt"}"#;
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(
+            parsed,
+            Ok(ProguardRecord::Header {
+                key: "sourceFile",
+                value: Some("Foobar.kt")
             })
         );
     }

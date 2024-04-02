@@ -27,6 +27,7 @@ struct ClassMembers<'s> {
 struct ClassMapping<'s> {
     original: &'s str,
     obfuscated: &'s str,
+    file_name: Option<&'s str>,
     members: HashMap<&'s str, ClassMembers<'s>>,
 }
 
@@ -169,6 +170,7 @@ impl<'s> ProguardMapper<'s> {
         let mut class = ClassMapping {
             original: "",
             obfuscated: "",
+            file_name: None,
             members: HashMap::new(),
         };
         let mut unique_methods: HashSet<(&str, &str, &str)> = HashSet::new();
@@ -176,6 +178,14 @@ impl<'s> ProguardMapper<'s> {
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {
             match record {
+                ProguardRecord::Header {
+                    key,
+                    value
+                } => {
+                    if key == "sourceFile" {
+                        class.file_name = value;
+                    }
+                }
                 ProguardRecord::Class {
                     original,
                     obfuscated,
@@ -186,6 +196,7 @@ impl<'s> ProguardMapper<'s> {
                     class = ClassMapping {
                         original,
                         obfuscated,
+                        file_name: None,
                         members: HashMap::new(),
                     };
                     unique_methods.clear();

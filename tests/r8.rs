@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use proguard::{ProguardMapper, ProguardMapping, StackFrame};
 
 static MAPPING_R8: &[u8] = include_bytes!("res/mapping-r8.txt");
+static MAPPING_R8_SYMBOLICATED_FILE_NAMES: &[u8] = include_bytes!("res/mapping-r8-symbolicated_file_names.txt");
 
 lazy_static! {
     static ref MAPPING_WIN_R8: Vec<u8> = MAPPING_R8
@@ -97,4 +98,31 @@ fn test_uuid_win() {
         ProguardMapping::new(&MAPPING_WIN_R8[..]).uuid(),
         "d8b03b44-58df-5cd7-adc7-aefcfb0e2ade".parse().unwrap()
     );
+}
+
+#[test]
+fn test_remap_source_file() {
+    let mapping = ProguardMapping::new(MAPPING_R8_SYMBOLICATED_FILE_NAMES);
+
+    let mapper = ProguardMapper::new(mapping);
+
+    let test = mapper.remap_stacktrace(r#"
+    Caused by: java.lang.Exception: Hello from main!
+	at a.a.a(SourceFile:12)
+	at io.wzieba.r8fullmoderenamessources.MainActivity.b(SourceFile:6)
+	at io.wzieba.r8fullmoderenamessources.MainActivity.a(SourceFile:1)
+	at a.c.onClick(SourceFile:1)
+	at android.view.View.performClick(View.java:7659)
+	at android.view.View.performClickInternal(View.java:7636)
+	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#, );
+
+    assert_eq!(r#"
+    Caused by: java.lang.Exception: Hello from main!
+	at io.wzieba.r8fullmoderenamessources.Foobar.foo(Foobar.java:10)
+	at io.wzieba.r8fullmoderenamessources.MainActivity.onCreate$lambda$1$lambda$0(MainActivity.java:14)
+	at io.wzieba.r8fullmoderenamessources.MainActivity.$r8$lambda$pOQDVg57r6gG0-DzwbGf17BfNbs(MainActivity.java:0)
+	at io.wzieba.r8fullmoderenamessources.MainActivity$$ExternalSyntheticLambda0.onClick(MainActivity.java:0)
+	at android.view.View.performClick(View.java:7659)
+	at android.view.View.performClickInternal(View.java:7636)
+	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#, test.unwrap());
 }

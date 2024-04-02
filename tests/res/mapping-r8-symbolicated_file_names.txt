@@ -1,0 +1,36 @@
+# compiler: R8
+# compiler_version: 8.3.36
+# min_api: 24
+# common_typos_disable
+# {"id":"com.android.tools.r8.mapping","version":"2.2"}
+# pg_map_id: 48ffd94
+# pg_map_hash: SHA-256 48ffd9478fda293e1c713db4cc7c449781a9e799fa504e389ee32ed19775a3ba
+io.wzieba.r8fullmoderenamessources.Foobar -> a.a:
+# {"id":"sourceFile","fileName":"Foobar.kt"}
+    1:3:void <init>():3:3 -> <init>
+    4:11:void <init>():5:5 -> <init>
+    1:7:void foo():9:9 -> a
+    8:15:void foo():10:10 -> a
+io.wzieba.r8fullmoderenamessources.FoobarKt -> a.b:
+# {"id":"sourceFile","fileName":"Foobar.kt"}
+    1:5:void main():15:15 -> a
+    6:9:void main():16:16 -> a
+    1:4:void main(java.lang.String[]):0:0 -> b
+io.wzieba.r8fullmoderenamessources.MainActivity -> io.wzieba.r8fullmoderenamessources.MainActivity:
+# {"id":"sourceFile","fileName":"MainActivity.kt"}
+    1:4:void <init>():7:7 -> <init>
+    1:1:void $r8$lambda$pOQDVg57r6gG0-DzwbGf17BfNbs(android.view.View):0:0 -> a
+      # {"id":"com.android.tools.r8.synthesized"}
+    1:9:void onCreate$lambda$1$lambda$0(android.view.View):14:14 -> b
+    1:3:void onCreate(android.os.Bundle):10:10 -> onCreate
+    4:8:void onCreate(android.os.Bundle):12:12 -> onCreate
+    9:16:void onCreate(android.os.Bundle):13:13 -> onCreate
+    17:20:void onCreate(android.os.Bundle):12:12 -> onCreate
+io.wzieba.r8fullmoderenamessources.MainActivity$$ExternalSyntheticLambda0 -> a.c:
+# {"id":"sourceFile","fileName":"R8$$SyntheticClass"}
+# {"id":"com.android.tools.r8.synthesized"}
+    1:4:void onClick(android.view.View):0:0 -> onClick
+      # {"id":"com.android.tools.r8.synthesized"}
+io.wzieba.r8fullmoderenamessources.R -> a.d:
+    void <init>() -> <init>
+      # {"id":"com.android.tools.r8.synthesized"}

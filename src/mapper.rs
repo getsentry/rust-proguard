@@ -11,6 +11,7 @@ struct MemberMapping<'s> {
     startline: usize,
     endline: usize,
     original_class: Option<&'s str>,
+    original_file: Option<&'s str>,
     original: &'s str,
     original_startline: usize,
     original_endline: Option<usize>,
@@ -80,9 +81,11 @@ fn iterate_with_lines<'a>(
         } else {
             member.original_startline + frame.line - member.startline
         };
-        // when an inlined function is from a foreign class, we
-        // don’t know the file it is defined in.
-        let file = if member.original_class.is_some() {
+        let file = if member.original_file.is_some() {
+            member.original_file
+        } else if member.original_class.is_some() {
+            // when an inlined function is from a foreign class, we
+            // don’t know the file it is defined in.
             None
         } else {
             frame.file
@@ -241,6 +244,7 @@ impl<'s> ProguardMapper<'s> {
                         startline,
                         endline,
                         original_class,
+                        original_file: class.file_name,
                         original,
                         original_startline,
                         original_endline,

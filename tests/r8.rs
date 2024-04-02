@@ -114,7 +114,8 @@ fn test_remap_source_file() {
 	at a.c.onClick(SourceFile:1)
 	at android.view.View.performClick(View.java:7659)
 	at android.view.View.performClickInternal(View.java:7636)
-	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#, );
+	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#.trim()
+    );
 
     assert_eq!(r#"
     Caused by: java.lang.Exception: Hello from main!
@@ -124,5 +125,5 @@ fn test_remap_source_file() {
 	at io.wzieba.r8fullmoderenamessources.MainActivity$$ExternalSyntheticLambda0.onClick(MainActivity.java:0)
 	at android.view.View.performClick(View.java:7659)
 	at android.view.View.performClickInternal(View.java:7636)
-	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#, test.unwrap());
+	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#.trim(), test.unwrap());
 }

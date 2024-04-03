@@ -43,8 +43,7 @@ fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) ->
             return Some(format!("{}{}", ty, suffix));
         }
     }
-
-    Some(byte_code_type.to_string())
+    None
 }
 
 // parse_obfuscated_bytecode_signature will parse an obfuscated signatures into parameter

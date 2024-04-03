@@ -19,53 +19,39 @@ fn java_base_types(encoded_ty: char) -> Option<&'static str> {
 
 fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) -> Option<String> {
     let mut chrs = byte_code_type.char_indices();
-    let (idx, token) = chrs.next()?;
-    if token == 'L' {
-        // expect and remove final `;`
-        if chrs.next_back()?.1 != ';' {
-            return None;
+    //let (idx, token) = chrs.next()?;
+    let mut suffix = String::new();
+    while let Some((idx, token)) = chrs.next() {
+        if token == 'L' {
+            // expect and remove final `;`
+            if chrs.next_back()?.1 != ';' {
+                return None;
+            }
+            let obfuscated = byte_code_type.index(idx+1..byte_code_type.len()-1).replace('/', ".");
+    
+            if let Some(mapped) = mapper.remap_class(&obfuscated) {
+                return Some(format!("{}{}",mapped,suffix));
+            }
+    
+            return Some(format!("{}{}",obfuscated,suffix));
+        } else if token == '[' {
+            suffix.push_str("[]");
+            continue;
+        } else if let Some(ty) = java_base_types(token) {
+            return Some(format!("{}{}",ty,suffix));
         }
-        let obfuscated = byte_code_type.index(idx+1..byte_code_type.len()-1).replace('/', ".");
-
-        if let Some(mapped) = mapper.remap_class(&obfuscated) {
-            return Some(mapped.to_string());
-        }
-
-        return Some(obfuscated);
-    } else if token == '[' {
-        let type_sig = byte_code_type.index(idx+1..byte_code_type.len());
-        if !type_sig.is_empty() {
-            return Some(format!(
-                "{}[]",
-                byte_code_type_to_java_type(type_sig, mapper)
-                    .unwrap_or_default()
-            ));
-        }
-    } else if let Some(ty) = java_base_types(token) {
-        return Some(ty.to_string());
     }
+
     Some(byte_code_type.to_string())
 }
 
 // parse_obfuscated_bytecode_signature will parse an obfuscated signatures into parameter
 // and return types that can be then deobfuscated
 fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<String>, String)> {
-    let mut chrs = signature.chars();
+    let signature = signature.strip_prefix('(')?;
 
-    let token = chrs.next();
-    if token.unwrap_or_default() != '(' {
-        return None;
-    }
-
-    let sig = chrs.collect::<String>();
-    let split_sign = sig.rsplitn(2, ')').collect::<Vec<&str>>();
-    if split_sign.len() != 2 {
-        return None;
-    }
-
-    let return_type = split_sign[0];
-    let parameter_types = split_sign[1];
-    if return_type.is_empty() {
+    let (parameter_types, return_type) = signature.rsplit_once(')')?;
+    if return_type.is_empty(){
         return None;
     }
 
@@ -89,9 +75,9 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<String>, 
             tmp_buf.clear();
         } else if token == '[' {
             tmp_buf.push('[');
-        } else if let Some(ty) = java_base_types(token) {
+        } else if java_base_types(token).is_some() {
             if !tmp_buf.is_empty() {
-                tmp_buf.append(&mut ty.chars().collect::<Vec<char>>());
+                tmp_buf.push(token);
                 types.push(tmp_buf.iter().collect());
                 tmp_buf.clear();
             } else {

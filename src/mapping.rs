@@ -455,20 +455,16 @@ fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseE
     let bytes = parse_prefix(bytes, b"#")?;
 
     if bytes.starts_with(SOURCE_FILE_PREFIX) {
-        let (value, bytes) = match parse_prefix(bytes, SOURCE_FILE_PREFIX) {
-            Ok(bytes) => {
-                parse_until(bytes, |c| *c == b'"').map(|(value, bytes)| (Some(value), bytes))
-            }
-            Err(_) => Ok((None, bytes)),
-        }?;
+        let bytes = parse_prefix(bytes, SOURCE_FILE_PREFIX).unwrap();
+        let (value, bytes) = parse_until(bytes, |c| *c == b'"')?;
+        let bytes = parse_prefix(bytes, br#""}"#)?;
 
         let record = ProguardRecord::Header {
             key: "sourceFile",
-            value,
+            value: Some(value),
         };
 
-        // remove `"}` at the end to treat the whole line as consumed
-        Ok((record, consume_leading_newlines(&bytes[..bytes.len() - 2])))
+        Ok((record, consume_leading_newlines(bytes)))
     } else {
         // Existing logic for `key: value` format
         let (key, bytes) = parse_until(bytes, |c| *c == b':' || is_newline(c))?;

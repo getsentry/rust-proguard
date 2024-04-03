@@ -56,7 +56,7 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<String>, 
     }
 
     let mut types: Vec<String> = Vec::new();
-    let mut tmp_buf: Vec<char> = Vec::new();
+    let mut tmp_buf: String = String::new();
 
     let mut param_chrs = parameter_types.chars();
     while let Some(token) = param_chrs.next() {
@@ -71,15 +71,15 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<String>, 
             if tmp_buf.is_empty() || !tmp_buf.ends_with(&[';']) {
                 return None;
             }
-            types.push(tmp_buf.iter().collect());
-            tmp_buf.clear();
+            types.push(tmp_buf);
+            tmp_buf = String::new();
         } else if token == '[' {
             tmp_buf.push('[');
         } else if java_base_types(token).is_some() {
             if !tmp_buf.is_empty() {
                 tmp_buf.push(token);
-                types.push(tmp_buf.iter().collect());
-                tmp_buf.clear();
+                types.push(tmp_buf);
+                tmp_buf = String::new();
             } else {
                 types.push(token.to_string());
             }
@@ -119,7 +119,8 @@ pub fn format_signature(types: &Option<(Vec<String>, String)>) -> Option<String>
 
     let mut signature = format!("({})", parameter_java_types.join(", "));
     if !return_java_type.is_empty() && return_java_type != "void" {
-        signature += format!(": {}", return_java_type).as_str();
+        signature.push_str(": ");
+        signature.push_str(return_java_type);
     }
 
     Some(signature)

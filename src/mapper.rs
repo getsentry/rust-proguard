@@ -7,6 +7,27 @@ use crate::java;
 use crate::mapping::{ProguardMapping, ProguardRecord};
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
 
+pub struct DeobfuscatedSignature {
+    parameters: Vec<String>,
+    return_type: String,
+}
+
+impl DeobfuscatedSignature {
+    fn new(signature: Option<(Vec<String>, String)>) -> Option<DeobfuscatedSignature> {
+        signature.map(|(parameters, return_type)| DeobfuscatedSignature {
+            parameters,
+            return_type,
+        })
+    }
+    pub fn return_type(&self) -> &str {
+        self.return_type.as_str()
+    }
+
+    pub fn parameters_types(&self) -> impl Iterator<Item = &str> {
+        self.parameters.iter().map(|s| s.as_ref())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct MemberMapping<'s> {
     startline: usize,
@@ -296,8 +317,8 @@ impl<'s> ProguardMapper<'s> {
 
     /// returns a tuple where the first element is the list of the function
     /// parameters and the second one is the return type
-    pub fn deobfuscate_signature(&'s self, signature: &str) -> Option<(Vec<String>, String)> {
-        java::deobfuscate_bytecode_signature(signature, self)
+    pub fn deobfuscate_signature(&'s self, signature: &str) -> Option<DeobfuscatedSignature> {
+        DeobfuscatedSignature::new(java::deobfuscate_bytecode_signature(signature, self))
     }
 
     /// Remaps an obfuscated Class Method.

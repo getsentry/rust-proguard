@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 use crate::mapper::ProguardMapper;
 
 fn java_base_types(encoded_ty: char) -> Option<&'static str> {
@@ -16,16 +18,14 @@ fn java_base_types(encoded_ty: char) -> Option<&'static str> {
 }
 
 fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) -> Option<String> {
-    let mut chrs = byte_code_type.chars();
-    let token = chrs.next()?;
+    let mut chrs = byte_code_type.char_indices();
+    let (idx, token) = chrs.next()?;
     if token == 'L' {
-        // invalid signature
-        let l = chrs.clone().last();
-        if l.is_none() || l.unwrap() != ';' {
+        // expect and remove final `;`
+        if chrs.next_back()?.1 != ';' {
             return None;
         }
-        chrs.next_back(); // remove final `;`
-        let obfuscated = chrs.collect::<String>().replace('/', ".");
+        let obfuscated = byte_code_type.index(idx+1..byte_code_type.len()-1).replace('/', ".");
 
         if let Some(mapped) = mapper.remap_class(&obfuscated) {
             return Some(mapped.to_string());
@@ -33,11 +33,11 @@ fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) ->
 
         return Some(obfuscated);
     } else if token == '[' {
-        let type_sig = chrs.clone().collect::<String>();
+        let type_sig = byte_code_type.index(idx+1..byte_code_type.len());
         if !type_sig.is_empty() {
             return Some(format!(
                 "{}[]",
-                byte_code_type_to_java_type(chrs.collect::<String>().as_str(), mapper)
+                byte_code_type_to_java_type(type_sig, mapper)
                     .unwrap_or_default()
             ));
         }

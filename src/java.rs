@@ -1,5 +1,3 @@
-use std::ops::Index;
-
 use crate::mapper::{DeobfuscatedSignature, ProguardMapper};
 
 fn java_base_types(encoded_ty: char) -> Option<&'static str> {
@@ -28,7 +26,7 @@ fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) ->
                 return None;
             }
             let obfuscated = byte_code_type
-                .index(idx + 1..byte_code_type.len() - 1)
+                .get(idx + 1..byte_code_type.len() - 1)?
                 .replace('/', ".");
 
             if let Some(mapped) = mapper.remap_class(&obfuscated) {

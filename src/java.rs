@@ -27,18 +27,20 @@ fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) ->
             if chrs.next_back()?.1 != ';' {
                 return None;
             }
-            let obfuscated = byte_code_type.index(idx+1..byte_code_type.len()-1).replace('/', ".");
-    
+            let obfuscated = byte_code_type
+                .index(idx + 1..byte_code_type.len() - 1)
+                .replace('/', ".");
+
             if let Some(mapped) = mapper.remap_class(&obfuscated) {
-                return Some(format!("{}{}",mapped,suffix));
+                return Some(format!("{}{}", mapped, suffix));
             }
-    
-            return Some(format!("{}{}",obfuscated,suffix));
+
+            return Some(format!("{}{}", obfuscated, suffix));
         } else if token == '[' {
             suffix.push_str("[]");
             continue;
         } else if let Some(ty) = java_base_types(token) {
-            return Some(format!("{}{}",ty,suffix));
+            return Some(format!("{}{}", ty, suffix));
         }
     }
 
@@ -51,7 +53,7 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<String>, 
     let signature = signature.strip_prefix('(')?;
 
     let (parameter_types, return_type) = signature.rsplit_once(')')?;
-    if return_type.is_empty(){
+    if return_type.is_empty() {
         return None;
     }
 

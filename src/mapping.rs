@@ -454,8 +454,7 @@ const SOURCE_FILE_PREFIX: &[u8; 32] = br#" {"id":"sourceFile","fileName":""#;
 fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
     let bytes = parse_prefix(bytes, b"#")?;
 
-    if bytes.starts_with(SOURCE_FILE_PREFIX) {
-        let bytes = parse_prefix(bytes, SOURCE_FILE_PREFIX).unwrap();
+    if let Ok(bytes) = parse_prefix(bytes, SOURCE_FILE_PREFIX) {
         let (value, bytes) = parse_until(bytes, |c| *c == b'"')?;
         let bytes = parse_prefix(bytes, br#""}"#)?;
 

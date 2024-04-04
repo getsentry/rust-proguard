@@ -1,4 +1,4 @@
-use crate::mapper::{DeobfuscatedSignature, ProguardMapper};
+use crate::mapper::ProguardMapper;
 
 fn java_base_types(encoded_ty: char) -> Option<&'static str> {
     match encoded_ty {
@@ -104,26 +104,10 @@ pub fn deobfuscate_bytecode_signature(
     Some((parameter_java_types, return_java_type))
 }
 
-/// formats types (param_type list, return_type) into a human-readable signature
-pub fn format_signature(types: Option<DeobfuscatedSignature>) -> Option<String> {
-    let types = types?;
-
-    let parameter_java_types = types.parameters_types();
-    let return_java_type = types.return_type();
-
-    let mut signature = format!("({})", parameter_java_types.collect::<Vec<_>>().join(", "));
-    if !return_java_type.is_empty() && return_java_type != "void" {
-        signature.push_str(": ");
-        signature.push_str(return_java_type);
-    }
-
-    Some(signature)
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{
-        format_signature, java::byte_code_type_to_java_type, ProguardMapper, ProguardMapping,
+        java::byte_code_type_to_java_type, ProguardMapper, ProguardMapping,
     };
     use std::collections::HashMap;
 
@@ -194,12 +178,12 @@ mod tests {
 
         for (obfuscated, expected) in tests_valid {
             let signature = mapper.deobfuscate_signature(obfuscated);
-            assert_eq!(format_signature(signature), Some(expected.to_string()));
+            assert_eq!(signature.unwrap().format_signature(), expected.to_string());
         }
 
         for obfuscated in tests_invalid {
             let signature = mapper.deobfuscate_signature(obfuscated);
-            assert_eq!(format_signature(signature), None);
+            assert!(signature.is_none());
         }
     }
 }

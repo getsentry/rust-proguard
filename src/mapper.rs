@@ -14,11 +14,11 @@ pub struct DeobfuscatedSignature {
 }
 
 impl DeobfuscatedSignature {
-    fn new(signature: Option<(Vec<String>, String)>) -> Option<DeobfuscatedSignature> {
-        signature.map(|(parameters, return_type)| DeobfuscatedSignature {
-            parameters,
-            return_type,
-        })
+    fn new(signature: (Vec<String>, String)) -> DeobfuscatedSignature {
+        DeobfuscatedSignature {
+            parameters: signature.0,
+            return_type: signature.1,
+        }
     }
 
     /// Returns the java return type of the method signature
@@ -29,6 +29,18 @@ impl DeobfuscatedSignature {
     /// Returns the list of paramater types of the method signature
     pub fn parameters_types(&self) -> impl Iterator<Item = &str> {
         self.parameters.iter().map(|s| s.as_ref())
+    }
+
+    /// formats types (param_type list, return_type) into a human-readable signature
+    pub fn format_signature(&self) -> String {
+
+        let mut signature = format!("({})", self.parameters_types().collect::<Vec<_>>().join(", "));
+        if !self.return_type().is_empty() && self.return_type() != "void" {
+            signature.push_str(": ");
+            signature.push_str(self.return_type());
+        }
+
+        signature
     }
 }
 
@@ -322,7 +334,7 @@ impl<'s> ProguardMapper<'s> {
     /// returns a tuple where the first element is the list of the function
     /// parameters and the second one is the return type
     pub fn deobfuscate_signature(&'s self, signature: &str) -> Option<DeobfuscatedSignature> {
-        DeobfuscatedSignature::new(java::deobfuscate_bytecode_signature(signature, self))
+        java::deobfuscate_bytecode_signature(signature, self).map(DeobfuscatedSignature::new)
     }
 
     /// Remaps an obfuscated Class Method.

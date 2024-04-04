@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::fmt::{Error as FmtError, Write};
 use std::fmt;
+use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
 use crate::java;
@@ -34,8 +34,10 @@ impl DeobfuscatedSignature {
 
     /// formats types (param_type list, return_type) into a human-readable signature
     pub fn format_signature(&self) -> String {
-
-        let mut signature = format!("({})", self.parameters_types().collect::<Vec<_>>().join(", "));
+        let mut signature = format!(
+            "({})",
+            self.parameters_types().collect::<Vec<_>>().join(", ")
+        );
         if !self.return_type().is_empty() && self.return_type() != "void" {
             signature.push_str(": ");
             signature.push_str(self.return_type());

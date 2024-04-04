@@ -40,7 +40,7 @@ mod mapper;
 mod mapping;
 mod stacktrace;
 
-pub use mapper::{ProguardMapper, RemappedFrameIter, DeobfuscatedSignature};
+pub use mapper::{DeobfuscatedSignature, ProguardMapper, RemappedFrameIter};
 pub use mapping::{
     LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord,
     ProguardRecordIter,

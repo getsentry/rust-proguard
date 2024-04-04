@@ -67,19 +67,18 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<&str>, St
                     break;
                 }
             }
-            let ty = parameter_types.get(first_idx..last_idx+1)?;
+            let ty = parameter_types.get(first_idx..last_idx + 1)?;
             if ty.is_empty() || !ty.ends_with(&[';']) {
                 return None;
             }
             types.push(ty);
-            first_idx = last_idx+1;
-            
+            first_idx = last_idx + 1;
         } else if token == '[' {
             continue;
         } else if java_base_types(token).is_some() {
-            let ty = parameter_types.get(first_idx..idx+1)?;
+            let ty = parameter_types.get(first_idx..idx + 1)?;
             types.push(ty);
-            first_idx = idx+1;
+            first_idx = idx + 1;
         }
     }
 
@@ -106,9 +105,7 @@ pub fn deobfuscate_bytecode_signature(
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        java::byte_code_type_to_java_type, ProguardMapper, ProguardMapping,
-    };
+    use crate::{java::byte_code_type_to_java_type, ProguardMapper, ProguardMapping};
     use std::collections::HashMap;
 
     #[test]

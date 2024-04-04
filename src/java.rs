@@ -18,7 +18,7 @@ fn java_base_types(encoded_ty: char) -> Option<&'static str> {
 fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) -> Option<String> {
     let mut chrs = byte_code_type.char_indices();
     //let (idx, token) = chrs.next()?;
-    let mut suffix = String::new();
+    let mut suffix = "".to_string();
     while let Some((idx, token)) = chrs.next() {
         if token == 'L' {
             // expect and remove final `;`
@@ -46,7 +46,7 @@ fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) ->
 
 // parse_obfuscated_bytecode_signature will parse an obfuscated signatures into parameter
 // and return types that can be then deobfuscated
-fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<String>, String)> {
+fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<&str>, String)> {
     let signature = signature.strip_prefix('(')?;
 
     let (parameter_types, return_type) = signature.rsplit_once(')')?;
@@ -54,36 +54,32 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<String>, 
         return None;
     }
 
-    let mut types: Vec<String> = Vec::new();
-    let mut tmp_buf: String = String::new();
+    let mut types: Vec<&str> = Vec::new();
+    let mut first_idx = 0;
 
-    let mut param_chrs = parameter_types.chars();
-    while let Some(token) = param_chrs.next() {
+    let mut param_chrs = parameter_types.char_indices();
+    while let Some((idx, token)) = param_chrs.next() {
         if token == 'L' {
-            tmp_buf.push(token);
-            for c in param_chrs.by_ref() {
-                tmp_buf.push(c);
+            let mut last_idx = idx;
+            for (i, c) in param_chrs.by_ref() {
+                last_idx = i;
                 if c == ';' {
                     break;
                 }
             }
-            if tmp_buf.is_empty() || !tmp_buf.ends_with(&[';']) {
+            let ty = parameter_types.get(first_idx..last_idx+1)?;
+            if ty.is_empty() || !ty.ends_with(&[';']) {
                 return None;
             }
-            types.push(tmp_buf);
-            tmp_buf = String::new();
+            types.push(ty);
+            first_idx = last_idx+1;
+            
         } else if token == '[' {
-            tmp_buf.push('[');
+            continue;
         } else if java_base_types(token).is_some() {
-            if !tmp_buf.is_empty() {
-                tmp_buf.push(token);
-                types.push(tmp_buf);
-                tmp_buf = String::new();
-            } else {
-                types.push(token.to_string());
-            }
-        } else {
-            tmp_buf.clear();
+            let ty = parameter_types.get(first_idx..idx+1)?;
+            types.push(ty);
+            first_idx = idx+1;
         }
     }
 
@@ -100,7 +96,7 @@ pub fn deobfuscate_bytecode_signature(
     let parameter_java_types: Vec<String> = parameter_types
         .into_iter()
         .filter(|params| !params.is_empty())
-        .filter_map(|params| byte_code_type_to_java_type(params.as_str(), mapper))
+        .filter_map(|params| byte_code_type_to_java_type(params, mapper))
         .collect();
 
     let return_java_type = byte_code_type_to_java_type(return_type.as_str(), mapper)?;

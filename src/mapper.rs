@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::{Error as FmtError, Write};
+use std::fmt;
 use std::iter::FusedIterator;
 
 use crate::java;
@@ -41,6 +42,13 @@ impl DeobfuscatedSignature {
         }
 
         signature
+    }
+}
+
+impl fmt::Display for DeobfuscatedSignature {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.format_signature())
     }
 }
 

@@ -41,7 +41,7 @@ mod mapping;
 mod stacktrace;
 
 pub use java::format_signature;
-pub use mapper::{ProguardMapper, RemappedFrameIter};
+pub use mapper::{ProguardMapper, RemappedFrameIter, DeobfuscatedSignature};
 pub use mapping::{
     LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord,
     ProguardRecordIter,

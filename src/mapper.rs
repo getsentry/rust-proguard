@@ -7,6 +7,7 @@ use crate::java;
 use crate::mapping::{ProguardMapping, ProguardRecord};
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
 
+/// A deobfuscated method signature.
 pub struct DeobfuscatedSignature {
     parameters: Vec<String>,
     return_type: String,
@@ -19,10 +20,13 @@ impl DeobfuscatedSignature {
             return_type,
         })
     }
+
+    /// Returns the java return type of the method signature
     pub fn return_type(&self) -> &str {
         self.return_type.as_str()
     }
 
+    /// Returns the list of paramater types of the method signature
     pub fn parameters_types(&self) -> impl Iterator<Item = &str> {
         self.parameters.iter().map(|s| s.as_ref())
     }

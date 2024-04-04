@@ -87,9 +87,8 @@ fn iterate_with_lines<'a>(
         } else {
             member.original_startline + frame.line - member.startline
         };
-        let file = if member.original_file.is_some() {
-            let file_name = member.original_file.unwrap();
-            if file_name.eq("R8$$SyntheticClass") {
+        let file = if let Some(file_name) = member.original_file {
+            if file_name == "R8$$SyntheticClass" {
                 extract_class_name(member.original_class.unwrap_or(frame.class))
             } else {
                 member.original_file

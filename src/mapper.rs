@@ -36,7 +36,7 @@ impl DeobfuscatedSignature {
     pub fn format_signature(&self) -> String {
         let mut signature = format!(
             "({})",
-            self.parameters_types().collect::<Vec<_>>().join(", ")
+            self.parameters.join(", ")
         );
         if !self.return_type().is_empty() && self.return_type() != "void" {
             signature.push_str(": ");

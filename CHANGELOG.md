@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.4.1
+
+### Various fixes & improvements
+
+- Update CI definitions (#37) by @Swatinem
+- feat: add method signature parsing (#35) by @viglia
+- Support symbolicated file names (#36) by @wzieba
+
 ## 5.4.0
 
 ### Various fixes & improvements

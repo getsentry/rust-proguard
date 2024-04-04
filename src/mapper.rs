@@ -11,6 +11,7 @@ struct MemberMapping<'s> {
     startline: usize,
     endline: usize,
     original_class: Option<&'s str>,
+    original_file: Option<&'s str>,
     original: &'s str,
     original_startline: usize,
     original_endline: Option<usize>,
@@ -27,6 +28,7 @@ struct ClassMembers<'s> {
 struct ClassMapping<'s> {
     original: &'s str,
     obfuscated: &'s str,
+    file_name: Option<&'s str>,
     members: HashMap<&'s str, ClassMembers<'s>>,
 }
 
@@ -61,6 +63,12 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     }
 }
 
+fn extract_class_name(full_path: &str) -> Option<&str> {
+    let after_last_period = full_path.split('.').last()?;
+    // If the class is an inner class, we need to extract the outer class name
+    after_last_period.split('$').next()
+}
+
 fn iterate_with_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
@@ -79,9 +87,15 @@ fn iterate_with_lines<'a>(
         } else {
             member.original_startline + frame.line - member.startline
         };
-        // when an inlined function is from a foreign class, we
-        // don’t know the file it is defined in.
-        let file = if member.original_class.is_some() {
+        let file = if let Some(file_name) = member.original_file {
+            if file_name == "R8$$SyntheticClass" {
+                extract_class_name(member.original_class.unwrap_or(frame.class))
+            } else {
+                member.original_file
+            }
+        } else if member.original_class.is_some() {
+            // when an inlined function is from a foreign class, we
+            // don’t know the file it is defined in.
             None
         } else {
             frame.file
@@ -169,6 +183,7 @@ impl<'s> ProguardMapper<'s> {
         let mut class = ClassMapping {
             original: "",
             obfuscated: "",
+            file_name: None,
             members: HashMap::new(),
         };
         let mut unique_methods: HashSet<(&str, &str, &str)> = HashSet::new();
@@ -176,6 +191,11 @@ impl<'s> ProguardMapper<'s> {
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {
             match record {
+                ProguardRecord::Header { key, value } => {
+                    if key == "sourceFile" {
+                        class.file_name = value;
+                    }
+                }
                 ProguardRecord::Class {
                     original,
                     obfuscated,
@@ -186,6 +206,7 @@ impl<'s> ProguardMapper<'s> {
                     class = ClassMapping {
                         original,
                         obfuscated,
+                        file_name: None,
                         members: HashMap::new(),
                     };
                     unique_methods.clear();
@@ -230,6 +251,7 @@ impl<'s> ProguardMapper<'s> {
                         startline,
                         endline,
                         original_class,
+                        original_file: class.file_name,
                         original,
                         original_startline,
                         original_endline,

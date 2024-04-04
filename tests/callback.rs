@@ -18,18 +18,20 @@ fn test_method_matches_callback() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "io.sentry.samples.instrumentation.ui.EditActivity",
             "onCreate$lambda$1",
-            37
+            37,
+            "EditActivity",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "io.sentry.samples.instrumentation.ui.EditActivity$$InternalSyntheticLambda$1$ebaa538726b99bb77e0f5e7c86443911af17d6e5be2b8771952ae0caa4ff2ac7$0",
             "onMenuItemClick",
-            0
+            0,
+            "EditActivity",
         )
     );
     assert_eq!(mapped.next(), None);
@@ -50,34 +52,38 @@ fn test_method_matches_callback_extra_class() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "io.sentry.samples.instrumentation.ui.TestSourceContext",
             "test2",
-            10
+            10,
+            "TestSourceContext",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "io.sentry.samples.instrumentation.ui.TestSourceContext",
             "test",
-            6
+            6,
+            "TestSourceContext",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "io.sentry.samples.instrumentation.ui.EditActivity",
             "onCreate$lambda$1",
-            38
+            38,
+            "EditActivity",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "io.sentry.samples.instrumentation.ui.EditActivity$$InternalSyntheticLambda$1$ebaa538726b99bb77e0f5e7c86443911af17d6e5be2b8771952ae0caa4ff2ac7$0",
             "onMenuItemClick",
-            0
+            0,
+            "EditActivity",
         )
     );
     assert_eq!(mapped.next(), None);
@@ -97,26 +103,29 @@ fn test_method_matches_callback_inner_class() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "io.sentry.samples.instrumentation.ui.EditActivity$InnerEditActivityClass",
             "testInner",
-            19
+            19,
+            "EditActivity",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "io.sentry.samples.instrumentation.ui.EditActivity",
             "onCreate$lambda$1",
-            45
+            45,
+            "EditActivity",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "io.sentry.samples.instrumentation.ui.EditActivity$$InternalSyntheticLambda$1$ebaa538726b99bb77e0f5e7c86443911af17d6e5be2b8771952ae0caa4ff2ac7$0",
             "onMenuItemClick",
-            0
+            0,
+            "EditActivity",
         )
     );
     assert_eq!(mapped.next(), None);

@@ -34,10 +34,7 @@ impl DeobfuscatedSignature {
 
     /// formats types (param_type list, return_type) into a human-readable signature
     pub fn format_signature(&self) -> String {
-        let mut signature = format!(
-            "({})",
-            self.parameters.join(", ")
-        );
+        let mut signature = format!("({})", self.parameters.join(", "));
         if !self.return_type().is_empty() && self.return_type() != "void" {
             signature.push_str(": ");
             signature.push_str(self.return_type());

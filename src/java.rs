@@ -46,7 +46,7 @@ fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) ->
 
 // parse_obfuscated_bytecode_signature will parse an obfuscated signatures into parameter
 // and return types that can be then deobfuscated
-fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<&str>, String)> {
+fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<&str>, &str)> {
     let signature = signature.strip_prefix('(')?;
 
     let (parameter_types, return_type) = signature.rsplit_once(')')?;
@@ -82,7 +82,7 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<&str>, St
         }
     }
 
-    Some((types, return_type.to_string()))
+    Some((types, return_type))
 }
 
 /// returns a tuple where the first element is the list of the function
@@ -98,7 +98,7 @@ pub fn deobfuscate_bytecode_signature(
         .filter_map(|params| byte_code_type_to_java_type(params, mapper))
         .collect();
 
-    let return_java_type = byte_code_type_to_java_type(return_type.as_str(), mapper)?;
+    let return_java_type = byte_code_type_to_java_type(return_type, mapper)?;
 
     Some((parameter_java_types, return_java_type))
 }
@@ -117,11 +117,6 @@ mod tests {
         let mapper = ProguardMapper::new(mapping);
 
         let tests = HashMap::from([
-            // invalid types
-            ("", ""),
-            ("L", ""),
-            ("", ""),
-            // valid types
             ("[I", "int[]"),
             ("I", "int"),
             ("[Ljava/lang/String;", "java.lang.String[]"),
@@ -134,11 +129,19 @@ mod tests {
             ),
         ]);
 
+        // invalid types
+        let tests_invalid = vec!["", "L", ""];
+
         for (ty, expected) in tests {
             assert_eq!(
-                byte_code_type_to_java_type(ty, &mapper).unwrap_or_default(),
+                byte_code_type_to_java_type(ty, &mapper).unwrap(),
                 expected.to_string()
             );
+        }
+
+        for ty in tests_invalid {
+            let java_type = byte_code_type_to_java_type(ty, &mapper);
+            assert!(java_type.is_none());
         }
     }
 

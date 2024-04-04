@@ -35,11 +35,12 @@
 
 #![warn(missing_docs)]
 
+mod java;
 mod mapper;
 mod mapping;
 mod stacktrace;
 
-pub use mapper::{ProguardMapper, RemappedFrameIter};
+pub use mapper::{DeobfuscatedSignature, ProguardMapper, RemappedFrameIter};
 pub use mapping::{
     LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord,
     ProguardRecordIter,

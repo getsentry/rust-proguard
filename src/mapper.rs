@@ -1,10 +1,55 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
+use crate::java;
 use crate::mapping::{ProguardMapping, ProguardRecord};
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
+
+/// A deobfuscated method signature.
+pub struct DeobfuscatedSignature {
+    parameters: Vec<String>,
+    return_type: String,
+}
+
+impl DeobfuscatedSignature {
+    fn new(signature: (Vec<String>, String)) -> DeobfuscatedSignature {
+        DeobfuscatedSignature {
+            parameters: signature.0,
+            return_type: signature.1,
+        }
+    }
+
+    /// Returns the java return type of the method signature
+    pub fn return_type(&self) -> &str {
+        self.return_type.as_str()
+    }
+
+    /// Returns the list of paramater types of the method signature
+    pub fn parameters_types(&self) -> impl Iterator<Item = &str> {
+        self.parameters.iter().map(|s| s.as_ref())
+    }
+
+    /// formats types (param_type list, return_type) into a human-readable signature
+    pub fn format_signature(&self) -> String {
+        let mut signature = format!("({})", self.parameters.join(", "));
+        if !self.return_type().is_empty() && self.return_type() != "void" {
+            signature.push_str(": ");
+            signature.push_str(self.return_type());
+        }
+
+        signature
+    }
+}
+
+impl fmt::Display for DeobfuscatedSignature {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.format_signature())
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct MemberMapping<'s> {
@@ -313,6 +358,12 @@ impl<'s> ProguardMapper<'s> {
     /// ```
     pub fn remap_class(&'s self, class: &str) -> Option<&'s str> {
         self.classes.get(class).map(|class| class.original)
+    }
+
+    /// returns a tuple where the first element is the list of the function
+    /// parameters and the second one is the return type
+    pub fn deobfuscate_signature(&'s self, signature: &str) -> Option<DeobfuscatedSignature> {
+        java::deobfuscate_bytecode_signature(signature, self).map(DeobfuscatedSignature::new)
     }
 
     /// Remaps an obfuscated Class Method.

@@ -183,7 +183,7 @@ impl<'s> StackFrame<'s> {
         }
     }
 
-    /// Create a new StackFrame with farguments information and no line.
+    /// Create a new StackFrame with arguments information and no line.
     /// This is useful for when we try to do deobfuscation with no line information.
     pub fn with_parameters(class: &'s str, method: &'s str, arguments: &'s str) -> Self {
         Self {

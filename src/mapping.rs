@@ -4,7 +4,7 @@
 //! [here](https://www.guardsquare.com/en/products/proguard/manual/retrace).
 
 use std::fmt;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::str;
 
 #[cfg(feature = "uuid")]
@@ -690,62 +690,44 @@ fn is_newline(byte: &u8) -> bool {
     *byte == b'\r' || *byte == b'\n'
 }
 
-/// An error that occured while cleaning up a mapping file.
-#[derive(Debug)]
-pub enum CleanupFileError<'s> {
-    /// There was an error writing to the output buffer.
-    Io(std::io::Error),
-    /// There was an error reading a record.
-    Parse(ParseError<'s>),
-}
-
-impl<'s> From<ParseError<'s>> for CleanupFileError<'s> {
-    fn from(value: ParseError<'s>) -> Self {
-        Self::Parse(value)
-    }
-}
-
-impl From<std::io::Error> for CleanupFileError<'_> {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
 /// Cleans up a Proguard mapping file by removing all records
 /// that can't be used by a [`ProguardMapper`].
 ///
 /// This preserves class, method, and "sourceFile" header records.
-/// It removes field and all other header records.
-pub fn cleanup_mapping_file<W>(source: &[u8], mut output: W) -> Result<(), CleanupFileError>
+/// It removes field and all other header records, as well as all invalid lines.
+pub fn cleanup_mapping_file<R, W>(mut source: R, mut output: W) -> Result<(), std::io::Error>
 where
+    R: BufRead,
     W: Write,
 {
-    for line in source.split(is_newline) {
-        if line.is_empty() {
-            continue;
+    let mut line_buf = String::new();
+    loop {
+        line_buf.clear();
+        let read = source.read_line(&mut line_buf)?;
+
+        if read == 0 {
+            break;
         }
 
-        let (record, _rest) = parse_proguard_record(line);
+        let (record, _rest) = parse_proguard_record(line_buf.as_bytes());
         if matches!(
-            record?,
-            ProguardRecord::Class { .. }
+            record,
+            Ok(ProguardRecord::Class { .. }
                 | ProguardRecord::Method { .. }
                 | ProguardRecord::Header {
                     key: "sourceFile",
                     ..
-                }
+                })
         ) {
-            output.write_all(line)?;
-            output.write_all(&[b'\n'])?;
+            output.write_all(line_buf.as_bytes())?;
         }
     }
-
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::cleanup_mapping_file;
+    use std::io::Cursor;
 
     use super::*;
 
@@ -1118,24 +1100,29 @@ androidx.activity.OnBackPressedCallback
 
     #[test]
     fn cleanup() {
-        let bytes = br#"# compiler: R8
+        let bytes = br#"
+# compiler: R8
 # common_typos_disable
 
+androidx.activity.OnBackPressedCallback->c.a.b:
 androidx.activity.OnBackPressedCallback -> c.a.b:
 # {"id":"sourceFile","fileName":"Test.kt"}
     boolean mEnabled -> a
+  boolean mEnabled -> a
     java.util.ArrayDeque mOnBackPressedCallbacks -> b
     1:4:void onBackPressed():184:187 -> c
-"#;
+androidx.activity.OnBackPressedCallback 
+-> c.a.b:
+        "#;
 
         let mut out = Vec::new();
 
-        cleanup_mapping_file(bytes, &mut out).unwrap();
+        cleanup_mapping_file(&mut Cursor::new(bytes), &mut out).unwrap();
 
-        let expected = br#"androidx.activity.OnBackPressedCallback -> c.a.b:
+        let expected = r#"androidx.activity.OnBackPressedCallback -> c.a.b:
 # {"id":"sourceFile","fileName":"Test.kt"}
     1:4:void onBackPressed():184:187 -> c
 "#;
-        assert_eq!(&out, expected);
+        assert_eq!(std::str::from_utf8(&out).unwrap(), expected);
     }
 }

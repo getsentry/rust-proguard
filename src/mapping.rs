@@ -1119,10 +1119,10 @@ androidx.activity.OnBackPressedCallback
 
         cleanup_mapping_file(&mut Cursor::new(bytes), &mut out).unwrap();
 
-        let expected = r#"androidx.activity.OnBackPressedCallback -> c.a.b:
+        let expected = br#"androidx.activity.OnBackPressedCallback -> c.a.b:
 # {"id":"sourceFile","fileName":"Test.kt"}
     1:4:void onBackPressed():184:187 -> c
 "#;
-        assert_eq!(std::str::from_utf8(&out).unwrap(), expected);
+        assert_eq!(out, expected);
     }
 }

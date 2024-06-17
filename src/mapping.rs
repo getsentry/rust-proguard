@@ -4,6 +4,7 @@
 //! [here](https://www.guardsquare.com/en/products/proguard/manual/retrace).
 
 use std::fmt;
+use std::io;
 use std::str;
 
 #[cfg(feature = "uuid")]
@@ -235,6 +236,45 @@ impl<'s> ProguardMapping<'s> {
     /// [`ProguardRecord`]: enum.ProguardRecord.html
     pub fn iter(&self) -> ProguardRecordIter<'s> {
         ProguardRecordIter { slice: self.source }
+    }
+
+    /// Creates a "class index" from this mapping and writes it into the given writer.
+    ///
+    /// The class index comprises lines of the form `OBFUSCATED_NAME:START:END`,
+    /// where `OBFUSCATED_NAME` is the obfuscated name of a class in the mapping
+    /// file and `START` and `END` are the start and end offset of that class's
+    /// mapping information in the file. This allows one to slice the mapping file
+    /// and only load the mapping information for a single class into memory.
+    ///
+    /// The class lines are sorted alphabetically, so it's possible to binary
+    /// search the index for the mapping information of a given class.
+    pub fn write_class_index<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
+        let mut last_class = None;
+        let mut iter = self.iter();
+        let mut record_start = 0;
+        let mut index = Vec::new();
+
+        while let Some(record) = iter.next().and_then(Result::ok) {
+            if let ProguardRecord::Class { obfuscated, .. } = record {
+                if let Some((last_class_name, last_class_start)) = last_class.take() {
+                    index.push((last_class_name, last_class_start, record_start));
+                }
+                last_class = Some((obfuscated, record_start));
+            }
+            record_start = iter.slice.as_ptr() as usize - self.source.as_ptr() as usize;
+        }
+
+        if let Some((last_class_name, last_class_start)) = last_class.take() {
+            index.push((last_class_name, last_class_start, record_start));
+        }
+
+        index.sort_unstable();
+
+        for (name, start, end) in index {
+            writeln!(out, "{name}:{start}:{end}")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -692,6 +732,8 @@ fn is_newline(byte: &u8) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::io::BufRead;
+
     use super::*;
 
     #[test]
@@ -1058,6 +1100,59 @@ androidx.activity.OnBackPressedCallback
                     kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
                 }),
             ],
+        );
+    }
+
+    #[test]
+    fn test_index() {
+        let source = "\
+com.example.MainFragment$EngineFailureException -> com.example.MainFragment$g:
+com.example.MainFragment$RocketException -> com.example.MainFragment$d:
+com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$e:
+    1:1:void com.example.MainFragment$Rocket.startEngines():90:90 -> onClick
+    1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
+    1:1:void onClick(android.view.View):65 -> onClick
+    2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
+    2:2:void onClick(android.view.View):65 -> onClick
+    ";
+
+        let mapping = ProguardMapping::new(source.as_bytes());
+
+        let mut index = Vec::new();
+
+        mapping.write_class_index(&mut index).unwrap();
+
+        let sections = index
+            .lines()
+            .map(|l| {
+                let line = l.unwrap();
+                let (_name, rest) = line.split_once(':').unwrap();
+                let (start, end) = rest.split_once(':').unwrap();
+                let (start, end) = (start.parse().unwrap(), end.parse().unwrap());
+                &source[start..end]
+            })
+            .collect::<Vec<_>>();
+
+        // Sections are alphabetically ordered in the index
+
+        assert_eq!(
+            sections[0],
+            "com.example.MainFragment$RocketException -> com.example.MainFragment$d:\n",
+        );
+
+        assert_eq!(
+            sections[1],
+            "com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$e:
+    1:1:void com.example.MainFragment$Rocket.startEngines():90:90 -> onClick
+    1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
+    1:1:void onClick(android.view.View):65 -> onClick
+    2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
+    2:2:void onClick(android.view.View):65 -> onClick\n"
+        );
+
+        assert_eq!(
+            sections[2],
+            "com.example.MainFragment$EngineFailureException -> com.example.MainFragment$g:\n"
         );
     }
 }

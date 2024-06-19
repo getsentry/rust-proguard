@@ -3,8 +3,13 @@
 //! The mapping file format is described
 //! [here](https://www.guardsquare.com/en/products/proguard/manual/retrace).
 
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
+use std::io::BufRead;
+use std::io::Write;
+use std::ops::Range;
 use std::str;
 
 #[cfg(feature = "uuid")]
@@ -131,6 +136,47 @@ impl<'s> MappingSummary<'s> {
     }
 }
 
+/// A class index for a proguard mapping file.
+///
+/// This is fundamentally a map from class names to offset ranges. The value
+/// of `class` in this map is the range range of bytes between which the
+/// mapping information for `class` is found in the mapping file
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassIndex<'a>(BTreeMap<Cow<'a, str>, Range<usize>>);
+
+impl<'a> ClassIndex<'a> {
+    /// Gets the range information for a class from this index.
+    pub fn get(&self, class: &str) -> Option<Range<usize>> {
+        self.0.get(class).cloned()
+    }
+
+    /// Reads a class index from its text representation (see [`write`](Self::write)).
+    pub fn parse(source: &[u8]) -> Option<Self> {
+        let mut inner = BTreeMap::new();
+        for line in source.lines() {
+            let line = line.ok()?;
+            let (name, rest) = line.split_once(':')?;
+            let (start, end) = rest.split_once(':')?;
+            let (start, end) = (start.parse().ok()?, end.parse().ok()?);
+            inner.insert(Cow::Owned(name.into()), start..end);
+        }
+
+        Some(Self(inner))
+    }
+
+    /// Writes the class index to a file.
+    ///
+    /// The class index is formatted into lines of the form `CLASS_NAME:START:END`,
+    /// sorted alhpabetically.
+    pub fn write<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for (name, range) in &self.0 {
+            writeln!(out, "{name}:{}:{}", range.start, range.end)?;
+        }
+
+        Ok(())
+    }
+}
+
 /// A Proguard Mapping file.
 #[derive(Clone, Default)]
 pub struct ProguardMapping<'s> {
@@ -238,43 +284,51 @@ impl<'s> ProguardMapping<'s> {
         ProguardRecordIter { slice: self.source }
     }
 
-    /// Creates a "class index" from this mapping and writes it into the given writer.
-    ///
-    /// The class index comprises lines of the form `OBFUSCATED_NAME:START:END`,
-    /// where `OBFUSCATED_NAME` is the obfuscated name of a class in the mapping
-    /// file and `START` and `END` are the start and end offset of that class's
-    /// mapping information in the file. This allows one to slice the mapping file
-    /// and only load the mapping information for a single class into memory.
-    ///
-    /// The class lines are sorted alphabetically, so it's possible to binary
-    /// search the index for the mapping information of a given class.
-    pub fn write_class_index<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
+    /// Creates a [ClassIndex] from this mapping.
+    pub fn create_class_index(&self) -> ClassIndex {
         let mut last_class = None;
         let mut iter = self.iter();
         let mut record_start = 0;
-        let mut index = Vec::new();
+        let mut index = BTreeMap::new();
 
-        while let Some(record) = iter.next().and_then(Result::ok) {
-            if let ProguardRecord::Class { obfuscated, .. } = record {
+        while let Some(record) = iter.next() {
+            if let Ok(ProguardRecord::Class { obfuscated, .. }) = record {
                 if let Some((last_class_name, last_class_start)) = last_class.take() {
-                    index.push((last_class_name, last_class_start, record_start));
+                    index.insert(
+                        Cow::Borrowed(last_class_name),
+                        last_class_start..record_start,
+                    );
                 }
                 last_class = Some((obfuscated, record_start));
             }
-            record_start = iter.slice.as_ptr() as usize - self.source.as_ptr() as usize;
+            record_start = if iter.slice.is_empty() {
+                self.source.len()
+            } else {
+                std::cmp::min(
+                    iter.slice.as_ptr() as usize - self.source.as_ptr() as usize,
+                    self.source.len(),
+                )
+            };
         }
 
         if let Some((last_class_name, last_class_start)) = last_class.take() {
-            index.push((last_class_name, last_class_start, record_start));
+            index.insert(
+                Cow::Borrowed(last_class_name),
+                last_class_start..record_start,
+            );
         }
 
-        index.sort_unstable();
+        ClassIndex(index)
+    }
 
-        for (name, start, end) in index {
-            writeln!(out, "{name}:{start}:{end}")?;
+    /// Returns the "submapping" of this within the given byte range.
+    ///
+    /// # Panics
+    /// This method panics if `range` is out of bounds for this mapping.
+    pub fn section(&self, range: Range<usize>) -> Self {
+        Self {
+            source: &self.source[range],
         }
-
-        Ok(())
     }
 }
 
@@ -732,8 +786,6 @@ fn is_newline(byte: &u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::io::BufRead;
-
     use super::*;
 
     #[test]
@@ -1113,24 +1165,16 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$e:
     1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
     1:1:void onClick(android.view.View):65 -> onClick
     2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
-    2:2:void onClick(android.view.View):65 -> onClick
-    ";
+    2:2:void onClick(android.view.View):65 -> onClick\n";
 
         let mapping = ProguardMapping::new(source.as_bytes());
 
-        let mut index = Vec::new();
-
-        mapping.write_class_index(&mut index).unwrap();
+        let index = mapping.create_class_index();
 
         let sections = index
-            .lines()
-            .map(|l| {
-                let line = l.unwrap();
-                let (_name, rest) = line.split_once(':').unwrap();
-                let (start, end) = rest.split_once(':').unwrap();
-                let (start, end) = (start.parse().unwrap(), end.parse().unwrap());
-                &source[start..end]
-            })
+            .0
+            .values()
+            .map(|range| &source[range.clone()])
             .collect::<Vec<_>>();
 
         // Sections are alphabetically ordered in the index
@@ -1154,5 +1198,29 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$e:
             sections[2],
             "com.example.MainFragment$EngineFailureException -> com.example.MainFragment$g:\n"
         );
+    }
+
+    #[test]
+    fn test_index_roundtrip() {
+        let source = "\
+com.example.MainFragment$EngineFailureException -> com.example.MainFragment$g:
+com.example.MainFragment$RocketException -> com.example.MainFragment$d:
+com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$e:
+    1:1:void com.example.MainFragment$Rocket.startEngines():90:90 -> onClick
+    1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
+    1:1:void onClick(android.view.View):65 -> onClick
+    2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
+    2:2:void onClick(android.view.View):65 -> onClick\n";
+
+        let mapping = ProguardMapping::new(source.as_bytes());
+
+        let index = mapping.create_class_index();
+
+        let mut out = Vec::new();
+        index.write(&mut out).unwrap();
+
+        let parsed = ClassIndex::parse(&out).unwrap();
+
+        assert_eq!(parsed, index);
     }
 }

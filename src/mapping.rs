@@ -3,12 +3,10 @@
 //! The mapping file format is described
 //! [here](https://www.guardsquare.com/en/products/proguard/manual/retrace).
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::fmt;
 use std::io;
-use std::io::BufRead;
 use std::io::Write;
 use std::ops::Range;
 use std::str;
@@ -143,7 +141,7 @@ impl<'s> MappingSummary<'s> {
 /// of `class` in this map is the range of bytes between which the
 /// mapping information for `class` is found in the mapping file
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClassIndex<'a>(BTreeMap<Cow<'a, str>, Range<usize>>);
+pub struct ClassIndex<'a>(BTreeMap<&'a str, Range<usize>>);
 
 impl<'a> ClassIndex<'a> {
     /// Gets the range information for a class from this index.
@@ -152,14 +150,13 @@ impl<'a> ClassIndex<'a> {
     }
 
     /// Reads a class index from its text representation (see [`write`](Self::write)).
-    pub fn parse(source: &[u8]) -> Option<Self> {
+    pub fn parse(source: &'a str) -> Option<Self> {
         let mut inner = BTreeMap::new();
         for line in source.lines() {
-            let line = line.ok()?;
             let (name, rest) = line.split_once(':')?;
             let (start, end) = rest.split_once(':')?;
             let (start, end) = (start.parse().ok()?, end.parse().ok()?);
-            inner.insert(Cow::Owned(name.into()), start..end);
+            inner.insert(name, start..end);
         }
 
         Some(Self(inner))
@@ -295,10 +292,7 @@ impl<'s> ProguardMapping<'s> {
         while let Some(record) = iter.next() {
             if let Ok(ProguardRecord::Class { obfuscated, .. }) = record {
                 if let Some((last_class_name, last_class_start)) = last_class.take() {
-                    index.insert(
-                        Cow::Borrowed(last_class_name),
-                        last_class_start..record_start,
-                    );
+                    index.insert(last_class_name, last_class_start..record_start);
                 }
                 last_class = Some((obfuscated, record_start));
             }
@@ -319,10 +313,7 @@ impl<'s> ProguardMapping<'s> {
         }
 
         if let Some((last_class_name, last_class_start)) = last_class.take() {
-            index.insert(
-                Cow::Borrowed(last_class_name),
-                last_class_start..record_start,
-            );
+            index.insert(last_class_name, last_class_start..record_start);
         }
 
         ClassIndex(index)
@@ -1226,7 +1217,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$e:
         let mut out = Vec::new();
         index.write(&mut out).unwrap();
 
-        let parsed = ClassIndex::parse(&out).unwrap();
+        let parsed = ClassIndex::parse(std::str::from_utf8(&out).unwrap()).unwrap();
 
         assert_eq!(parsed, index);
     }

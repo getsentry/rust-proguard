@@ -5,6 +5,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::convert::TryInto;
 use std::fmt;
 use std::io;
 use std::io::BufRead;
@@ -304,10 +305,16 @@ impl<'s> ProguardMapping<'s> {
             record_start = if iter.slice.is_empty() {
                 self.source.len()
             } else {
-                std::cmp::min(
-                    iter.slice.as_ptr() as usize - self.source.as_ptr() as usize,
-                    self.source.len(),
-                )
+                // SAFETY: If `iter.slice` is not empty, then it is a subslice of `self.source`
+                // and it's safe to use `offset_from`. Also, the slice is only ever moved forward,
+                // so the offset is a valid `usize`.
+                unsafe {
+                    iter.slice
+                        .as_ptr()
+                        .offset_from(self.source.as_ptr())
+                        .try_into()
+                        .unwrap()
+                }
             };
         }
 

@@ -139,7 +139,7 @@ impl<'s> MappingSummary<'s> {
 /// A class index for a proguard mapping file.
 ///
 /// This is fundamentally a map from class names to offset ranges. The value
-/// of `class` in this map is the range range of bytes between which the
+/// of `class` in this map is the range of bytes between which the
 /// mapping information for `class` is found in the mapping file
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClassIndex<'a>(BTreeMap<Cow<'a, str>, Range<usize>>);

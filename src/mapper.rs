@@ -265,7 +265,7 @@ impl<'s> ProguardMapper<'s> {
                     ..
                 } => {
                     let current_line = if initialize_param_mapping {
-                        line_mapping.clone()
+                        line_mapping
                     } else {
                         None
                     };

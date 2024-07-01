@@ -1,6 +1,7 @@
 mod debug;
 mod raw;
 
+use std::cmp::Ordering;
 use std::fmt::Write;
 
 use thiserror::Error;
@@ -181,54 +182,100 @@ impl<'data> ProguardCache<'data> {
 
         frame.class = original_class;
 
-        let mappings = if let Some(parameters) = frame.parameters {
+        // The following if and else cases are very similar. The only difference
+        // is that if the frame contains parameter information, we use it in
+        // our comparisons (in addition to the method name).
+        let members = if let Some(frame_params) = frame.parameters {
             let Some(members) = self.get_class_members_by_params(class) else {
                 return RemappedFrameIter::empty();
             };
-            let matches = |m: &raw::Member| {
+
+            // Find a member with the right method name/params by binary search.
+            let Ok(mid) = members.binary_search_by(|m| {
                 let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                    return false;
-                };
-                let Ok(params) = self.read_string(m.params_offset) else {
-                    return false;
+                    return Ordering::Greater;
                 };
 
-                obfuscated_name == frame.method && params == parameters
-            };
+                let params = self.read_string(m.params_offset).unwrap_or_default();
 
-            // Find the first member that matches the method name & params
-            let Some(start) = members.iter().position(matches) else {
+                (obfuscated_name, params).cmp(&(frame.method, frame_params))
+            }) else {
                 return RemappedFrameIter::empty();
             };
 
-            // One past the last member that matches the method name & params
-            // We can unwrap here because `start` exists, so there must be at least one element
-            let end = members.iter().rposition(matches).unwrap() + 1;
+            // Closure that returns `true` if a member doesn't have the
+            // right method name or params.
+            let matches_not = |m: &raw::Member| {
+                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
+                    return true;
+                };
+
+                let params = self.read_string(m.params_offset).unwrap_or_default();
+
+                obfuscated_name != frame.method || params != frame_params
+            };
+
+            // Search backwards from `mid` for a member that doesn't have the
+            // right method name/params. The one after it must be the first one with
+            // the right method name/params.
+            let start = members[..mid]
+                .iter()
+                .rposition(matches_not)
+                .map_or(0, |idx| idx + 1);
+
+            // Search forwards from `mid` for a member that doesn't have the
+            // right method name/params. The one before it must be the last one with
+            // the right method name/params.
+            let end = members[mid..]
+                .iter()
+                .position(matches_not)
+                .map_or(members.len(), |idx| idx + mid);
             &members[start..end]
         } else {
             let Some(members) = self.get_class_members(class) else {
                 return RemappedFrameIter::empty();
             };
-            let matches = |m: &raw::Member| {
+
+            // Find a member with the right method name by binary search.
+            let Ok(mid) = members.binary_search_by(|m| {
                 let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                    return false;
+                    return Ordering::Greater;
                 };
 
-                obfuscated_name == frame.method
-            };
-
-            // Find the first member that matches the method name
-            let Some(start) = members.iter().position(matches) else {
+                obfuscated_name.cmp(frame.method)
+            }) else {
                 return RemappedFrameIter::empty();
             };
 
-            // One past the last member that matches the method name
-            // We can unwrap here because `start` exists, so there must be at least one element
-            let end = members.iter().rposition(matches).unwrap() + 1;
+            // Closure that returns `true` if a member doesn't have the
+            // right method name.
+            let matches_not = |m: &raw::Member| {
+                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
+                    return true;
+                };
+
+                obfuscated_name != frame.method
+            };
+
+            // Search backwards from `mid` for a member that doesn't have the
+            // right method name. The one after it must be the first one with
+            // the right method name.
+            let start = members[..mid]
+                .iter()
+                .rposition(matches_not)
+                .map_or(0, |idx| idx + 1);
+
+            // Search forwards from `mid` for a member that doesn't have the
+            // right method name. The one before it must be the last one with
+            // the right method name.
+            let end = members[mid..]
+                .iter()
+                .position(matches_not)
+                .map_or(members.len(), |idx| idx + mid);
             &members[start..end]
         };
 
-        RemappedFrameIter::members(self, frame, mappings.iter())
+        RemappedFrameIter::members(self, frame, members.iter())
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.

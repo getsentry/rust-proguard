@@ -1,14 +1,14 @@
-mod in_memory;
+mod debug;
 mod raw;
 
-use std::io::Write;
+use std::fmt::Write;
 
 use thiserror::Error;
-use watto::{Pod, StringTable};
+use watto::StringTable;
 
-use crate::ProguardMapping;
+use crate::mapper::{format_cause, format_frames, format_throwable};
+use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Throwable};
 
-pub use in_memory::IndexedProguard;
 pub use raw::ProguardCache;
 
 /// Errors returned while loading/parsing a serialized [`PrgCache`].
@@ -31,9 +31,12 @@ pub enum ErrorKind {
     /// Header could not be parsed from the cache file.
     #[error("could not read header")]
     InvalidHeader,
-    /// File data could not be parsed from the cache file.
+    /// Class data could not be parsed from the cache file.
     #[error("could not read classes")]
     InvalidClasses,
+    /// Member data could not be parsed from the cache file.
+    #[error("could not read members")]
+    InvalidMembers,
     /// The header claimed an incorrect number of string bytes.
     #[error("expected {expected} string bytes, found {found}")]
     UnexpectedStringBytes {
@@ -66,114 +69,528 @@ impl From<ErrorKind> for Error {
     }
 }
 
-pub fn write_proguard_cache<W: Write>(
-    mapping: &ProguardMapping,
-    writer: &mut W,
-) -> std::io::Result<()> {
-    let mut classes = Vec::new();
-    let mut string_table = StringTable::new();
+impl<'data> ProguardCache<'data> {
+    fn get_class(&self, name: &str) -> Option<&raw::Class> {
+        let idx = self
+            .classes
+            .binary_search_by_key(&name, |c| {
+                StringTable::read(self.string_bytes, c.obfuscated_name_offset as usize).unwrap()
+            })
+            .ok()?;
 
-    let class_index = mapping.create_class_index();
+        self.classes.get(idx)
+    }
 
-    for (obfuscated, body_range) in class_index.0 {
-        let body = &mapping.source[body_range];
-        let body = std::str::from_utf8(body).unwrap();
-        let obfuscated_offset = string_table.insert(obfuscated) as u32;
-        let body_offset = string_table.insert(body) as u32;
-        classes.push(raw::Class {
-            obfuscated_name_offset: obfuscated_offset,
-            body_offset,
+    fn get_class_members(&self, class: &raw::Class) -> Option<&'data [raw::Member]> {
+        let raw::Class {
+            members_offset,
+            members_len,
+            ..
+        } = class;
+        let start = *members_offset as usize;
+        let end = start.checked_add(*members_len as usize)?;
+
+        self.members.get(start..end)
+    }
+
+    fn get_class_members_by_params(&self, class: &raw::Class) -> Option<&'data [raw::Member]> {
+        let raw::Class {
+            members_by_params_offset,
+            members_by_params_len,
+            ..
+        } = class;
+        let start = *members_by_params_offset as usize;
+        let end = start.checked_add(*members_by_params_len as usize)?;
+
+        self.members_by_params.get(start..end)
+    }
+
+    /// Remaps an obfuscated Class.
+    ///
+    /// This works on the fully-qualified name of the class, with its complete
+    /// module prefix.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use proguard::{ProguardMapping, ProguardCache};
+    /// let mapping = ProguardMapping::new(br#"android.arch.core.executor.ArchTaskExecutor -> a.a.a.a.c:"#);
+    /// let mut cache = Vec::new();
+    /// ProguardCache::write(&mapping, &mut cache).unwrap();
+    /// let cache = ProguardCache::parse(&cache).unwrap();
+    ///
+    /// let mapped = cache.remap_class("a.a.a.a.c");
+    /// assert_eq!(mapped, Some("android.arch.core.executor.ArchTaskExecutor"));
+    /// ```
+    pub fn remap_class(&self, class: &str) -> Option<&'data str> {
+        let class = self.get_class(class)?;
+        StringTable::read(self.string_bytes, class.original_name_offset as usize).ok()
+    }
+
+    /// Remaps an obfuscated Class Method.
+    ///
+    /// The `class` argument has to be the fully-qualified obfuscated name of the
+    /// class, with its complete module prefix.
+    ///
+    /// If the `method` can be resolved unambiguously, it will be returned
+    /// alongside the remapped `class`, otherwise `None` is being returned.
+    pub fn remap_method(&self, class: &str, method: &str) -> Option<(&'data str, &'data str)> {
+        let class = self.get_class(class)?;
+        let members = self.get_class_members(class)?;
+        let mut iter = members.iter().filter(|m| {
+            let Ok(obfuscated_name) =
+                StringTable::read(self.string_bytes, m.obfuscated_name_offset as usize)
+            else {
+                return false;
+            };
+
+            obfuscated_name == method
+        });
+        let first = iter.next()?;
+
+        // We conservatively check that all the mappings point to the same method,
+        // as we don’t have line numbers to disambiguate.
+        // We could potentially skip inlined functions here, but lets rather be conservative.
+        let all_matching =
+            iter.all(|member| member.original_name_offset == first.original_name_offset);
+
+        if !all_matching {
+            return None;
+        }
+
+        let original_class =
+            StringTable::read(self.string_bytes, class.original_name_offset as usize).ok()?;
+        let original_method =
+            StringTable::read(self.string_bytes, first.original_name_offset as usize).ok()?;
+
+        Some((original_class, original_method))
+    }
+
+    /// Remaps a single Stackframe.
+    ///
+    /// Returns zero or more [`StackFrame`]s, based on the information in
+    /// the proguard mapping. This can return more than one frame in the case
+    /// of inlined functions. In that case, frames are sorted top to bottom.
+    pub fn remap_frame<'r: 'data>(
+        &'r self,
+        frame: &StackFrame<'data>,
+    ) -> RemappedFrameIter<'r, 'data> {
+        let Some(class) = self.get_class(frame.class) else {
+            return RemappedFrameIter::empty();
+        };
+
+        let mut frame = frame.clone();
+        let Ok(original_class) =
+            StringTable::read(self.string_bytes, class.original_name_offset as usize)
+        else {
+            return RemappedFrameIter::empty();
+        };
+
+        frame.class = original_class;
+
+        let mappings = if let Some(parameters) = frame.parameters {
+            let Some(members) = self.get_class_members_by_params(class) else {
+                return RemappedFrameIter::empty();
+            };
+            let matches = |m: &raw::Member| {
+                let Ok(obfuscated_name) =
+                    StringTable::read(self.string_bytes, m.obfuscated_name_offset as usize)
+                else {
+                    return false;
+                };
+                let Ok(params) = StringTable::read(self.string_bytes, m.params_offset as usize)
+                else {
+                    return false;
+                };
+
+                obfuscated_name == frame.method && params == parameters
+            };
+
+            // Find the first member that matches the method name & params
+            let Some(start) = members.iter().position(matches) else {
+                return RemappedFrameIter::empty();
+            };
+
+            // One past the last member that matches the method name & params
+            // We can unwrap here because `start` exists, so there must be at least one element
+            let end = members.iter().rposition(matches).unwrap() + 1;
+            &members[start..end]
+        } else {
+            let Some(members) = self.get_class_members(class) else {
+                return RemappedFrameIter::empty();
+            };
+            let matches = |m: &raw::Member| {
+                let Ok(obfuscated_name) =
+                    StringTable::read(self.string_bytes, m.obfuscated_name_offset as usize)
+                else {
+                    return false;
+                };
+
+                obfuscated_name == frame.method
+            };
+
+            // Find the first member that matches the method name
+            let Some(start) = members.iter().position(matches) else {
+                return RemappedFrameIter::empty();
+            };
+
+            // One past the last member that matches the method name
+            // We can unwrap here because `start` exists, so there must be at least one element
+            let end = members.iter().rposition(matches).unwrap() + 1;
+            &members[start..end]
+        };
+
+        RemappedFrameIter::members(self, frame, mappings.iter())
+    }
+
+    /// Remaps a throwable which is the first line of a full stacktrace.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use proguard::{ProguardMapping, ProguardCache, Throwable};
+    ///
+    /// let mapping = ProguardMapping::new(b"com.example.Mapper -> a.b:");
+    /// let mut cache = Vec::new();
+    /// ProguardCache::write(&mapping, &mut cache).unwrap();
+    /// let cache = ProguardCache::parse(&cache).unwrap();
+    ///
+    /// let throwable = Throwable::try_parse(b"a.b: Crash").unwrap();
+    /// let mapped = cache.remap_throwable(&throwable);
+    ///
+    /// assert_eq!(
+    ///     Some(Throwable::with_message("com.example.Mapper", "Crash")),
+    ///     mapped
+    /// );
+    /// ```
+    pub fn remap_throwable<'a>(&'a self, throwable: &Throwable<'a>) -> Option<Throwable<'a>> {
+        self.remap_class(throwable.class).map(|class| Throwable {
+            class,
+            message: throwable.message,
+        })
+    }
+
+    /// Remaps a complete Java StackTrace, similar to [`Self::remap_stacktrace_typed`] but instead works on
+    /// strings as input and output.
+    pub fn remap_stacktrace(&self, input: &str) -> Result<String, std::fmt::Error> {
+        let mut stacktrace = String::new();
+        let mut lines = input.lines();
+
+        if let Some(line) = lines.next() {
+            match stacktrace::parse_throwable(line) {
+                None => match stacktrace::parse_frame(line) {
+                    None => writeln!(&mut stacktrace, "{}", line)?,
+                    Some(frame) => format_frames(&mut stacktrace, line, self.remap_frame(&frame))?,
+                },
+                Some(throwable) => {
+                    format_throwable(&mut stacktrace, line, self.remap_throwable(&throwable))?
+                }
+            }
+        }
+
+        for line in lines {
+            match stacktrace::parse_frame(line) {
+                None => match line
+                    .strip_prefix("Caused by: ")
+                    .and_then(stacktrace::parse_throwable)
+                {
+                    None => writeln!(&mut stacktrace, "{}", line)?,
+                    Some(cause) => {
+                        format_cause(&mut stacktrace, line, self.remap_throwable(&cause))?
+                    }
+                },
+                Some(frame) => format_frames(&mut stacktrace, line, self.remap_frame(&frame))?,
+            }
+        }
+        Ok(stacktrace)
+    }
+
+    /// Remaps a complete Java StackTrace.
+    pub fn remap_stacktrace_typed<'a>(&'a self, trace: &StackTrace<'a>) -> StackTrace<'a> {
+        let exception = trace
+            .exception
+            .as_ref()
+            .and_then(|t| self.remap_throwable(t));
+
+        let frames =
+            trace
+                .frames
+                .iter()
+                .fold(Vec::with_capacity(trace.frames.len()), |mut frames, f| {
+                    let mut peek_frames = self.remap_frame(f).peekable();
+                    if peek_frames.peek().is_some() {
+                        frames.extend(peek_frames);
+                    } else {
+                        frames.push(f.clone());
+                    }
+
+                    frames
+                });
+
+        let cause = trace
+            .cause
+            .as_ref()
+            .map(|c| Box::new(self.remap_stacktrace_typed(c)));
+
+        StackTrace {
+            exception,
+            frames,
+            cause,
+        }
+    }
+
+    /// returns a tuple where the first element is the list of the function
+    /// parameters and the second one is the return type
+    pub fn deobfuscate_signature(&self, signature: &str) -> Option<DeobfuscatedSignature> {
+        java::deobfuscate_bytecode_signature_cache(signature, self).map(DeobfuscatedSignature::new)
+    }
+}
+
+/// An iterator over remapped stack frames.
+///
+/// This is returned by [`ProguardCache::remap_frame`].
+#[derive(Clone, Debug)]
+pub struct RemappedFrameIter<'r, 'data> {
+    inner: Option<(
+        &'r ProguardCache<'data>,
+        StackFrame<'data>,
+        std::slice::Iter<'data, raw::Member>,
+    )>,
+}
+
+impl<'r, 'data> RemappedFrameIter<'r, 'data> {
+    fn empty() -> Self {
+        Self { inner: None }
+    }
+
+    fn members(
+        cache: &'data ProguardCache<'data>,
+        frame: StackFrame<'data>,
+        members: std::slice::Iter<'data, raw::Member>,
+    ) -> Self {
+        Self {
+            inner: Some((cache, frame, members)),
+        }
+    }
+}
+
+impl<'r, 'data> Iterator for RemappedFrameIter<'r, 'data> {
+    type Item = StackFrame<'data>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (cache, frame, members) = self.inner.as_mut()?;
+        if frame.parameters.is_none() {
+            iterate_with_lines(cache, frame, members)
+        } else {
+            iterate_without_lines(cache, frame, members)
+        }
+    }
+}
+
+fn iterate_with_lines<'a>(
+    cache: &ProguardCache<'a>,
+    frame: &mut StackFrame<'a>,
+    members: &mut std::slice::Iter<'_, raw::Member>,
+) -> Option<StackFrame<'a>> {
+    for member in members {
+        // skip any members which do not match our frames line
+        if member.endline > 0
+            && (frame.line < member.startline as usize || frame.line > member.endline as usize)
+        {
+            continue;
+        }
+        // parents of inlined frames don’t have an `endline`, and
+        // the top inlined frame need to be correctly offset.
+        let line = if member.original_endline == u32::MAX
+            || member.original_endline == member.original_startline
+        {
+            member.original_startline as usize
+        } else {
+            member.original_startline as usize + frame.line - member.startline as usize
+        };
+
+        let class = StringTable::read(cache.string_bytes, member.original_class_offset as usize)
+            .unwrap_or(frame.class);
+
+        let file = if member.original_file_offset != u32::MAX {
+            let Ok(file_name) =
+                StringTable::read(cache.string_bytes, member.original_file_offset as usize)
+            else {
+                continue;
+            };
+
+            if file_name == "R8$$SyntheticClass" {
+                extract_class_name(class)
+            } else {
+                Some(file_name)
+            }
+        } else if member.original_class_offset != u32::MAX {
+            // when an inlined function is from a foreign class, we
+            // don’t know the file it is defined in.
+            None
+        } else {
+            frame.file
+        };
+
+        let Ok(method) =
+            StringTable::read(cache.string_bytes, member.original_name_offset as usize)
+        else {
+            continue;
+        };
+
+        return Some(StackFrame {
+            class,
+            method,
+            file,
+            line,
+            parameters: frame.parameters,
         });
     }
+    None
+}
 
-    let mut writer = watto::Writer::new(writer);
-    let num_classes = classes.len() as u32;
-    let string_bytes = string_table.into_bytes();
+fn iterate_without_lines<'a>(
+    cache: &ProguardCache<'a>,
+    frame: &mut StackFrame<'a>,
+    members: &mut std::slice::Iter<'_, raw::Member>,
+) -> Option<StackFrame<'a>> {
+    let member = members.next()?;
 
-    let header = raw::Header {
-        magic: raw::PRGCACHE_MAGIC,
-        version: raw::PRGCACHE_VERSION,
-        num_classes,
-        string_bytes: string_bytes.len() as u32,
-    };
+    let class = StringTable::read(cache.string_bytes, member.original_class_offset as usize)
+        .unwrap_or(frame.class);
 
-    writer.write_all(header.as_bytes())?;
-    writer.align_to(8)?;
+    let method =
+        StringTable::read(cache.string_bytes, member.original_name_offset as usize).ok()?;
 
-    for c in classes {
-        writer.write_all(c.as_bytes())?;
-    }
-    writer.align_to(8)?;
+    Some(StackFrame {
+        class,
+        method,
+        file: None,
+        line: 0,
+        parameters: frame.parameters,
+    })
+}
 
-    writer.write_all(&string_bytes)?;
-
-    Ok(())
+fn extract_class_name(full_path: &str) -> Option<&str> {
+    let after_last_period = full_path.split('.').last()?;
+    // If the class is an inner class, we need to extract the outer class name
+    after_last_period.split('$').next()
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{ProguardMapping, StackFrame};
+    use crate::{ProguardMapping, StackFrame, StackTrace, Throwable};
 
-    use super::{in_memory::IndexedProguard, raw::ProguardCache, write_proguard_cache};
+    use super::raw::ProguardCache;
 
     #[test]
-    fn test_cache() {
-        let source = "\
-com.example.MainFragment$EngineFailureException -> com.example.MainFragment$g:
-com.example.MainFragment$RocketException -> com.example.MainFragment$d:
-com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$e:
+    fn stacktrace() {
+        let mapping = "\
+com.example.MainFragment$EngineFailureException -> com.example.MainFragment$d:
+com.example.MainFragment$RocketException -> com.example.MainFragment$e:
+com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
     1:1:void com.example.MainFragment$Rocket.startEngines():90:90 -> onClick
     1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
     1:1:void onClick(android.view.View):65 -> onClick
     2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
-    2:2:void onClick(android.view.View):65 -> onClick\n";
-
-        let mapping = ProguardMapping::new(source.as_bytes());
-        let mut cache = Vec::new();
-        write_proguard_cache(&mapping, &mut cache).unwrap();
-
-        let parsed = ProguardCache::parse(&cache).unwrap();
-        let in_memory = IndexedProguard::from(parsed);
-
-        assert!(in_memory.get_mapper("com.example.MainFragment$d").is_some());
-        assert!(in_memory.get_mapper("com.example.MainFragment$g").is_some());
-
-        let mapper = in_memory.get_mapper("com.example.MainFragment$e").unwrap();
-        let remapped: Vec<_> = mapper
-            .remap_frame(&StackFrame {
+    2:2:void onClick(android.view.View):65 -> onClick
+    ";
+        let stacktrace = StackTrace {
+            exception: Some(Throwable {
                 class: "com.example.MainFragment$e",
-                method: "onClick",
-                line: 1,
-                file: None,
-                parameters: None,
-            })
-            .collect();
+                message: Some("Crash!"),
+            }),
+            frames: vec![
+                StackFrame {
+                    class: "com.example.MainFragment$g",
+                    method: "onClick",
+                    line: 2,
+                    file: Some("SourceFile"),
+                    parameters: None,
+                },
+                StackFrame {
+                    class: "android.view.View",
+                    method: "performClick",
+                    line: 7393,
+                    file: Some("View.java"),
+                    parameters: None,
+                },
+            ],
+            cause: Some(Box::new(StackTrace {
+                exception: Some(Throwable {
+                    class: "com.example.MainFragment$d",
+                    message: Some("Engines overheating"),
+                }),
+                frames: vec![StackFrame {
+                    class: "com.example.MainFragment$g",
+                    method: "onClick",
+                    line: 1,
+                    file: Some("SourceFile"),
+                    parameters: None,
+                }],
+                cause: None,
+            })),
+        };
+        let expect = "\
+com.example.MainFragment$RocketException: Crash!
+    at com.example.MainFragment$Rocket.fly(<unknown>:85)
+    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    at android.view.View.performClick(View.java:7393)
+Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
+    at com.example.MainFragment$Rocket.startEngines(<unknown>:90)
+    at com.example.MainFragment$Rocket.fly(<unknown>:83)
+    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)\n";
+
+        let mapping = ProguardMapping::new(mapping.as_bytes());
+        let mut cache = Vec::new();
+        ProguardCache::write(&mapping, &mut cache).unwrap();
+
+        let cache = ProguardCache::parse(&cache).unwrap();
 
         assert_eq!(
-            remapped,
-            vec![
-                StackFrame {
-                    class: "com.example.MainFragment$Rocket",
-                    method: "startEngines",
-                    line: 90,
-                    file: None,
-                    parameters: None
-                },
-                StackFrame {
-                    class: "com.example.MainFragment$Rocket",
-                    method: "fly",
-                    line: 83,
-                    file: None,
-                    parameters: None
-                },
-                StackFrame {
-                    class: "com.example.MainFragment$onActivityCreated$4",
-                    method: "onClick",
-                    line: 65,
-                    file: None,
-                    parameters: None
-                }
-            ]
+            cache.remap_stacktrace_typed(&stacktrace).to_string(),
+            expect,
         );
+    }
+
+    #[test]
+    fn stacktrace_str() {
+        let mapping = "\
+com.example.MainFragment$EngineFailureException -> com.example.MainFragment$d:
+com.example.MainFragment$RocketException -> com.example.MainFragment$e:
+com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
+    1:1:void com.example.MainFragment$Rocket.startEngines():90:90 -> onClick
+    1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
+    1:1:void onClick(android.view.View):65 -> onClick
+    2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
+    2:2:void onClick(android.view.View):65 -> onClick
+    ";
+
+        let stacktrace = "\
+com.example.MainFragment$e: Crash!
+    at com.example.MainFragment$g.onClick(SourceFile:2)
+    at android.view.View.performClick(View.java:7393)
+Caused by: com.example.MainFragment$d: Engines overheating
+    at com.example.MainFragment$g.onClick(SourceFile:1)
+    ... 13 more";
+
+        let expect = "\
+com.example.MainFragment$RocketException: Crash!
+    at com.example.MainFragment$Rocket.fly(<unknown>:85)
+    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    at android.view.View.performClick(View.java:7393)
+Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
+    at com.example.MainFragment$Rocket.startEngines(<unknown>:90)
+    at com.example.MainFragment$Rocket.fly(<unknown>:83)
+    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    ... 13 more\n";
+
+        let mapping = ProguardMapping::new(mapping.as_bytes());
+        let mut cache = Vec::new();
+        ProguardCache::write(&mapping, &mut cache).unwrap();
+
+        let cache = ProguardCache::parse(&cache).unwrap();
+
+        assert_eq!(cache.remap_stacktrace(stacktrace).unwrap(), expect);
     }
 }

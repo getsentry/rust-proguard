@@ -371,6 +371,51 @@ impl<'data> ProguardCache<'data> {
 
         Ok(())
     }
+
+    /// Tests the integrity of this cache.
+    ///
+    /// Specifically it checks the following:
+    /// * All string offsets in class and member entries are either `u32::MAX` or defined.
+    /// * Member entries are ordered by the class they belong to.
+    pub fn test(&self) {
+        let mut prev_end = 0;
+        for class in self.classes {
+            assert!(self.read_string(class.obfuscated_name_offset).is_ok());
+            assert!(self.read_string(class.original_name_offset).is_ok());
+
+            if class.file_name_offset != u32::MAX {
+                assert!(self.read_string(class.file_name_offset).is_ok());
+            }
+
+            assert_eq!(class.members_offset, prev_end);
+            prev_end += class.members_len;
+            assert!(prev_end as usize <= self.members.len());
+            let Some(members) = self.get_class_members(class) else {
+                continue;
+            };
+
+            for member in members {
+                assert!(self.read_string(member.obfuscated_name_offset).is_ok());
+                assert!(self.read_string(member.original_name_offset).is_ok());
+
+                if member.params_offset != u32::MAX {
+                    assert!(self.read_string(member.params_offset).is_ok());
+                }
+
+                if member.original_class_offset != u32::MAX {
+                    assert!(self.read_string(member.original_class_offset).is_ok());
+                }
+
+                if member.original_file_offset != u32::MAX {
+                    assert!(self.read_string(member.original_file_offset).is_ok());
+                }
+            }
+        }
+    }
+
+    pub(crate) fn read_string(&self, offset: u32) -> Result<&'data str, watto::ReadStringError> {
+        StringTable::read(self.string_bytes, offset as usize)
+    }
 }
 
 /// A class that is currently being constructed in the course of writing a [`ProguardCache`].
@@ -387,4 +432,33 @@ struct ClassInProgress<'data> {
     /// A map to keep track of which combinations of (obfuscated method name, original method name, parameters)
     /// we have already seen for this class.
     unique_methods: HashSet<(&'data str, &'data str, &'data str)>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    use super::*;
+
+    #[test]
+    fn test_proguard_file() {
+        let mut file = std::fs::File::open("proguard.txt").unwrap();
+        let mut mapping = Vec::new();
+        file.read_to_end(&mut mapping).unwrap();
+        let mapping = ProguardMapping::new(&mapping);
+        let mut cache = Vec::new();
+        ProguardCache::write(&mapping, &mut cache).unwrap();
+        let cache = ProguardCache::parse(&cache).unwrap();
+
+        dbg!(&cache);
+        println!("{}", cache.display());
+
+        // for c in cache.debug_classes() {
+        //     println!("{c}");
+        // }
+
+        // for m in cache.debug_members() {
+        //     println!("{m}");
+        // }
+    }
 }

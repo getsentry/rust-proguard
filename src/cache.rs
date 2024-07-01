@@ -4,7 +4,6 @@ mod raw;
 use std::fmt::Write;
 
 use thiserror::Error;
-use watto::StringTable;
 
 use crate::mapper::{format_cause, format_frames, format_throwable};
 use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Throwable};
@@ -74,7 +73,7 @@ impl<'data> ProguardCache<'data> {
         let idx = self
             .classes
             .binary_search_by_key(&name, |c| {
-                StringTable::read(self.string_bytes, c.obfuscated_name_offset as usize).unwrap()
+                self.read_string(c.obfuscated_name_offset).unwrap()
             })
             .ok()?;
 
@@ -124,7 +123,7 @@ impl<'data> ProguardCache<'data> {
     /// ```
     pub fn remap_class(&self, class: &str) -> Option<&'data str> {
         let class = self.get_class(class)?;
-        StringTable::read(self.string_bytes, class.original_name_offset as usize).ok()
+        self.read_string(class.original_name_offset).ok()
     }
 
     /// Remaps an obfuscated Class Method.
@@ -138,9 +137,7 @@ impl<'data> ProguardCache<'data> {
         let class = self.get_class(class)?;
         let members = self.get_class_members(class)?;
         let mut iter = members.iter().filter(|m| {
-            let Ok(obfuscated_name) =
-                StringTable::read(self.string_bytes, m.obfuscated_name_offset as usize)
-            else {
+            let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
                 return false;
             };
 
@@ -158,10 +155,8 @@ impl<'data> ProguardCache<'data> {
             return None;
         }
 
-        let original_class =
-            StringTable::read(self.string_bytes, class.original_name_offset as usize).ok()?;
-        let original_method =
-            StringTable::read(self.string_bytes, first.original_name_offset as usize).ok()?;
+        let original_class = self.read_string(class.original_name_offset).ok()?;
+        let original_method = self.read_string(first.original_name_offset).ok()?;
 
         Some((original_class, original_method))
     }
@@ -180,9 +175,7 @@ impl<'data> ProguardCache<'data> {
         };
 
         let mut frame = frame.clone();
-        let Ok(original_class) =
-            StringTable::read(self.string_bytes, class.original_name_offset as usize)
-        else {
+        let Ok(original_class) = self.read_string(class.original_name_offset) else {
             return RemappedFrameIter::empty();
         };
 
@@ -193,13 +186,10 @@ impl<'data> ProguardCache<'data> {
                 return RemappedFrameIter::empty();
             };
             let matches = |m: &raw::Member| {
-                let Ok(obfuscated_name) =
-                    StringTable::read(self.string_bytes, m.obfuscated_name_offset as usize)
-                else {
+                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
                     return false;
                 };
-                let Ok(params) = StringTable::read(self.string_bytes, m.params_offset as usize)
-                else {
+                let Ok(params) = self.read_string(m.params_offset) else {
                     return false;
                 };
 
@@ -220,9 +210,7 @@ impl<'data> ProguardCache<'data> {
                 return RemappedFrameIter::empty();
             };
             let matches = |m: &raw::Member| {
-                let Ok(obfuscated_name) =
-                    StringTable::read(self.string_bytes, m.obfuscated_name_offset as usize)
-                else {
+                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
                     return false;
                 };
 
@@ -409,13 +397,12 @@ fn iterate_with_lines<'a>(
             member.original_startline as usize + frame.line - member.startline as usize
         };
 
-        let class = StringTable::read(cache.string_bytes, member.original_class_offset as usize)
+        let class = cache
+            .read_string(member.original_class_offset)
             .unwrap_or(frame.class);
 
         let file = if member.original_file_offset != u32::MAX {
-            let Ok(file_name) =
-                StringTable::read(cache.string_bytes, member.original_file_offset as usize)
-            else {
+            let Ok(file_name) = cache.read_string(member.original_file_offset) else {
                 continue;
             };
 
@@ -432,9 +419,7 @@ fn iterate_with_lines<'a>(
             frame.file
         };
 
-        let Ok(method) =
-            StringTable::read(cache.string_bytes, member.original_name_offset as usize)
-        else {
+        let Ok(method) = cache.read_string(member.original_name_offset) else {
             continue;
         };
 
@@ -456,11 +441,11 @@ fn iterate_without_lines<'a>(
 ) -> Option<StackFrame<'a>> {
     let member = members.next()?;
 
-    let class = StringTable::read(cache.string_bytes, member.original_class_offset as usize)
+    let class = cache
+        .read_string(member.original_class_offset)
         .unwrap_or(frame.class);
 
-    let method =
-        StringTable::read(cache.string_bytes, member.original_name_offset as usize).ok()?;
+    let method = cache.read_string(member.original_name_offset).ok()?;
 
     Some(StackFrame {
         class,
@@ -547,6 +532,8 @@ Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
 
         let cache = ProguardCache::parse(&cache).unwrap();
 
+        cache.test();
+
         assert_eq!(
             cache.remap_stacktrace_typed(&stacktrace).to_string(),
             expect,
@@ -590,6 +577,8 @@ Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
         ProguardCache::write(&mapping, &mut cache).unwrap();
 
         let cache = ProguardCache::parse(&cache).unwrap();
+
+        cache.test();
 
         assert_eq!(cache.remap_stacktrace(stacktrace).unwrap(), expect);
     }

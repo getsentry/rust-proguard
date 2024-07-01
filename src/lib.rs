@@ -35,11 +35,13 @@
 
 #![warn(missing_docs)]
 
+mod cache;
 mod java;
 mod mapper;
 mod mapping;
 mod stacktrace;
 
+pub use cache::{write_proguard_cache, Error, ErrorKind, IndexedProguard, ProguardCache};
 pub use mapper::{DeobfuscatedSignature, ProguardMapper, RemappedFrameIter};
 pub use mapping::{
     ClassIndex, LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping,

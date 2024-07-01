@@ -141,7 +141,7 @@ impl<'s> MappingSummary<'s> {
 /// of `class` in this map is the range of bytes between which the
 /// mapping information for `class` is found in the mapping file
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClassIndex<'a>(BTreeMap<&'a str, Range<usize>>);
+pub struct ClassIndex<'a>(pub(crate) BTreeMap<&'a str, Range<usize>>);
 
 impl<'a> ClassIndex<'a> {
     /// Gets the range information for a class from this index.
@@ -178,7 +178,7 @@ impl<'a> ClassIndex<'a> {
 /// A Proguard Mapping file.
 #[derive(Clone, Default)]
 pub struct ProguardMapping<'s> {
-    source: &'s [u8],
+    pub(crate) source: &'s [u8],
 }
 
 impl<'s> fmt::Debug for ProguardMapping<'s> {

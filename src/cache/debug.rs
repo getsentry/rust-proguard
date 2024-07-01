@@ -111,7 +111,7 @@ impl fmt::Debug for MemberDebug<'_, '_> {
 
 impl fmt::Display for MemberDebug<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // XXX: We could print the actual return type here if we saved it in the formot.
+        // XXX: We could print the actual return type here if we saved it in the format.
         // Wonder if it's worth it, since we'd only use it in this display impl.
         write!(f, "    {}:{}:<ret> ", self.raw.startline, self.raw.endline)?;
         if let Some(original_class) = self.original_class() {

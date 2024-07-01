@@ -105,4 +105,12 @@ impl<'data> ProguardCache<'data> {
             raw: m.clone(),
         })
     }
+
+    /// Returns an iterator over by-params member entries in this cache file that can be debug printed.
+    pub fn debug_members_by_params<'r>(&'r self) -> impl Iterator<Item = MemberDebug<'r, 'data>> {
+        self.members_by_params.iter().map(move |m| MemberDebug {
+            cache: self,
+            raw: m.clone(),
+        })
+    }
 }

@@ -212,20 +212,6 @@ impl<'data> ProguardCache<'data> {
                     // Finalize the previous class, but only if it has a name (otherwise it's the dummy class we created at the beginning).
                     if !current_class.name.is_empty() {
                         classes.insert(current_class.name, current_class);
-                        // class.members_len =
-                        //     current_members.values().map(|v| v.len()).sum::<usize>() as u32;
-                        // class.members_by_params_len = current_members_by_params
-                        //     .values()
-                        //     .map(|v| v.len())
-                        //     .sum::<usize>()
-                        //     as u32;
-                        // classes.insert(name, class);
-                        // members.extend(current_members.into_iter().flat_map(|m| m.1.into_iter()));
-                        // members_by_params.extend(
-                        //     current_members_by_params
-                        //         .into_iter()
-                        //         .flat_map(|m| m.1.into_iter()),
-                        // );
                     }
 
                     let obfuscated_name_offset = string_table.insert(obfuscated) as u32;
@@ -328,19 +314,10 @@ impl<'data> ProguardCache<'data> {
         // Flush the last constructed class
         if !current_class.name.is_empty() {
             classes.insert(current_class.name, current_class);
-            // class.members_len = current_members.values().map(|v| v.len()).sum::<usize>() as u32;
-            // class.members_by_params_len = current_members_by_params
-            //     .values()
-            //     .map(|v| v.len())
-            //     .sum::<usize>() as u32;
-            // classes.insert(name, class);
-            // members.extend(current_members.into_iter().flat_map(|m| m.1.into_iter()));
-            // members_by_params.extend(
-            //     current_members_by_params
-            //         .into_iter()
-            //         .flat_map(|m| m.1.into_iter()),
-            // );
         }
+
+        // At this point, we know how many members/members-by-params each class has because we kept count,
+        // but we don't know where each class's entries start. We'll rectify that below.
 
         let mut writer = watto::Writer::new(writer);
         let string_bytes = string_table.into_bytes();
@@ -350,9 +327,6 @@ impl<'data> ProguardCache<'data> {
             .values()
             .map(|c| c.class.members_by_params_len)
             .sum::<u32>();
-
-        // At this point, we know how many members/members-by-params each class has, but we don't know where
-        // each class's entries start.
 
         let header = Header {
             magic: PRGCACHE_MAGIC,

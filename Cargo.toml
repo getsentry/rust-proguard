@@ -26,3 +26,7 @@ criterion = "0.4"
 [[bench]]
 name = "proguard_parsing"
 harness = false
+
+[[bench]]
+name = "proguard_mapping"
+harness = false

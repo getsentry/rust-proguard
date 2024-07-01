@@ -433,32 +433,3 @@ struct ClassInProgress<'data> {
     /// we have already seen for this class.
     unique_methods: HashSet<(&'data str, &'data str, &'data str)>,
 }
-
-#[cfg(test)]
-mod tests {
-    use std::io::Read;
-
-    use super::*;
-
-    #[test]
-    fn test_proguard_file() {
-        let mut file = std::fs::File::open("proguard.txt").unwrap();
-        let mut mapping = Vec::new();
-        file.read_to_end(&mut mapping).unwrap();
-        let mapping = ProguardMapping::new(&mapping);
-        let mut cache = Vec::new();
-        ProguardCache::write(&mapping, &mut cache).unwrap();
-        let cache = ProguardCache::parse(&cache).unwrap();
-
-        dbg!(&cache);
-        println!("{}", cache.display());
-
-        // for c in cache.debug_classes() {
-        //     println!("{c}");
-        // }
-
-        // for m in cache.debug_members() {
-        //     println!("{m}");
-        // }
-    }
-}

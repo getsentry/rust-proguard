@@ -19,20 +19,34 @@ static RAW: &str = r#"java.lang.RuntimeException: Button press caused an excepti
     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:930)"#;
 
 fn benchmark_remapping(c: &mut Criterion) {
-    let mut cache = Vec::new();
+    let mut cache_buf = Vec::new();
     let mapping = ProguardMapping::new(MAPPING);
-    ProguardCache::write(&mapping, &mut cache).unwrap();
-    let cache = ProguardCache::parse(&cache).unwrap();
+    ProguardCache::write(&mapping, &mut cache_buf).unwrap();
+    let cache = ProguardCache::parse(&cache_buf).unwrap();
     let mapper = ProguardMapper::new(mapping);
 
     let mut group = c.benchmark_group("Proguard Remapping");
 
-    group.bench_function("Cache", |b| {
+    group.bench_function("Cache, preparsed", |b| {
         b.iter(|| cache.remap_stacktrace(black_box(RAW)))
     });
-    group.bench_function("Mapper", |b| {
+    group.bench_function("Mapper, preparsed", |b| {
         b.iter(|| mapper.remap_stacktrace(black_box(RAW)))
     });
+
+    group.bench_function("Cache", |b| {
+        b.iter(|| {
+            let cache = ProguardCache::parse(black_box(&cache_buf)).unwrap();
+            cache.remap_stacktrace(black_box(RAW))
+        })
+    });
+    group.bench_function("Mapper", |b| {
+        b.iter(|| {
+            let mapper = ProguardMapper::new(black_box(ProguardMapping::new(MAPPING)));
+            mapper.remap_stacktrace(black_box(RAW))
+        })
+    });
+
     group.finish();
 }
 

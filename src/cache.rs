@@ -73,8 +73,11 @@ impl<'data> ProguardCache<'data> {
     fn get_class(&self, name: &str) -> Option<&raw::Class> {
         let idx = self
             .classes
-            .binary_search_by_key(&name, |c| {
-                self.read_string(c.obfuscated_name_offset).unwrap()
+            .binary_search_by(|c| {
+                let Ok(obfuscated) = self.read_string(c.obfuscated_name_offset) else {
+                    return Ordering::Greater;
+                };
+                obfuscated.cmp(name)
             })
             .ok()?;
 

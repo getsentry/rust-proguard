@@ -3,11 +3,7 @@
 //! The mapping file format is described
 //! [here](https://www.guardsquare.com/en/products/proguard/manual/retrace).
 
-use std::collections::BTreeMap;
-use std::convert::TryInto;
 use std::fmt;
-use std::io;
-use std::io::Write;
 use std::ops::Range;
 use std::str;
 
@@ -135,46 +131,6 @@ impl<'s> MappingSummary<'s> {
     }
 }
 
-/// A class index for a proguard mapping file.
-///
-/// This is fundamentally a map from class names to offset ranges. The value
-/// of `class` in this map is the range of bytes between which the
-/// mapping information for `class` is found in the mapping file
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClassIndex<'a>(BTreeMap<&'a str, Range<usize>>);
-
-impl<'a> ClassIndex<'a> {
-    /// Gets the range information for a class from this index.
-    pub fn get(&self, class: &str) -> Option<Range<usize>> {
-        self.0.get(class).cloned()
-    }
-
-    /// Reads a class index from its text representation (see [`write`](Self::write)).
-    pub fn parse(source: &'a str) -> Option<Self> {
-        let mut inner = BTreeMap::new();
-        for line in source.lines() {
-            let (name, rest) = line.split_once(':')?;
-            let (start, end) = rest.split_once(':')?;
-            let (start, end) = (start.parse().ok()?, end.parse().ok()?);
-            inner.insert(name, start..end);
-        }
-
-        Some(Self(inner))
-    }
-
-    /// Writes the class index to a file.
-    ///
-    /// The class index is formatted into lines of the form `CLASS_NAME:START:END`,
-    /// sorted alhpabetically.
-    pub fn write<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for (name, range) in &self.0 {
-            writeln!(out, "{name}:{}:{}", range.start, range.end)?;
-        }
-
-        Ok(())
-    }
-}
-
 /// A Proguard Mapping file.
 #[derive(Clone, Default)]
 pub struct ProguardMapping<'s> {
@@ -280,43 +236,6 @@ impl<'s> ProguardMapping<'s> {
     /// [`ProguardRecord`]: enum.ProguardRecord.html
     pub fn iter(&self) -> ProguardRecordIter<'s> {
         ProguardRecordIter { slice: self.source }
-    }
-
-    /// Creates a [ClassIndex] from this mapping.
-    pub fn create_class_index(&self) -> ClassIndex {
-        let mut last_class = None;
-        let mut iter = self.iter();
-        let mut record_start = 0;
-        let mut index = BTreeMap::new();
-
-        while let Some(record) = iter.next() {
-            if let Ok(ProguardRecord::Class { obfuscated, .. }) = record {
-                if let Some((last_class_name, last_class_start)) = last_class.take() {
-                    index.insert(last_class_name, last_class_start..record_start);
-                }
-                last_class = Some((obfuscated, record_start));
-            }
-            record_start = if iter.slice.is_empty() {
-                self.source.len()
-            } else {
-                // SAFETY: If `iter.slice` is not empty, then it is a subslice of `self.source`
-                // and it's safe to use `offset_from`. Also, the slice is only ever moved forward,
-                // so the offset is a valid `usize`.
-                unsafe {
-                    iter.slice
-                        .as_ptr()
-                        .offset_from(self.source.as_ptr())
-                        .try_into()
-                        .unwrap()
-                }
-            };
-        }
-
-        if let Some((last_class_name, last_class_start)) = last_class.take() {
-            index.insert(last_class_name, last_class_start..record_start);
-        }
-
-        ClassIndex(index)
     }
 
     /// Returns the "submapping" of this within the given byte range.
@@ -1151,74 +1070,5 @@ androidx.activity.OnBackPressedCallback
                 }),
             ],
         );
-    }
-
-    #[test]
-    fn test_index() {
-        let source = "\
-com.example.MainFragment$EngineFailureException -> com.example.MainFragment$g:
-com.example.MainFragment$RocketException -> com.example.MainFragment$d:
-com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$e:
-    1:1:void com.example.MainFragment$Rocket.startEngines():90:90 -> onClick
-    1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
-    1:1:void onClick(android.view.View):65 -> onClick
-    2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
-    2:2:void onClick(android.view.View):65 -> onClick\n";
-
-        let mapping = ProguardMapping::new(source.as_bytes());
-
-        let index = mapping.create_class_index();
-
-        let sections = index
-            .0
-            .values()
-            .map(|range| &source[range.clone()])
-            .collect::<Vec<_>>();
-
-        // Sections are alphabetically ordered in the index
-
-        assert_eq!(
-            sections[0],
-            "com.example.MainFragment$RocketException -> com.example.MainFragment$d:\n",
-        );
-
-        assert_eq!(
-            sections[1],
-            "com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$e:
-    1:1:void com.example.MainFragment$Rocket.startEngines():90:90 -> onClick
-    1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
-    1:1:void onClick(android.view.View):65 -> onClick
-    2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
-    2:2:void onClick(android.view.View):65 -> onClick\n"
-        );
-
-        assert_eq!(
-            sections[2],
-            "com.example.MainFragment$EngineFailureException -> com.example.MainFragment$g:\n"
-        );
-    }
-
-    #[test]
-    fn test_index_roundtrip() {
-        let source = "\
-com.example.MainFragment$EngineFailureException -> com.example.MainFragment$g:
-com.example.MainFragment$RocketException -> com.example.MainFragment$d:
-com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$e:
-    1:1:void com.example.MainFragment$Rocket.startEngines():90:90 -> onClick
-    1:1:void com.example.MainFragment$Rocket.fly():83 -> onClick
-    1:1:void onClick(android.view.View):65 -> onClick
-    2:2:void com.example.MainFragment$Rocket.fly():85:85 -> onClick
-    2:2:void onClick(android.view.View):65 -> onClick\n";
-
-        let mapping = ProguardMapping::new(source.as_bytes());
-
-        let index = mapping.create_class_index();
-
-        let mut out = Vec::new();
-        index.write(&mut out).unwrap();
-
-        let parsed = ClassIndex::parse(std::str::from_utf8(&out).unwrap()).unwrap();
-
-        assert_eq!(parsed, index);
     }
 }

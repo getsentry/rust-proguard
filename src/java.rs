@@ -1,4 +1,4 @@
-use crate::mapper::ProguardMapper;
+use crate::{mapper::ProguardMapper, ProguardCache};
 
 fn java_base_types(encoded_ty: char) -> Option<&'static str> {
     match encoded_ty {
@@ -30,6 +30,39 @@ fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) ->
                 .replace('/', ".");
 
             if let Some(mapped) = mapper.remap_class(&obfuscated) {
+                return Some(format!("{}{}", mapped, suffix));
+            }
+
+            return Some(format!("{}{}", obfuscated, suffix));
+        } else if token == '[' {
+            suffix.push_str("[]");
+            continue;
+        } else if let Some(ty) = java_base_types(token) {
+            return Some(format!("{}{}", ty, suffix));
+        }
+    }
+    None
+}
+
+/// Same as [`byte_code_type_to_java_type`], but uses a [`ProguardCache`] for remapping.
+fn byte_code_type_to_java_type_cache(
+    byte_code_type: &str,
+    cache: &ProguardCache,
+) -> Option<String> {
+    let mut chrs = byte_code_type.char_indices();
+    //let (idx, token) = chrs.next()?;
+    let mut suffix = "".to_string();
+    while let Some((idx, token)) = chrs.next() {
+        if token == 'L' {
+            // expect and remove final `;`
+            if chrs.next_back()?.1 != ';' {
+                return None;
+            }
+            let obfuscated = byte_code_type
+                .get(idx + 1..byte_code_type.len() - 1)?
+                .replace('/', ".");
+
+            if let Some(mapped) = cache.remap_class(&obfuscated) {
                 return Some(format!("{}{}", mapped, suffix));
             }
 
@@ -99,6 +132,23 @@ pub fn deobfuscate_bytecode_signature(
         .collect();
 
     let return_java_type = byte_code_type_to_java_type(return_type, mapper)?;
+
+    Some((parameter_java_types, return_java_type))
+}
+
+/// Same as [`deobfuscate_bytecode_signature`], but uses a [`ProguardCache`] for remapping.
+pub fn deobfuscate_bytecode_signature_cache(
+    signature: &str,
+    cache: &ProguardCache,
+) -> Option<(Vec<String>, String)> {
+    let (parameter_types, return_type) = parse_obfuscated_bytecode_signature(signature)?;
+    let parameter_java_types: Vec<String> = parameter_types
+        .into_iter()
+        .filter(|params| !params.is_empty())
+        .filter_map(|params| byte_code_type_to_java_type_cache(params, cache))
+        .collect();
+
+    let return_java_type = byte_code_type_to_java_type_cache(return_type, cache)?;
 
     Some((parameter_java_types, return_java_type))
 }

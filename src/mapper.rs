@@ -15,7 +15,7 @@ pub struct DeobfuscatedSignature {
 }
 
 impl DeobfuscatedSignature {
-    fn new(signature: (Vec<String>, String)) -> DeobfuscatedSignature {
+    pub(crate) fn new(signature: (Vec<String>, String)) -> DeobfuscatedSignature {
         DeobfuscatedSignature {
             parameters: signature.0,
             return_type: signature.1,
@@ -265,7 +265,7 @@ impl<'s> ProguardMapper<'s> {
                     ..
                 } => {
                     let current_line = if initialize_param_mapping {
-                        line_mapping.clone()
+                        line_mapping
                     } else {
                         None
                     };
@@ -510,7 +510,7 @@ impl<'s> ProguardMapper<'s> {
     }
 }
 
-fn format_throwable(
+pub(crate) fn format_throwable(
     stacktrace: &mut impl Write,
     line: &str,
     throwable: Option<Throwable<'_>>,
@@ -522,7 +522,7 @@ fn format_throwable(
     }
 }
 
-fn format_frames<'s>(
+pub(crate) fn format_frames<'s>(
     stacktrace: &mut impl Write,
     line: &str,
     remapped: impl Iterator<Item = StackFrame<'s>>,
@@ -539,7 +539,7 @@ fn format_frames<'s>(
     Ok(())
 }
 
-fn format_cause(
+pub(crate) fn format_cause(
     stacktrace: &mut impl Write,
     line: &str,
     cause: Option<Throwable<'_>>,

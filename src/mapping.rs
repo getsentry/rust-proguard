@@ -363,7 +363,7 @@ impl<'s> Iterator for ProguardRecordIter<'s> {
 /// Maps start/end lines of a minified file to original start/end lines.
 ///
 /// All line mappings are 1-based and inclusive.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LineMapping {
     /// Start Line, 1-based.
     pub startline: usize,

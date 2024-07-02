@@ -190,8 +190,6 @@ impl<'data> ProguardCache<'data> {
         let mut classes: BTreeMap<&str, ClassInProgress> = BTreeMap::new();
         // Create an empty [`ClassInProgress`]; this gets updated as we parse method records.
         let mut current_class = ClassInProgress::default();
-        // let mut members = Vec::new();
-        // let mut members_by_params = Vec::new();
 
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {

@@ -240,10 +240,10 @@ impl<'data> ProguardCache<'data> {
     /// of `members`.
     fn find_range_by_binary_search<F>(members: &[raw::Member], f: F) -> Option<&[raw::Member]>
     where
-        F: Fn(&raw::Member) -> std::cmp::Ordering + Clone,
+        F: Fn(&raw::Member) -> std::cmp::Ordering,
     {
         // Find any member fitting the criteria by binary search.
-        let mid = members.binary_search_by(f.clone()).ok()?;
+        let mid = members.binary_search_by(&f).ok()?;
         let matches_not = |m: &raw::Member| f(m).is_ne();
         // Search backwards from `mid` for a member that doesn't match the
         // criteria. The one after it must be the first one that does.
@@ -259,7 +259,7 @@ impl<'data> ProguardCache<'data> {
             .position(matches_not)
             .map_or(members.len(), |idx| idx + mid);
 
-        Some(&members[start..end])
+        members.get(start..end)
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.

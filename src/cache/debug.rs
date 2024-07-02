@@ -5,10 +5,10 @@ use crate::ProguardCache;
 use super::raw;
 
 /// A variant of a class entry in a proguard cache file with
-/// a nice-ish debug representation.
+/// nice-ish `Debug` and `Display` representations.
 pub struct ClassDebug<'a, 'data> {
     pub(crate) cache: &'a ProguardCache<'data>,
-    pub(crate) raw: raw::Class,
+    pub(crate) raw: &'a raw::Class,
 }
 
 impl ClassDebug<'_, '_> {
@@ -51,10 +51,10 @@ impl fmt::Display for ClassDebug<'_, '_> {
 }
 
 /// A variant of a member entry in a proguard cache file with
-/// a nice-ish debug representation.
+/// nice-ish `Debug` and `Display` representations.
 pub struct MemberDebug<'a, 'data> {
     pub(crate) cache: &'a ProguardCache<'data>,
-    pub(crate) raw: raw::Member,
+    pub(crate) raw: &'a raw::Member,
 }
 
 impl MemberDebug<'_, '_> {
@@ -143,7 +143,7 @@ impl fmt::Display for CacheDebug<'_, '_> {
                 f,
                 "{}",
                 ClassDebug {
-                    raw: class.clone(),
+                    raw: class,
                     cache: self.cache
                 }
             )?;
@@ -156,7 +156,7 @@ impl fmt::Display for CacheDebug<'_, '_> {
                     f,
                     "{}",
                     MemberDebug {
-                        raw: member.clone(),
+                        raw: member,
                         cache: self.cache
                     }
                 )?;
@@ -171,7 +171,7 @@ impl<'data> ProguardCache<'data> {
     pub fn debug_classes<'r>(&'r self) -> impl Iterator<Item = ClassDebug<'r, 'data>> {
         self.classes.iter().map(move |c| ClassDebug {
             cache: self,
-            raw: c.clone(),
+            raw: c,
         })
     }
 
@@ -179,7 +179,7 @@ impl<'data> ProguardCache<'data> {
     pub fn debug_members<'r>(&'r self) -> impl Iterator<Item = MemberDebug<'r, 'data>> {
         self.members.iter().map(move |m| MemberDebug {
             cache: self,
-            raw: m.clone(),
+            raw: m,
         })
     }
 
@@ -187,7 +187,7 @@ impl<'data> ProguardCache<'data> {
     pub fn debug_members_by_params<'r>(&'r self) -> impl Iterator<Item = MemberDebug<'r, 'data>> {
         self.members_by_params.iter().map(move |m| MemberDebug {
             cache: self,
-            raw: m.clone(),
+            raw: m,
         })
     }
 

@@ -10,7 +10,7 @@ use super::{CacheError, CacheErrorKind};
 /// The magic file preamble as individual bytes.
 const PRGCACHE_MAGIC_BYTES: [u8; 4] = *b"PRGC";
 
-/// The magic file preamble to identify PrgCache files.
+/// The magic file preamble to identify ProguardCache files.
 ///
 /// Serialized as ASCII "PRGC" on little-endian (x64) systems.
 pub(crate) const PRGCACHE_MAGIC: u32 = u32::from_le_bytes(PRGCACHE_MAGIC_BYTES);

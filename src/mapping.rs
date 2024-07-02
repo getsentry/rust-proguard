@@ -8,7 +8,7 @@ use std::ops::Range;
 use std::str;
 
 #[cfg(feature = "uuid")]
-use uuid_::Uuid;
+use uuid::Uuid;
 
 /// Error when parsing a proguard mapping line.
 ///

@@ -184,7 +184,7 @@ impl<'data> ProguardCache<'data> {
         })
     }
 
-    /// Writes a [`ProguardMapping`] into a writer in the compact proguard cache format.
+    /// Writes a [`ProguardMapping`] into a writer in the proguard cache format.
     pub fn write<W: Write>(mapping: &ProguardMapping, writer: &mut W) -> std::io::Result<()> {
         let mut string_table = StringTable::new();
         let mut classes: BTreeMap<&str, ClassInProgress> = BTreeMap::new();
@@ -355,14 +355,10 @@ impl<'data> ProguardCache<'data> {
         }
         writer.align_to(8)?;
 
-        for m in members {
-            writer.write_all(m.as_bytes())?;
-        }
+        writer.write_all(members.as_bytes())?;
         writer.align_to(8)?;
 
-        for m in members_by_params {
-            writer.write_all(m.as_bytes())?;
-        }
+        writer.write_all(members_by_params.as_bytes())?;
         writer.align_to(8)?;
 
         writer.write_all(&string_bytes)?;

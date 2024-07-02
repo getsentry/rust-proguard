@@ -41,7 +41,7 @@ mod mapper;
 mod mapping;
 mod stacktrace;
 
-pub use cache::{Error, ErrorKind, ProguardCache};
+pub use cache::{CacheError, CacheErrorKind, ProguardCache};
 pub use mapper::{DeobfuscatedSignature, ProguardMapper, RemappedFrameIter};
 pub use mapping::{
     ClassIndex, LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping,

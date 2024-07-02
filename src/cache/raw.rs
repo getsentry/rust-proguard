@@ -5,7 +5,7 @@ use watto::{Pod, StringTable};
 
 use crate::{ProguardMapping, ProguardRecord};
 
-use super::{Error, ErrorKind};
+use super::{CacheError, CacheErrorKind};
 
 /// The magic file preamble as individual bytes.
 const PRGCACHE_MAGIC_BYTES: [u8; 4] = *b"PRGC";
@@ -136,39 +136,39 @@ impl<'data> std::fmt::Debug for ProguardCache<'data> {
 
 impl<'data> ProguardCache<'data> {
     /// Parses a `ProguardCache` out of bytes.
-    pub fn parse(buf: &'data [u8]) -> Result<Self, Error> {
-        let (header, rest) = Header::ref_from_prefix(buf).ok_or(ErrorKind::InvalidHeader)?;
+    pub fn parse(buf: &'data [u8]) -> Result<Self, CacheError> {
+        let (header, rest) = Header::ref_from_prefix(buf).ok_or(CacheErrorKind::InvalidHeader)?;
         if header.magic == PRGCACHE_MAGIC_FLIPPED {
-            return Err(ErrorKind::WrongEndianness.into());
+            return Err(CacheErrorKind::WrongEndianness.into());
         }
         if header.magic != PRGCACHE_MAGIC {
-            return Err(ErrorKind::WrongFormat.into());
+            return Err(CacheErrorKind::WrongFormat.into());
         }
         if header.version != PRGCACHE_VERSION {
-            return Err(ErrorKind::WrongVersion.into());
+            return Err(CacheErrorKind::WrongVersion.into());
         }
 
-        let (_, rest) = watto::align_to(rest, 8).ok_or(ErrorKind::InvalidClasses)?;
+        let (_, rest) = watto::align_to(rest, 8).ok_or(CacheErrorKind::InvalidClasses)?;
         let (classes, rest) = Class::slice_from_prefix(rest, header.num_classes as usize)
-            .ok_or(ErrorKind::InvalidClasses)?;
+            .ok_or(CacheErrorKind::InvalidClasses)?;
 
-        let (_, rest) = watto::align_to(rest, 8).ok_or(ErrorKind::InvalidMembers)?;
+        let (_, rest) = watto::align_to(rest, 8).ok_or(CacheErrorKind::InvalidMembers)?;
         let (members, rest) = Member::slice_from_prefix(rest, header.num_members as usize)
-            .ok_or(ErrorKind::InvalidMembers)?;
+            .ok_or(CacheErrorKind::InvalidMembers)?;
 
-        let (_, rest) = watto::align_to(rest, 8).ok_or(ErrorKind::InvalidMembers)?;
+        let (_, rest) = watto::align_to(rest, 8).ok_or(CacheErrorKind::InvalidMembers)?;
         let (members_by_params, rest) =
             Member::slice_from_prefix(rest, header.num_members_by_params as usize)
-                .ok_or(ErrorKind::InvalidMembers)?;
+                .ok_or(CacheErrorKind::InvalidMembers)?;
 
         let (_, string_bytes) =
-            watto::align_to(rest, 8).ok_or(ErrorKind::UnexpectedStringBytes {
+            watto::align_to(rest, 8).ok_or(CacheErrorKind::UnexpectedStringBytes {
                 expected: header.string_bytes as usize,
                 found: 0,
             })?;
 
         if string_bytes.len() < header.string_bytes as usize {
-            return Err(ErrorKind::UnexpectedStringBytes {
+            return Err(CacheErrorKind::UnexpectedStringBytes {
                 expected: header.string_bytes as usize,
                 found: string_bytes.len(),
             }

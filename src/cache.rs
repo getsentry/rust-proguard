@@ -11,9 +11,9 @@ use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Thr
 
 pub use raw::ProguardCache;
 
-/// Errors returned while loading/parsing a serialized [`PrgCache`].
+/// Errors returned while loading/parsing a serialized [`ProguardCache`].
 ///
-/// After a PrgCache was successfully parsed via [`PrgCache::parse`], an Error that occurs during
+/// After a `ProguardCache` was successfully parsed via [`ProguardCache::parse`], an Error that occurs during
 /// access of any data indicates either corruption of the serialized file, or a bug in the
 /// converter/serializer.
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +26,7 @@ pub enum CacheErrorKind {
     #[error("wrong format magic")]
     WrongFormat,
     /// The format version in the header is wrong/unknown.
-    #[error("unknown SymCache version")]
+    #[error("unknown ProguardCache version")]
     WrongVersion,
     /// Header could not be parsed from the cache file.
     #[error("could not read header")]
@@ -47,7 +47,7 @@ pub enum CacheErrorKind {
     },
 }
 
-/// An error returned when handling a [`PrgCache`].
+/// An error returned when handling a [`ProguardCache`].
 #[derive(Debug, Error)]
 #[error("{kind}")]
 pub struct CacheError {

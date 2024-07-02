@@ -140,13 +140,15 @@ impl<'data> ProguardCache<'data> {
     pub fn remap_method(&self, class: &str, method: &str) -> Option<(&'data str, &'data str)> {
         let class = self.get_class(class)?;
         let members = self.get_class_members(class)?;
-        let mut iter = members.iter().filter(|m| {
+
+        let matching_members = Self::find_range_by_binary_search(members, |m| {
             let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                return false;
+                return Ordering::Greater;
             };
 
-            obfuscated_name == method
-        });
+            obfuscated_name.cmp(method)
+        })?;
+        let mut iter = matching_members.iter();
         let first = iter.next()?;
 
         // We conservatively check that all the mappings point to the same method,
@@ -188,13 +190,14 @@ impl<'data> ProguardCache<'data> {
         // The following if and else cases are very similar. The only difference
         // is that if the frame contains parameter information, we use it in
         // our comparisons (in addition to the method name).
-        let members = if let Some(frame_params) = frame.parameters {
+        if let Some(frame_params) = frame.parameters {
             let Some(members) = self.get_class_members_by_params(class) else {
                 return RemappedFrameIter::empty();
             };
 
-            // Find a member with the right method name/params by binary search.
-            let Ok(mid) = members.binary_search_by(|m| {
+            // Find the range of members that have the same method name and params
+            // as the frame.
+            let Some(members) = Self::find_range_by_binary_search(members, |m| {
                 let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
                     return Ordering::Greater;
                 };
@@ -205,42 +208,15 @@ impl<'data> ProguardCache<'data> {
             }) else {
                 return RemappedFrameIter::empty();
             };
-
-            // Closure that returns `true` if a member doesn't have the
-            // right method name or params.
-            let matches_not = |m: &raw::Member| {
-                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                    return true;
-                };
-
-                let params = self.read_string(m.params_offset).unwrap_or_default();
-
-                obfuscated_name != frame.method || params != frame_params
-            };
-
-            // Search backwards from `mid` for a member that doesn't have the
-            // right method name/params. The one after it must be the first one with
-            // the right method name/params.
-            let start = members[..mid]
-                .iter()
-                .rposition(matches_not)
-                .map_or(0, |idx| idx + 1);
-
-            // Search forwards from `mid` for a member that doesn't have the
-            // right method name/params. The one before it must be the last one with
-            // the right method name/params.
-            let end = members[mid..]
-                .iter()
-                .position(matches_not)
-                .map_or(members.len(), |idx| idx + mid);
-            &members[start..end]
+            RemappedFrameIter::members(self, frame, members.iter())
         } else {
             let Some(members) = self.get_class_members(class) else {
                 return RemappedFrameIter::empty();
             };
 
-            // Find a member with the right method name by binary search.
-            let Ok(mid) = members.binary_search_by(|m| {
+            // Find the range of members that have the same method name
+            // as the frame.
+            let Some(members) = Self::find_range_by_binary_search(members, |m| {
                 let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
                     return Ordering::Greater;
                 };
@@ -250,35 +226,40 @@ impl<'data> ProguardCache<'data> {
                 return RemappedFrameIter::empty();
             };
 
-            // Closure that returns `true` if a member doesn't have the
-            // right method name.
-            let matches_not = |m: &raw::Member| {
-                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                    return true;
-                };
+            RemappedFrameIter::members(self, frame, members.iter())
+        }
+    }
 
-                obfuscated_name != frame.method
-            };
+    /// Finds the range of elements of `members` for which `f(m) == Ordering::Equal`.
+    ///
+    /// This works by first binary searching for any element fitting the criteria
+    /// and then linearly searching foraward and backward from that one to find
+    /// the exact range.
+    ///
+    /// Obviously this only works if the criteria are consistent with the order
+    /// of `members`.
+    fn find_range_by_binary_search<F>(members: &[raw::Member], f: F) -> Option<&[raw::Member]>
+    where
+        F: Fn(&raw::Member) -> std::cmp::Ordering + Clone,
+    {
+        // Find any member fitting the criteria by binary search.
+        let mid = members.binary_search_by(f.clone()).ok()?;
+        let matches_not = |m: &raw::Member| f(m).is_ne();
+        // Search backwards from `mid` for a member that doesn't match the
+        // criteria. The one after it must be the first one that does.
+        let start = members[..mid]
+            .iter()
+            .rposition(matches_not)
+            .map_or(0, |idx| idx + 1);
 
-            // Search backwards from `mid` for a member that doesn't have the
-            // right method name. The one after it must be the first one with
-            // the right method name.
-            let start = members[..mid]
-                .iter()
-                .rposition(matches_not)
-                .map_or(0, |idx| idx + 1);
+        // Search forwards from `mid` for a member that doesn't match the
+        // criteria. The one before it must be the last one that does.
+        let end = members[mid..]
+            .iter()
+            .position(matches_not)
+            .map_or(members.len(), |idx| idx + mid);
 
-            // Search forwards from `mid` for a member that doesn't have the
-            // right method name. The one before it must be the last one with
-            // the right method name.
-            let end = members[mid..]
-                .iter()
-                .position(matches_not)
-                .map_or(members.len(), |idx| idx + mid);
-            &members[start..end]
-        };
-
-        RemappedFrameIter::members(self, frame, members.iter())
+        Some(&members[start..end])
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.

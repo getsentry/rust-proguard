@@ -11,12 +11,12 @@ readme = "README.md"
 edition = "2018"
 
 [features]
-uuid = ["uuid_", "lazy_static"]
+uuid = ["dep:uuid", "lazy_static"]
 
 [dependencies]
 lazy_static = { version = "1.4.0", optional = true }
 thiserror = "1.0.61"
-uuid_ = { package = "uuid", version = "1.0.0", features = ["v5"], optional = true }
+uuid = { version = "1.0.0", features = ["v5"], optional = true }
 watto = { version = "0.1.0", features = ["writer", "strings"] }
 
 [dev-dependencies]

@@ -16,18 +16,15 @@ fn java_base_types(encoded_ty: char) -> Option<&'static str> {
 }
 
 fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) -> Option<String> {
-    let mut chrs = byte_code_type.char_indices();
-    //let (idx, token) = chrs.next()?;
+    let mut chrs = byte_code_type.chars();
     let mut suffix = "".to_string();
-    while let Some((idx, token)) = chrs.next() {
+    while let Some(token) = chrs.next() {
         if token == 'L' {
             // expect and remove final `;`
-            if chrs.next_back()?.1 != ';' {
+            if chrs.next_back()? != ';' {
                 return None;
             }
-            let obfuscated = byte_code_type
-                .get(idx + 1..byte_code_type.len() - 1)?
-                .replace('/', ".");
+            let obfuscated = chrs.as_str().replace('/', ".");
 
             if let Some(mapped) = mapper.remap_class(&obfuscated) {
                 return Some(format!("{}{}", mapped, suffix));
@@ -49,18 +46,15 @@ fn byte_code_type_to_java_type_cache(
     byte_code_type: &str,
     cache: &ProguardCache,
 ) -> Option<String> {
-    let mut chrs = byte_code_type.char_indices();
-    //let (idx, token) = chrs.next()?;
+    let mut chrs = byte_code_type.chars();
     let mut suffix = "".to_string();
-    while let Some((idx, token)) = chrs.next() {
+    while let Some(token) = chrs.next() {
         if token == 'L' {
             // expect and remove final `;`
-            if chrs.next_back()?.1 != ';' {
+            if chrs.next_back()? != ';' {
                 return None;
             }
-            let obfuscated = byte_code_type
-                .get(idx + 1..byte_code_type.len() - 1)?
-                .replace('/', ".");
+            let obfuscated = chrs.as_str().replace('/', ".");
 
             if let Some(mapped) = cache.remap_class(&obfuscated) {
                 return Some(format!("{}{}", mapped, suffix));

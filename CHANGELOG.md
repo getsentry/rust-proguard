@@ -1,5 +1,36 @@
 # Changelog
 
+## 5.5.0
+
+### Various fixes & improvements
+
+- Commit Cargo.lock (#43) by @loewenheim
+- Update edition to 2021 (#43) by @loewenheim
+- Don't rename uuid dep (#43) by @loewenheim
+- Remove ClassIndex (#43) by @loewenheim
+- Use chars (#43) by @loewenheim
+- Add module docs (#42) by @loewenheim
+- Write vectors at once (#42) by @loewenheim
+- Feedback (#42) by @loewenheim
+- Abstract out the binary search and use it in remap_method (#42) by @loewenheim
+- cache.rs -> cache/mod.rs (#42) by @loewenheim
+- Add parsing + mapping benchmarks (#42) by @loewenheim
+- Missed something (#42) by @loewenheim
+- Use correct name of cache everywhere (#42) by @loewenheim
+- Rename error types (#42) by @loewenheim
+- debug: use references (#42) by @loewenheim
+- Update src/cache/raw.rs (#42) by @loewenheim
+- Add cache to parsing benchmark (#42) by @loewenheim
+- Remove unwrap in binary search (#42) by @loewenheim
+- Remove test I committed by mistake (#42) by @loewenheim
+- Typo (#42) by @loewenheim
+- Cleanup (#42) by @loewenheim
+- Expand test coverage (#42) by @loewenheim
+- Add remapping benchmark (#42) by @loewenheim
+- Use binary search more aggressively (#42) by @loewenheim
+
+_Plus 10 more_
+
 ## 5.4.1
 
 ### Various fixes & improvements

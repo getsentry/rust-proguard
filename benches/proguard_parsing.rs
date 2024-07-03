@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use proguard::{ProguardMapper, ProguardMapping};
+use proguard::{ProguardCache, ProguardMapper, ProguardMapping};
 
 static MAPPING: &[u8] = include_bytes!("../tests/res/mapping.txt");
 
@@ -7,9 +7,22 @@ fn proguard_mapper(mapping: ProguardMapping) -> ProguardMapper {
     ProguardMapper::new(mapping)
 }
 
+fn proguard_cache(cache: &[u8]) -> ProguardCache {
+    ProguardCache::parse(cache).unwrap()
+}
+
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("proguard mapper", |b| {
-        b.iter(|| proguard_mapper(black_box(ProguardMapping::new(MAPPING))))
+    let mut cache = Vec::new();
+    let mapping = ProguardMapping::new(MAPPING);
+    ProguardCache::write(&mapping, &mut cache).unwrap();
+
+    let mut group = c.benchmark_group("Proguard Parsing");
+    group.bench_function("Proguard Mapper", |b| {
+        b.iter(|| proguard_mapper(black_box(mapping.clone())))
+    });
+
+    group.bench_function("Proguard Cache", |b| {
+        b.iter(|| proguard_cache(black_box(&cache)))
     });
 }
 

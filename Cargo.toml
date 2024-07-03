@@ -14,8 +14,10 @@ edition = "2018"
 uuid = ["uuid_", "lazy_static"]
 
 [dependencies]
-uuid_ = { package = "uuid", version = "1.0.0", features = ["v5"], optional = true }
 lazy_static = { version = "1.4.0", optional = true }
+thiserror = "1.0.61"
+uuid_ = { package = "uuid", version = "1.0.0", features = ["v5"], optional = true }
+watto = { version = "0.1.0", features = ["writer", "strings"] }
 
 [dev-dependencies]
 lazy_static = "1.4.0"
@@ -23,4 +25,8 @@ criterion = "0.4"
 
 [[bench]]
 name = "proguard_parsing"
+harness = false
+
+[[bench]]
+name = "proguard_mapping"
 harness = false

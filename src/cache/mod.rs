@@ -1,3 +1,38 @@
+//! A stable on-disk cache format for ProGuard mapping files.
+//!
+//! # Structure
+//! A [`ProguardCache`] file comprises the following parts:
+//! * A [header](ProguardCache::header), containing the version number, the numbers of class, member, and
+//!   member-by-params entries, and the length of the string section;
+//! * A [list](ProguardCache::classes) of [`Class`](raw::Class) entries;
+//! * A [list](ProguardCache::members) of [`Member`](raw::Member) entries;
+//! * Another [list](Proguard_cache::members_by_params) of `Member` entries, sorted
+//!   by parameter strings;
+//! * A [string section](ProguardCache::string_bytes) in which class names, method
+//!   names, &c. are collected. Whenever a class or member entry references a string,
+//!   it is by offset into this section.
+//!
+//! ## Class entries
+//! A class entry contains an obfuscated and an original name, optionally a file name,
+//! and an offset and length for the class's associated records in the `members`
+//! and `members_by_params` section, respectively.
+//!
+//! Class entries are sorted by obfuscated name.
+//!
+//! ## Member entries
+//! A member entry always contains an obfuscated and an original method name, a start
+//! and end line (1- based and inclusive), and a params string.
+//! It may also contain an original class name,
+//! original file name, and original start and end line.
+//!
+//! Member entries in `members` are sorted by the class they belong to, then by
+//! obfuscated method name, and finally by the order in which they were encountered
+//! in the original proguard file.
+//!
+//! Member entries in `members_by_params` are sorted by the class they belong to,
+//! then by obfuscated method name, then by params string, and finally
+//! by the order in which they were encountered in the original proguard file.
+
 mod debug;
 mod raw;
 

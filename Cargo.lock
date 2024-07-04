@@ -334,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "proguard"
-version = "5.4.1"
+version = "5.5.0"
 dependencies = [
  "criterion",
  "lazy_static",

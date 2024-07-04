@@ -21,7 +21,15 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| proguard_mapper(black_box(mapping.clone())))
     });
 
-    group.bench_function("Proguard Cache", |b| {
+    group.bench_function("Proguard Cache creation", |b| {
+        b.iter(|| {
+            let mut cache = Vec::new();
+            let mapping = ProguardMapping::new(MAPPING);
+            ProguardCache::write(&mapping, &mut cache).unwrap();
+        })
+    });
+
+    group.bench_function("Proguard Cache parsing", |b| {
         b.iter(|| proguard_cache(black_box(&cache)))
     });
 }

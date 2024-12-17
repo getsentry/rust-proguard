@@ -95,7 +95,7 @@ fn parse_obfuscated_bytecode_signature(signature: &str) -> Option<(Vec<&str>, &s
                 }
             }
             let ty = parameter_types.get(first_idx..last_idx + 1)?;
-            if ty.is_empty() || !ty.ends_with(&[';']) {
+            if ty.is_empty() || !ty.ends_with([';']) {
                 return None;
             }
             types.push(ty);

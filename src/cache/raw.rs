@@ -122,7 +122,7 @@ pub struct ProguardCache<'data> {
     pub(crate) string_bytes: &'data [u8],
 }
 
-impl<'data> std::fmt::Debug for ProguardCache<'data> {
+impl std::fmt::Debug for ProguardCache<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ProguardCache")
             .field("version", &self.header.version)

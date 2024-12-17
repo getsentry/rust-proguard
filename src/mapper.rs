@@ -412,7 +412,7 @@ impl<'s> ProguardMapper<'s> {
             members.all_mappings.iter()
         };
 
-        return RemappedFrameIter::members(frame, mappings);
+        RemappedFrameIter::members(frame, mappings)
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.

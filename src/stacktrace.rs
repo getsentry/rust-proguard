@@ -92,7 +92,7 @@ impl<'s> StackTrace<'s> {
     }
 }
 
-impl<'s> Display for StackTrace<'s> {
+impl Display for StackTrace<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         if let Some(exception) = &self.exception {
             writeln!(f, "{}", exception)?;
@@ -249,7 +249,7 @@ impl<'s> StackFrame<'s> {
     }
 }
 
-impl<'s> Display for StackFrame<'s> {
+impl Display for StackFrame<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(
             f,
@@ -341,7 +341,7 @@ impl<'s> Throwable<'s> {
     }
 }
 
-impl<'s> Display for Throwable<'s> {
+impl Display for Throwable<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}", self.class)?;
 

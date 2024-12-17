@@ -20,7 +20,7 @@ pub struct ParseError<'s> {
     kind: ParseErrorKind,
 }
 
-impl<'s> ParseError<'s> {
+impl ParseError<'_> {
     /// The offending line that caused the error.
     pub fn line(&self) -> &[u8] {
         self.line
@@ -137,7 +137,7 @@ pub struct ProguardMapping<'s> {
     source: &'s [u8],
 }
 
-impl<'s> fmt::Debug for ProguardMapping<'s> {
+impl fmt::Debug for ProguardMapping<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProguardMapping").finish()
     }
@@ -258,7 +258,7 @@ pub struct ProguardRecordIter<'s> {
     slice: &'s [u8],
 }
 
-impl<'s> fmt::Debug for ProguardRecordIter<'s> {
+impl fmt::Debug for ProguardRecordIter<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProguardRecordIter").finish()
     }

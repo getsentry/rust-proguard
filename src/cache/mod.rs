@@ -412,7 +412,7 @@ pub struct RemappedFrameIter<'r, 'data> {
     )>,
 }
 
-impl<'r, 'data> RemappedFrameIter<'r, 'data> {
+impl<'data> RemappedFrameIter<'_, 'data> {
     fn empty() -> Self {
         Self { inner: None }
     }
@@ -428,7 +428,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
     }
 }
 
-impl<'r, 'data> Iterator for RemappedFrameIter<'r, 'data> {
+impl<'data> Iterator for RemappedFrameIter<'_, 'data> {
     type Item = StackFrame<'data>;
 
     fn next(&mut self) -> Option<Self::Item> {

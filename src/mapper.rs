@@ -240,8 +240,11 @@ impl<'s> ProguardMapper<'s> {
                 ProguardRecord::R8Header(R8Header::SourceFile { file_name }) => {
                     class.file_name = Some(file_name);
                 }
-                ProguardRecord::Header { .. } => {}
+                ProguardRecord::R8Header(R8Header::Synthesized) => {
+                    // Mark classes and methods as synthesized here
+                }
                 ProguardRecord::R8Header(R8Header::Other) => {}
+                ProguardRecord::Header { .. } => {}
                 ProguardRecord::Class {
                     original,
                     obfuscated,
@@ -333,7 +336,7 @@ impl<'s> ProguardMapper<'s> {
                             .push(member_mapping);
                     }
                 } // end ProguardRecord::Method
-                _ => {}
+                ProguardRecord::Field { .. } => {}
             }
         }
         if !class.original.is_empty() {

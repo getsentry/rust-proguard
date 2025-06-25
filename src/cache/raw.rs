@@ -198,8 +198,11 @@ impl<'data> ProguardCache<'data> {
                 ProguardRecord::R8Header(R8Header::SourceFile { file_name }) => {
                     current_class.class.file_name_offset = string_table.insert(file_name) as u32;
                 }
-                ProguardRecord::Header { .. } => {}
+                ProguardRecord::R8Header(R8Header::Synthesized) => {
+                    // Mark classes and methods as synthesized here
+                }
                 ProguardRecord::R8Header(R8Header::Other) => {}
+                ProguardRecord::Header { .. } => {}
                 ProguardRecord::Class {
                     original,
                     obfuscated,
@@ -302,7 +305,7 @@ impl<'data> ProguardCache<'data> {
                         current_class.class.members_by_params_len += 1;
                     }
                 }
-                _ => {}
+                ProguardRecord::Field { .. } => {}
             }
         }
 

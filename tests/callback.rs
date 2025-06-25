@@ -16,6 +16,7 @@ fn test_method_matches_callback() {
         28,
     ));
 
+    // The remapped frames should all be synthesized because the class is.
     assert_eq!(
         mapped.next().unwrap(),
         StackFrame::new(
@@ -23,6 +24,7 @@ fn test_method_matches_callback() {
             "onCreate$lambda$1",
             37,
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -31,6 +33,7 @@ fn test_method_matches_callback() {
             "onMenuItemClick",
             0,
         )
+        .with_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }
@@ -55,6 +58,7 @@ fn test_method_matches_callback_extra_class() {
             "test2",
             10,
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -63,6 +67,7 @@ fn test_method_matches_callback_extra_class() {
             "test",
             6,
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -71,6 +76,7 @@ fn test_method_matches_callback_extra_class() {
             "onCreate$lambda$1",
             38,
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -79,6 +85,7 @@ fn test_method_matches_callback_extra_class() {
             "onMenuItemClick",
             0,
         )
+        .with_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }
@@ -103,6 +110,7 @@ fn test_method_matches_callback_inner_class() {
             19,
             "EditActivity.kt",
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -111,6 +119,7 @@ fn test_method_matches_callback_inner_class() {
             "onCreate$lambda$1",
             45,
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -119,6 +128,7 @@ fn test_method_matches_callback_inner_class() {
             "onMenuItemClick",
             0,
         )
+        .with_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }

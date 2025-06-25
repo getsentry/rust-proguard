@@ -827,8 +827,10 @@ mod tests {
     #[test]
     fn try_parse_header_synthesized() {
         let bytes = br#"# {"id":"com.android.tools.r8.synthesized"}"#;
-        let parsed = ProguardRecord::try_parse(bytes);
-        assert_eq!(parsed, Ok(ProguardRecord::R8Header(R8Header::Synthesized)));
+        assert_eq!(
+            ProguardRecord::try_parse(bytes).unwrap(),
+            ProguardRecord::R8Header(R8Header::Synthesized)
+        );
     }
 
     #[test]
@@ -1118,7 +1120,7 @@ androidx.activity.OnBackPressedCallback
                         original_endline: Some(187),
                     }),
                 }),
-                Ok(ProguardRecord::R8Header(R8Header::Other)),
+                Ok(ProguardRecord::R8Header(R8Header::Synthesized)),
                 Err(ParseError {
                     line: b"androidx.activity.OnBackPressedCallback \n",
                     kind: ParseErrorKind::ParseError("line is not a valid proguard record"),

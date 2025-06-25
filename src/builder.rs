@@ -49,6 +49,8 @@ impl std::ops::Deref for OriginalName<'_> {
 pub(crate) struct ClassInfo<'s> {
     /// The source file in which the class is defined.
     pub(crate) source_file: Option<&'s str>,
+    /// Whether this class was synthesized by the compiler.
+    pub(crate) is_synthesized: bool,
 }
 
 /// The receiver of a method.
@@ -112,7 +114,10 @@ pub(crate) struct MethodKey<'s> {
 
 /// Information about a method in a ProGuard file.
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct MethodInfo {}
+pub(crate) struct MethodInfo {
+    /// Whether this method was synthesized by the compiler.
+    pub(crate) is_synthesized: bool,
+}
 
 /// A member record in a Proguard file.
 #[derive(Clone, Copy, Debug)]
@@ -167,7 +172,8 @@ impl<'s> ParsedProguardMapping<'s> {
                 ProguardRecord::Field { .. } => {}
                 ProguardRecord::Header { .. } => {}
                 ProguardRecord::R8Header(_) => {
-                    // R8 headers are already handled in the class case below.
+                    // R8 headers can be skipped; they are already
+                    // handled in the branches for `Class` and `Method`.
                 }
                 ProguardRecord::Class {
                     original,
@@ -187,8 +193,9 @@ impl<'s> ParsedProguardMapping<'s> {
                     while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
                         match r8_header {
                             R8Header::SourceFile { file_name } => {
-                                current_class.source_file = Some(file_name);
+                                current_class.source_file = Some(file_name)
                             }
+                            R8Header::Synthesized => current_class.is_synthesized = true,
                             R8Header::Other => {}
                         }
 
@@ -251,8 +258,17 @@ impl<'s> ParsedProguardMapping<'s> {
                         arguments,
                     };
 
-                    // This does nothing for now because we are not saving any per-method information.
-                    let _method_info: &mut MethodInfo = slf.method_infos.entry(method).or_default();
+                    let method_info: &mut MethodInfo = slf.method_infos.entry(method).or_default();
+
+                    // Consume R8 headers attached to this method.
+                    while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
+                        match r8_header {
+                            R8Header::Synthesized => method_info.is_synthesized = true,
+                            R8Header::SourceFile { .. } | R8Header::Other => {}
+                        }
+
+                        records.next();
+                    }
 
                     let member = Member {
                         method,

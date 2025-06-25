@@ -458,10 +458,15 @@ impl<'s> ProguardRecord<'s> {
 fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &[u8]) {
     let bytes = consume_leading_newlines(bytes);
 
-    let result = if bytes.starts_with(b"# {") {
-        parse_r8_header(bytes)
-    } else if bytes.starts_with(b"#") {
-        parse_proguard_header(bytes)
+    let result = if let Some(bytes) = bytes.strip_prefix(b"#") {
+        // ProGuard / R8 headers
+
+        let bytes = bytes.trim_ascii_start();
+        if bytes.starts_with(b"{") {
+            parse_r8_header(bytes)
+        } else {
+            parse_proguard_header(bytes)
+        }
     } else if bytes.starts_with(b"    ") {
         parse_proguard_field_or_method(bytes)
     } else {
@@ -485,7 +490,7 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &
 
 /// Parses a single Proguard Header from a Proguard File.
 fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
-    let bytes = parse_prefix(bytes, b"#")?;
+    // Note: the leading `#` has already been parsed.
 
     // Existing logic for `key: value` format
     let (key, bytes) = parse_until(bytes, |c| *c == b':' || is_newline(c))?;
@@ -504,7 +509,8 @@ fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseE
 }
 
 fn parse_r8_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
-    let bytes = parse_prefix(bytes, b"#")?;
+    // Note: the leading `#` has already been parsed.
+
     let (header, rest) = parse_until(bytes, is_newline)?;
 
     let header = serde_json::from_str(header).unwrap();
@@ -787,6 +793,26 @@ mod tests {
             Ok(ProguardRecord::R8Header(R8Header::SourceFile {
                 file_name: "Foobar.kt",
             }))
+        );
+    }
+
+    #[test]
+    fn try_parse_r8_headers() {
+        let bytes = br#"# {"id":"foobar"}"#;
+        assert_eq!(
+            ProguardRecord::try_parse(bytes).unwrap(),
+            ProguardRecord::R8Header(R8Header::Other),
+        );
+
+        let bytes = br#"#{"id":"foobar"}"#;
+        assert_eq!(
+            ProguardRecord::try_parse(bytes).unwrap(),
+            ProguardRecord::R8Header(R8Header::Other),
+        );
+        let bytes = br#"#     {"id":"foobar"}"#;
+        assert_eq!(
+            ProguardRecord::try_parse(bytes).unwrap(),
+            ProguardRecord::R8Header(R8Header::Other),
         );
     }
 

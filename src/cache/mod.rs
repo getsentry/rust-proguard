@@ -523,7 +523,7 @@ fn iterate_without_lines<'a>(
 }
 
 fn extract_class_name(full_path: &str) -> Option<&str> {
-    let after_last_period = full_path.split('.').last()?;
+    let after_last_period = full_path.split('.').next_back()?;
     // If the class is an inner class, we need to extract the outer class name
     after_last_period.split('$').next()
 }

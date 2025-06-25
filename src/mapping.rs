@@ -310,6 +310,13 @@ pub enum R8Header<'s> {
     #[serde(rename_all = "camelCase")]
     SourceFile { file_name: &'s str },
 
+    /// A synthesized header, stating that the class or method it's attached to
+    /// was synthesized by the compiler.
+    ///
+    /// See <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#synthesized-introduced-at-version-1_0>.
+    #[serde(rename = "com.android.tools.r8.synthesized")]
+    Synthesized,
+
     /// Catchall variant for headers we don't support.
     #[serde(other)]
     Other,
@@ -815,6 +822,13 @@ mod tests {
             ProguardRecord::try_parse(bytes).unwrap(),
             ProguardRecord::R8Header(R8Header::Other),
         );
+    }
+
+    #[test]
+    fn try_parse_header_synthesized() {
+        let bytes = br#"# {"id":"com.android.tools.r8.synthesized"}"#;
+        let parsed = ProguardRecord::try_parse(bytes);
+        assert_eq!(parsed, Ok(ProguardRecord::R8Header(R8Header::Synthesized)));
     }
 
     #[test]

@@ -92,7 +92,7 @@ pub struct CacheError {
 }
 
 impl CacheError {
-    /// Returns the corresponding [`ErrorKind`] for this error.
+    /// Returns the corresponding [`CacheErrorKind`] for this error.
     pub fn kind(&self) -> CacheErrorKind {
         self.kind
     }

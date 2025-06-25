@@ -5,6 +5,7 @@ use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
 use crate::java;
+use crate::mapping::R8Header;
 use crate::mapping::{ProguardMapping, ProguardRecord};
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
 
@@ -236,11 +237,11 @@ impl<'s> ProguardMapper<'s> {
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {
             match record {
-                ProguardRecord::Header { key, value } => {
-                    if key == "sourceFile" {
-                        class.file_name = value;
-                    }
+                ProguardRecord::R8Header(R8Header::SourceFile { file_name }) => {
+                    class.file_name = Some(file_name);
                 }
+                ProguardRecord::Header { .. } => {}
+                ProguardRecord::R8Header(R8Header::Other) => {}
                 ProguardRecord::Class {
                     original,
                     obfuscated,

@@ -7,6 +7,8 @@ use std::fmt;
 use std::ops::Range;
 use std::str;
 
+use serde::Deserialize;
+
 #[cfg(feature = "uuid")]
 use uuid::Uuid;
 
@@ -282,7 +284,7 @@ impl<'s> Iterator for ProguardRecordIter<'s> {
 /// Maps start/end lines of a minified file to original start/end lines.
 ///
 /// All line mappings are 1-based and inclusive.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LineMapping {
     /// Start Line, 1-based.
     pub startline: usize,
@@ -294,8 +296,26 @@ pub struct LineMapping {
     pub original_endline: Option<usize>,
 }
 
+/// An R8 header, as described in
+/// <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#additional-information-appended-as-comments-to-the-file>.
+///
+/// The format is a line starting with `#` and followed by a JSON object.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(tag = "id", rename_all = "camelCase")]
+pub enum R8Header<'s> {
+    /// A source file header, stating what source file a class originated from.
+    ///
+    /// See <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#source-file>.
+    #[serde(rename_all = "camelCase")]
+    SourceFile { file_name: &'s str },
+
+    /// Catchall variant for headers we don't support.
+    #[serde(other)]
+    Other,
+}
+
 /// A Proguard Mapping Record.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProguardRecord<'s> {
     /// A Proguard Header.
     Header {
@@ -304,6 +324,8 @@ pub enum ProguardRecord<'s> {
         /// Optional value if the Header is a KV pair.
         value: Option<&'s str>,
     },
+    /// An R8 Header.
+    R8Header(R8Header<'s>),
     /// A Class Mapping.
     Class {
         /// Original name of the class.
@@ -436,7 +458,9 @@ impl<'s> ProguardRecord<'s> {
 fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &[u8]) {
     let bytes = consume_leading_newlines(bytes);
 
-    let result = if bytes.starts_with(b"#") {
+    let result = if bytes.starts_with(b"# {") {
+        parse_r8_header(bytes)
+    } else if bytes.starts_with(b"#") {
         parse_proguard_header(bytes)
     } else if bytes.starts_with(b"    ") {
         parse_proguard_field_or_method(bytes)
@@ -459,38 +483,35 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &
     }
 }
 
-const SOURCE_FILE_PREFIX: &[u8; 32] = br#" {"id":"sourceFile","fileName":""#;
-
 /// Parses a single Proguard Header from a Proguard File.
 fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
     let bytes = parse_prefix(bytes, b"#")?;
 
-    if let Ok(bytes) = parse_prefix(bytes, SOURCE_FILE_PREFIX) {
-        let (value, bytes) = parse_until(bytes, |c| *c == b'"')?;
-        let bytes = parse_prefix(bytes, br#""}"#)?;
+    // Existing logic for `key: value` format
+    let (key, bytes) = parse_until(bytes, |c| *c == b':' || is_newline(c))?;
 
-        let record = ProguardRecord::Header {
-            key: "sourceFile",
-            value: Some(value),
-        };
+    let (value, bytes) = match parse_prefix(bytes, b":") {
+        Ok(bytes) => parse_until(bytes, is_newline).map(|(v, bytes)| (Some(v), bytes)),
+        Err(_) => Ok((None, bytes)),
+    }?;
 
-        Ok((record, consume_leading_newlines(bytes)))
-    } else {
-        // Existing logic for `key: value` format
-        let (key, bytes) = parse_until(bytes, |c| *c == b':' || is_newline(c))?;
+    let record = ProguardRecord::Header {
+        key: key.trim(),
+        value: value.map(|v| v.trim()),
+    };
 
-        let (value, bytes) = match parse_prefix(bytes, b":") {
-            Ok(bytes) => parse_until(bytes, is_newline).map(|(v, bytes)| (Some(v), bytes)),
-            Err(_) => Ok((None, bytes)),
-        }?;
+    Ok((record, consume_leading_newlines(bytes)))
+}
 
-        let record = ProguardRecord::Header {
-            key: key.trim(),
-            value: value.map(|v| v.trim()),
-        };
+fn parse_r8_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+    let bytes = parse_prefix(bytes, b"#")?;
+    let (header, rest) = parse_until(bytes, is_newline)?;
 
-        Ok((record, consume_leading_newlines(bytes)))
-    }
+    let header = serde_json::from_str(header).unwrap();
+    Ok((
+        ProguardRecord::R8Header(header),
+        consume_leading_newlines(rest),
+    ))
 }
 
 /// Parses a single Proguard Field or Method from a Proguard File.
@@ -763,10 +784,9 @@ mod tests {
         let parsed = ProguardRecord::try_parse(bytes);
         assert_eq!(
             parsed,
-            Ok(ProguardRecord::Header {
-                key: "sourceFile",
-                value: Some("Foobar.kt")
-            })
+            Ok(ProguardRecord::R8Header(R8Header::SourceFile {
+                file_name: "Foobar.kt",
+            }))
         );
     }
 

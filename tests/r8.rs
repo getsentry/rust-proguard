@@ -1,4 +1,4 @@
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
 use proguard::{ProguardMapper, ProguardMapping, StackFrame};
 
@@ -6,16 +6,18 @@ static MAPPING_R8: &[u8] = include_bytes!("res/mapping-r8.txt");
 static MAPPING_R8_SYMBOLICATED_FILE_NAMES: &[u8] =
     include_bytes!("res/mapping-r8-symbolicated_file_names.txt");
 
-lazy_static! {
-    static ref MAPPING_WIN_R8: Vec<u8> = MAPPING_R8
+static MAPPING_WIN_R8: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    MAPPING_R8
         .iter()
-        .flat_map(|&byte| if byte == b'\n' {
-            vec![b'\r', b'\n']
-        } else {
-            vec![byte]
+        .flat_map(|&byte| {
+            if byte == b'\n' {
+                vec![b'\r', b'\n']
+            } else {
+                vec![byte]
+            }
         })
-        .collect();
-}
+        .collect()
+});
 
 #[test]
 fn test_basic_r8() {

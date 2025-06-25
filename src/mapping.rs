@@ -459,7 +459,7 @@ impl<'s> ProguardRecord<'s> {
 fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &[u8]) {
     let bytes = consume_leading_newlines(bytes);
 
-    let result = if let Some(bytes) = bytes.strip_prefix(b"#") {
+    let result = if let Some(bytes) = bytes.trim_ascii_start().strip_prefix(b"#") {
         // ProGuard / R8 headers
 
         let bytes = bytes.trim_ascii_start();
@@ -805,7 +805,7 @@ mod tests {
             ProguardRecord::R8Header(R8Header::Other),
         );
 
-        let bytes = br#"#{"id":"foobar"}"#;
+        let bytes = br#"    #{"id":"foobar"}"#;
         assert_eq!(
             ProguardRecord::try_parse(bytes).unwrap(),
             ProguardRecord::R8Header(R8Header::Other),
@@ -1051,6 +1051,7 @@ androidx.activity.OnBackPressedCallback -> c.a.b:
   boolean mEnabled -> a
     java.util.ArrayDeque mOnBackPressedCallbacks -> b
     1:4:void onBackPressed():184:187 -> c
+    # {\"id\":\"com.android.tools.r8.synthesized\"}
 androidx.activity.OnBackPressedCallback 
 -> c.a.b:
         ";
@@ -1103,6 +1104,7 @@ androidx.activity.OnBackPressedCallback
                         original_endline: Some(187),
                     }),
                 }),
+                Ok(ProguardRecord::R8Header(R8Header::Other)),
                 Err(ParseError {
                     line: b"androidx.activity.OnBackPressedCallback \n",
                     kind: ParseErrorKind::ParseError("line is not a valid proguard record"),

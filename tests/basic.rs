@@ -1,18 +1,21 @@
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
 use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame};
 
 static MAPPING: &[u8] = include_bytes!("res/mapping.txt");
-lazy_static! {
-    static ref MAPPING_WIN: Vec<u8> = MAPPING
+
+static MAPPING_WIN: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    MAPPING
         .iter()
-        .flat_map(|&byte| if byte == b'\n' {
-            vec![b'\r', b'\n']
-        } else {
-            vec![byte]
+        .flat_map(|&byte| {
+            if byte == b'\n' {
+                vec![b'\r', b'\n']
+            } else {
+                vec![byte]
+            }
         })
-        .collect();
-}
+        .collect()
+});
 
 #[test]
 fn test_basic() {

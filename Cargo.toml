@@ -11,10 +11,9 @@ readme = "README.md"
 edition = "2021"
 
 [features]
-uuid = ["dep:uuid", "lazy_static"]
+uuid = ["dep:uuid"]
 
 [dependencies]
-lazy_static = { version = "1.4.0", optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 thiserror = "1.0.61"
@@ -22,7 +21,6 @@ uuid = { version = "1.0.0", features = ["v5"], optional = true }
 watto = { version = "0.1.0", features = ["writer", "strings"] }
 
 [dev-dependencies]
-lazy_static = "1.4.0"
 criterion = "0.4"
 
 [[bench]]

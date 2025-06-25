@@ -226,9 +226,10 @@ impl<'s> ProguardMapping<'s> {
     /// The UUID is generated from a file checksum.
     #[cfg(feature = "uuid")]
     pub fn uuid(&self) -> Uuid {
-        lazy_static::lazy_static! {
-            static ref NAMESPACE: Uuid = Uuid::new_v5(&Uuid::NAMESPACE_DNS, b"guardsquare.com");
-        }
+        use std::sync::LazyLock;
+
+        static NAMESPACE: LazyLock<Uuid> =
+            LazyLock::new(|| Uuid::new_v5(&Uuid::NAMESPACE_DNS, b"guardsquare.com"));
         // this internally only operates on bytes, so this is safe to do
         Uuid::new_v5(&NAMESPACE, self.source)
     }

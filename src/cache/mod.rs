@@ -495,6 +495,8 @@ fn iterate_with_lines<'a>(
             file,
             line,
             parameters: frame.parameters,
+            // TODO
+            is_synthesized: false,
         });
     }
     None
@@ -519,6 +521,8 @@ fn iterate_without_lines<'a>(
         file: None,
         line: 0,
         parameters: frame.parameters,
+        // TODO
+        is_synthesized: false,
     })
 }
 
@@ -558,6 +562,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 2,
                     file: Some("SourceFile"),
                     parameters: None,
+                    is_synthesized: false,
                 },
                 StackFrame {
                     class: "android.view.View",
@@ -565,6 +570,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 7393,
                     file: Some("View.java"),
                     parameters: None,
+                    is_synthesized: false,
                 },
             ],
             cause: Some(Box::new(StackTrace {
@@ -578,6 +584,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 1,
                     file: Some("SourceFile"),
                     parameters: None,
+                    is_synthesized: false,
                 }],
                 cause: None,
             })),

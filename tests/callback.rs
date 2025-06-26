@@ -5,7 +5,7 @@ static MAPPING_CALLBACK_EXTRA_CLASS: &[u8] = include_bytes!("res/mapping-callbac
 static MAPPING_CALLBACK_INNER_CLASS: &[u8] = include_bytes!("res/mapping-callback-inner-class.txt");
 
 #[test]
-fn test_method_matches_callback_foo() {
+fn test_method_matches_callback() {
     // see the following files for sources used when creating the mapping file:
     //   - res/mapping-callback_EditActivity.kt
     let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_CALLBACK));
@@ -16,42 +16,28 @@ fn test_method_matches_callback_foo() {
         28,
     ));
 
-    // The class is synthesized, so this shouldn't map to anything.
-    assert!(mapped.next().is_none());
-
-    let mut mapped = mapper.remap_frame(&StackFrame::new(
-        "io.sentry.samples.instrumentation.ui.h",
-        "h",
-        26,
-    ));
-
+    // The remapped frames should all be synthesized because the class is.
     assert_eq!(
         mapped.next().unwrap(),
         StackFrame::with_file(
-            "io.sentry.samples.instrumentation.SampleApp",
-            "access$getDatabase$cp",
-            9,
-            "EditActivity.kt",
+            "io.sentry.samples.instrumentation.ui.EditActivity",
+            "onCreate$lambda$1",
+            37,
+            "EditActivity",
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
         StackFrame::with_file(
-            "io.sentry.samples.instrumentation.SampleApp$Companion",
-            "getDatabase",
-            12,
-            "EditActivity.kt",
+            "io.sentry.samples.instrumentation.ui.EditActivity$$InternalSyntheticLambda$1$ebaa538726b99bb77e0f5e7c86443911af17d6e5be2b8771952ae0caa4ff2ac7$0",
+            "onMenuItemClick",
+            0,
+            "EditActivity",
         )
+        .with_synthesized(true)
     );
-    assert_eq!(
-        mapped.next().unwrap(),
-        StackFrame::with_file(
-            "io.sentry.samples.instrumentation.ui.EditActivity$addNewTrack$1",
-            "invokeSuspend",
-            94,
-            "EditActivity.kt",
-        )
-    );
+    assert_eq!(mapped.next(), None);
 }
 
 #[test]
@@ -75,6 +61,7 @@ fn test_method_matches_callback_extra_class() {
             10,
             "TestSourceContext",
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -84,6 +71,7 @@ fn test_method_matches_callback_extra_class() {
             6,
             "TestSourceContext",
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -93,6 +81,7 @@ fn test_method_matches_callback_extra_class() {
             38,
             "EditActivity",
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -102,6 +91,7 @@ fn test_method_matches_callback_extra_class() {
             0,
             "EditActivity",
         )
+        .with_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }
@@ -126,6 +116,7 @@ fn test_method_matches_callback_inner_class() {
             19,
             "EditActivity",
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -135,6 +126,7 @@ fn test_method_matches_callback_inner_class() {
             45,
             "EditActivity",
         )
+        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -144,6 +136,7 @@ fn test_method_matches_callback_inner_class() {
             0,
             "EditActivity",
         )
+        .with_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }

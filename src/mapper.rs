@@ -86,15 +86,20 @@ type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
 #[derive(Clone, Debug, Default)]
 pub struct RemappedFrameIter<'m> {
     inner: Option<(StackFrame<'m>, MemberIter<'m>)>,
+    synthesized_class: bool,
 }
 
 impl<'m> RemappedFrameIter<'m> {
     fn empty() -> Self {
-        Self { inner: None }
+        Self {
+            inner: None,
+            synthesized_class: false,
+        }
     }
-    fn members(frame: StackFrame<'m>, members: MemberIter<'m>) -> Self {
+    fn members(frame: StackFrame<'m>, members: MemberIter<'m>, synthesized_class: bool) -> Self {
         Self {
             inner: Some((frame, members)),
+            synthesized_class,
         }
     }
 }
@@ -104,9 +109,9 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     fn next(&mut self) -> Option<Self::Item> {
         let (frame, ref mut members) = self.inner.as_mut()?;
         if frame.parameters.is_none() {
-            iterate_with_lines(frame, members)
+            iterate_with_lines(frame, members, self.synthesized_class)
         } else {
-            iterate_without_lines(frame, members)
+            iterate_without_lines(frame, members, self.synthesized_class)
         }
     }
 }
@@ -120,13 +125,9 @@ fn extract_class_name(full_path: &str) -> Option<&str> {
 fn iterate_with_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
+    synthesized_class: bool,
 ) -> Option<StackFrame<'a>> {
     for member in members {
-        dbg!(member);
-        // skip synthesized members
-        if member.is_synthesized {
-            continue;
-        }
         // skip any members which do not match our frames line
         if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline) {
             continue;
@@ -167,6 +168,7 @@ fn iterate_with_lines<'a>(
             file,
             line,
             parameters: frame.parameters,
+            is_synthesized: member.is_synthesized || synthesized_class,
         });
     }
     None
@@ -175,8 +177,9 @@ fn iterate_with_lines<'a>(
 fn iterate_without_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
+    synthesized_class: bool,
 ) -> Option<StackFrame<'a>> {
-    let member = members.find(|m| !dbg!(m).is_synthesized)?;
+    let member = members.next()?;
 
     let class = match member.original_class {
         Some(class) => class,
@@ -188,6 +191,7 @@ fn iterate_without_lines<'a>(
         file: None,
         line: 0,
         parameters: frame.parameters,
+        is_synthesized: member.is_synthesized || synthesized_class,
     })
 }
 
@@ -323,7 +327,6 @@ impl<'s> ProguardMapper<'s> {
 
                     // consume R8 headers attached to this method
                     while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
-                        dbg!(&r8_header);
                         match r8_header {
                             R8Header::Synthesized => member_mapping.is_synthesized = true,
                             R8Header::SourceFile { .. } | R8Header::Other => {}
@@ -427,10 +430,6 @@ impl<'s> ProguardMapper<'s> {
             return RemappedFrameIter::empty();
         };
 
-        if class.is_synthesized {
-            return RemappedFrameIter::empty();
-        }
-
         let Some(members) = class.members.get(frame.method) else {
             return RemappedFrameIter::empty();
         };
@@ -448,7 +447,7 @@ impl<'s> ProguardMapper<'s> {
             members.all_mappings.iter()
         };
 
-        RemappedFrameIter::members(frame, mappings)
+        RemappedFrameIter::members(frame, mappings, class.is_synthesized)
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.
@@ -615,6 +614,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 2,
                     file: Some("SourceFile"),
                     parameters: None,
+                    is_synthesized: false,
                 },
                 StackFrame {
                     class: "android.view.View",
@@ -622,6 +622,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 7393,
                     file: Some("View.java"),
                     parameters: None,
+                    is_synthesized: false,
                 },
             ],
             cause: Some(Box::new(StackTrace {
@@ -635,6 +636,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 1,
                     file: Some("SourceFile"),
                     parameters: None,
+                    is_synthesized: false,
                 }],
                 cause: None,
             })),

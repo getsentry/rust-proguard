@@ -3,6 +3,7 @@ use std::io::Write;
 
 use watto::{Pod, StringTable};
 
+use crate::mapping::R8Header;
 use crate::{ProguardMapping, ProguardRecord};
 
 use super::{CacheError, CacheErrorKind};
@@ -194,15 +195,11 @@ impl<'data> ProguardCache<'data> {
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {
             match record {
-                ProguardRecord::Header {
-                    key,
-                    value: Some(file_name),
-                } => {
-                    if key == "sourceFile" {
-                        current_class.class.file_name_offset =
-                            string_table.insert(file_name) as u32;
-                    }
+                ProguardRecord::R8Header(R8Header::SourceFile { file_name }) => {
+                    current_class.class.file_name_offset = string_table.insert(file_name) as u32;
                 }
+                ProguardRecord::Header { .. } => {}
+                ProguardRecord::R8Header(R8Header::Other) => {}
                 ProguardRecord::Class {
                     original,
                     obfuscated,

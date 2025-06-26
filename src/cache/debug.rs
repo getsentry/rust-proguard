@@ -35,6 +35,7 @@ impl fmt::Debug for ClassDebug<'_, '_> {
             .field("obfuscated_name", &self.obfuscated_name())
             .field("original_name", &self.original_name())
             .field("file_name", &self.file_name())
+            .field("is_synthesized", &self.raw.is_synthesized())
             .finish()
     }
 }
@@ -105,6 +106,7 @@ impl fmt::Debug for MemberDebug<'_, '_> {
             .field("original_startline", &self.raw.original_startline)
             .field("original_endline", &self.original_endline())
             .field("params", &self.params())
+            .field("is_synthesized", &self.raw.is_synthesized())
             .finish()
     }
 }

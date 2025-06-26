@@ -199,6 +199,7 @@ impl<'s> StackFrame<'s> {
         }
     }
 
+    /// Flags `self` as being synthesized by the compiler according to `is_synthesized`.
     pub fn with_synthesized(mut self, is_synthesized: bool) -> Self {
         self.is_synthesized = is_synthesized;
         self
@@ -257,6 +258,7 @@ impl<'s> StackFrame<'s> {
         self.parameters
     }
 
+    /// Returns whether this frame was synthesized by the compiler.
     pub fn is_synthesized(&self) -> bool {
         self.is_synthesized
     }

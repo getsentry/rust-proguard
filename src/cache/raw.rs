@@ -195,13 +195,10 @@ impl<'data> ProguardCache<'data> {
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {
             match record {
-                ProguardRecord::R8Header(R8Header::SourceFile { file_name }) => {
-                    current_class.class.file_name_offset = string_table.insert(file_name) as u32;
+                ProguardRecord::R8Header(_) => {
+                    // R8 headers can be skipped; they are already
+                    // handled in the branches for `Class` and `Method`.
                 }
-                ProguardRecord::R8Header(R8Header::Synthesized) => {
-                    // Mark classes and methods as synthesized here
-                }
-                ProguardRecord::R8Header(R8Header::Other) => {}
                 ProguardRecord::Header { .. } => {}
                 ProguardRecord::Class {
                     original,
@@ -225,6 +222,22 @@ impl<'data> ProguardCache<'data> {
                         },
                         ..Default::default()
                     };
+
+                    // Consume R8 headers attached to this class.
+                    while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
+                        match r8_header {
+                            R8Header::SourceFile { file_name } => {
+                                current_class.class.file_name_offset =
+                                    string_table.insert(file_name) as u32;
+                            }
+                            R8Header::Synthesized => {
+                                // TODO: Handle synthesized
+                            }
+                            R8Header::Other => {}
+                        }
+
+                        records.next();
+                    }
                 }
 
                 ProguardRecord::Method {
@@ -270,6 +283,18 @@ impl<'data> ProguardCache<'data> {
                         original_endline,
                         params_offset,
                     };
+
+                    // Consume R8 headers attached to this method.
+                    while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
+                        match r8_header {
+                            R8Header::Synthesized => {
+                                // TODO: Handle synthesized
+                            }
+                            R8Header::SourceFile { .. } | R8Header::Other => {}
+                        }
+
+                        records.next();
+                    }
 
                     current_class
                         .members

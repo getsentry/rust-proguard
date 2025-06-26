@@ -510,7 +510,7 @@ fn iterate_with_lines<'a>(
             file,
             line,
             parameters: frame.parameters,
-            is_synthesized: (member.is_synthesized != false as u32) || synthesized_class,
+            is_synthesized: member.is_synthesized() || synthesized_class,
         });
     }
     None
@@ -536,7 +536,7 @@ fn iterate_without_lines<'a>(
         file: None,
         line: 0,
         parameters: frame.parameters,
-        is_synthesized: (member.is_synthesized != false as u32) || synthesized_class,
+        is_synthesized: member.is_synthesized() || synthesized_class,
     })
 }
 

@@ -95,15 +95,15 @@ impl<'s> StackTrace<'s> {
 impl Display for StackTrace<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         if let Some(exception) = &self.exception {
-            writeln!(f, "{}", exception)?;
+            writeln!(f, "{exception}")?;
         }
 
         for frame in &self.frames {
-            writeln!(f, "    {}", frame)?;
+            writeln!(f, "    {frame}")?;
         }
 
         if let Some(cause) = &self.cause {
-            write!(f, "Caused by: {}", cause)?;
+            write!(f, "Caused by: {cause}")?;
         }
 
         Ok(())
@@ -346,7 +346,7 @@ impl Display for Throwable<'_> {
         write!(f, "{}", self.class)?;
 
         if let Some(message) = self.message {
-            write!(f, ": {}", message)?;
+            write!(f, ": {message}")?;
         }
 
         Ok(())

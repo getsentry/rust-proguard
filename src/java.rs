@@ -27,15 +27,15 @@ fn byte_code_type_to_java_type(byte_code_type: &str, mapper: &ProguardMapper) ->
             let obfuscated = chrs.as_str().replace('/', ".");
 
             if let Some(mapped) = mapper.remap_class(&obfuscated) {
-                return Some(format!("{}{}", mapped, suffix));
+                return Some(format!("{mapped}{suffix}"));
             }
 
-            return Some(format!("{}{}", obfuscated, suffix));
+            return Some(format!("{obfuscated}{suffix}"));
         } else if token == '[' {
             suffix.push_str("[]");
             continue;
         } else if let Some(ty) = java_base_types(token) {
-            return Some(format!("{}{}", ty, suffix));
+            return Some(format!("{ty}{suffix}"));
         }
     }
     None
@@ -57,15 +57,15 @@ fn byte_code_type_to_java_type_cache(
             let obfuscated = chrs.as_str().replace('/', ".");
 
             if let Some(mapped) = cache.remap_class(&obfuscated) {
-                return Some(format!("{}{}", mapped, suffix));
+                return Some(format!("{mapped}{suffix}"));
             }
 
-            return Some(format!("{}{}", obfuscated, suffix));
+            return Some(format!("{obfuscated}{suffix}"));
         } else if token == '[' {
             suffix.push_str("[]");
             continue;
         } else if let Some(ty) = java_base_types(token) {
-            return Some(format!("{}{}", ty, suffix));
+            return Some(format!("{ty}{suffix}"));
         }
     }
     None

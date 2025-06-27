@@ -450,7 +450,7 @@ impl<'s> ProguardMapper<'s> {
         if let Some(line) = lines.next() {
             match stacktrace::parse_throwable(line) {
                 None => match stacktrace::parse_frame(line) {
-                    None => writeln!(&mut stacktrace, "{}", line)?,
+                    None => writeln!(&mut stacktrace, "{line}")?,
                     Some(frame) => format_frames(&mut stacktrace, line, self.remap_frame(&frame))?,
                 },
                 Some(throwable) => {
@@ -465,7 +465,7 @@ impl<'s> ProguardMapper<'s> {
                     .strip_prefix("Caused by: ")
                     .and_then(stacktrace::parse_throwable)
                 {
-                    None => writeln!(&mut stacktrace, "{}", line)?,
+                    None => writeln!(&mut stacktrace, "{line}")?,
                     Some(cause) => {
                         format_cause(&mut stacktrace, line, self.remap_throwable(&cause))?
                     }
@@ -517,9 +517,9 @@ pub(crate) fn format_throwable(
     throwable: Option<Throwable<'_>>,
 ) -> Result<(), FmtError> {
     if let Some(throwable) = throwable {
-        writeln!(stacktrace, "{}", throwable)
+        writeln!(stacktrace, "{throwable}")
     } else {
-        writeln!(stacktrace, "{}", line)
+        writeln!(stacktrace, "{line}")
     }
 }
 
@@ -531,10 +531,10 @@ pub(crate) fn format_frames<'s>(
     let mut remapped = remapped.peekable();
 
     if remapped.peek().is_none() {
-        return writeln!(stacktrace, "{}", line);
+        return writeln!(stacktrace, "{line}");
     }
     for line in remapped {
-        writeln!(stacktrace, "    {}", line)?;
+        writeln!(stacktrace, "    {line}")?;
     }
 
     Ok(())
@@ -546,9 +546,9 @@ pub(crate) fn format_cause(
     cause: Option<Throwable<'_>>,
 ) -> Result<(), FmtError> {
     if let Some(cause) = cause {
-        writeln!(stacktrace, "Caused by: {}", cause)
+        writeln!(stacktrace, "Caused by: {cause}")
     } else {
-        writeln!(stacktrace, "{}", line)
+        writeln!(stacktrace, "{line}")
     }
 }
 

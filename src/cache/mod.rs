@@ -333,7 +333,7 @@ impl<'data> ProguardCache<'data> {
         if let Some(line) = lines.next() {
             match stacktrace::parse_throwable(line) {
                 None => match stacktrace::parse_frame(line) {
-                    None => writeln!(&mut stacktrace, "{}", line)?,
+                    None => writeln!(&mut stacktrace, "{line}")?,
                     Some(frame) => format_frames(&mut stacktrace, line, self.remap_frame(&frame))?,
                 },
                 Some(throwable) => {
@@ -348,7 +348,7 @@ impl<'data> ProguardCache<'data> {
                     .strip_prefix("Caused by: ")
                     .and_then(stacktrace::parse_throwable)
                 {
-                    None => writeln!(&mut stacktrace, "{}", line)?,
+                    None => writeln!(&mut stacktrace, "{line}")?,
                     Some(cause) => {
                         format_cause(&mut stacktrace, line, self.remap_throwable(&cause))?
                     }

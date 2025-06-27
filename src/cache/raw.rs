@@ -65,7 +65,7 @@ pub(crate) struct Class {
 impl Class {
     /// Returns true if this class was synthesized by the compiler.
     pub(crate) fn is_synthesized(&self) -> bool {
-        self.is_synthesized != false as u32
+        self.is_synthesized != 0
     }
 }
 
@@ -79,7 +79,7 @@ impl Default for Class {
             members_len: 0,
             members_by_params_offset: u32::MAX,
             members_by_params_len: 0,
-            is_synthesized: false as u32,
+            is_synthesized: 0,
         }
     }
 }
@@ -115,7 +115,7 @@ pub(crate) struct Member {
 impl Member {
     /// Returns true if this member was synthesized by the compiler.
     pub(crate) fn is_synthesized(&self) -> bool {
-        self.is_synthesized != false as u32
+        self.is_synthesized != 0
     }
 }
 
@@ -254,7 +254,7 @@ impl<'data> ProguardCache<'data> {
                                     string_table.insert(file_name) as u32;
                             }
                             R8Header::Synthesized => {
-                                current_class.class.is_synthesized = true as u32;
+                                current_class.class.is_synthesized = 1;
                             }
                             R8Header::Other => {}
                         }
@@ -306,14 +306,14 @@ impl<'data> ProguardCache<'data> {
                         original_startline,
                         original_endline,
                         params_offset,
-                        is_synthesized: false as u32,
+                        is_synthesized: 0,
                     };
 
                     // Consume R8 headers attached to this method.
                     while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
                         match r8_header {
                             R8Header::Synthesized => {
-                                member.is_synthesized = true as u32;
+                                member.is_synthesized = 1;
                             }
                             R8Header::SourceFile { .. } | R8Header::Other => {}
                         }
@@ -427,7 +427,7 @@ impl<'data> ProguardCache<'data> {
         for class in self.classes {
             assert!(self.read_string(class.obfuscated_name_offset).is_ok());
             assert!(self.read_string(class.original_name_offset).is_ok());
-            assert!(class.is_synthesized == false as u32 || class.is_synthesized == true as u32);
+            assert!(class.is_synthesized == 0 || class.is_synthesized == 1);
 
             if class.file_name_offset != u32::MAX {
                 assert!(self.read_string(class.file_name_offset).is_ok());
@@ -443,9 +443,7 @@ impl<'data> ProguardCache<'data> {
             for member in members {
                 assert!(self.read_string(member.obfuscated_name_offset).is_ok());
                 assert!(self.read_string(member.original_name_offset).is_ok());
-                assert!(
-                    member.is_synthesized == false as u32 || member.is_synthesized == true as u32
-                );
+                assert!(member.is_synthesized == 0 || member.is_synthesized == 1);
 
                 if member.params_offset != u32::MAX {
                     assert!(self.read_string(member.params_offset).is_ok());

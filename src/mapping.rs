@@ -310,6 +310,13 @@ pub enum R8Header<'s> {
     #[serde(rename_all = "camelCase")]
     SourceFile { file_name: &'s str },
 
+    /// A synthesized header, stating that the class or method it's attached to
+    /// was synthesized by the compiler.
+    ///
+    /// See <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#synthesized-introduced-at-version-1_0>.
+    #[serde(rename = "com.android.tools.r8.synthesized")]
+    Synthesized,
+
     /// Catchall variant for headers we don't support.
     #[serde(other)]
     Other,
@@ -818,6 +825,15 @@ mod tests {
     }
 
     #[test]
+    fn try_parse_header_synthesized() {
+        let bytes = br#"# {"id":"com.android.tools.r8.synthesized"}"#;
+        assert_eq!(
+            ProguardRecord::try_parse(bytes).unwrap(),
+            ProguardRecord::R8Header(R8Header::Synthesized)
+        );
+    }
+
+    #[test]
     fn try_parse_class() {
         let bytes = b"android.support.v4.app.RemoteActionCompatParcelizer -> android.support.v4.app.RemoteActionCompatParcelizer:";
         let parsed = ProguardRecord::try_parse(bytes);
@@ -1104,7 +1120,7 @@ androidx.activity.OnBackPressedCallback
                         original_endline: Some(187),
                     }),
                 }),
-                Ok(ProguardRecord::R8Header(R8Header::Other)),
+                Ok(ProguardRecord::R8Header(R8Header::Synthesized)),
                 Err(ParseError {
                     line: b"androidx.activity.OnBackPressedCallback \n",
                     kind: ParseErrorKind::ParseError("line is not a valid proguard record"),

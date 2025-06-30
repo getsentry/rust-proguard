@@ -61,6 +61,7 @@ struct MemberMapping<'s> {
     original: &'s str,
     original_startline: usize,
     original_endline: Option<usize>,
+    is_synthesized: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -70,12 +71,13 @@ struct ClassMembers<'s> {
     mappings_by_params: HashMap<&'s str, Vec<MemberMapping<'s>>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct ClassMapping<'s> {
     original: &'s str,
     obfuscated: &'s str,
     file_name: Option<&'s str>,
     members: HashMap<&'s str, ClassMembers<'s>>,
+    is_synthesized: bool,
 }
 
 type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
@@ -84,15 +86,20 @@ type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
 #[derive(Clone, Debug, Default)]
 pub struct RemappedFrameIter<'m> {
     inner: Option<(StackFrame<'m>, MemberIter<'m>)>,
+    synthesized_class: bool,
 }
 
 impl<'m> RemappedFrameIter<'m> {
     fn empty() -> Self {
-        Self { inner: None }
+        Self {
+            inner: None,
+            synthesized_class: false,
+        }
     }
-    fn members(frame: StackFrame<'m>, members: MemberIter<'m>) -> Self {
+    fn members(frame: StackFrame<'m>, members: MemberIter<'m>, synthesized_class: bool) -> Self {
         Self {
             inner: Some((frame, members)),
+            synthesized_class,
         }
     }
 }
@@ -102,9 +109,9 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     fn next(&mut self) -> Option<Self::Item> {
         let (frame, ref mut members) = self.inner.as_mut()?;
         if frame.parameters.is_none() {
-            iterate_with_lines(frame, members)
+            iterate_with_lines(frame, members, self.synthesized_class)
         } else {
-            iterate_without_lines(frame, members)
+            iterate_without_lines(frame, members, self.synthesized_class)
         }
     }
 }
@@ -118,12 +125,14 @@ fn extract_class_name(full_path: &str) -> Option<&str> {
 fn iterate_with_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
+    synthesized_class: bool,
 ) -> Option<StackFrame<'a>> {
     for member in members {
         // skip any members which do not match our frames line
         if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline) {
             continue;
         }
+
         // parents of inlined frames don’t have an `endline`, and
         // the top inlined frame need to be correctly offset.
         let line = if member.original_endline.is_none()
@@ -133,6 +142,7 @@ fn iterate_with_lines<'a>(
         } else {
             member.original_startline + frame.line - member.startline
         };
+
         let file = if let Some(file_name) = member.original_file {
             if file_name == "R8$$SyntheticClass" {
                 extract_class_name(member.original_class.unwrap_or(frame.class))
@@ -146,16 +156,19 @@ fn iterate_with_lines<'a>(
         } else {
             frame.file
         };
+
         let class = match member.original_class {
             Some(class) => class,
             _ => frame.class,
         };
+
         return Some(StackFrame {
             class,
             method: member.original,
             file,
             line,
             parameters: frame.parameters,
+            is_synthesized: member.is_synthesized || synthesized_class,
         });
     }
     None
@@ -164,6 +177,7 @@ fn iterate_with_lines<'a>(
 fn iterate_without_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
+    synthesized_class: bool,
 ) -> Option<StackFrame<'a>> {
     let member = members.next()?;
 
@@ -177,6 +191,7 @@ fn iterate_without_lines<'a>(
         file: None,
         line: 0,
         parameters: frame.parameters,
+        is_synthesized: member.is_synthesized || synthesized_class,
     })
 }
 
@@ -226,22 +241,17 @@ impl<'s> ProguardMapper<'s> {
         initialize_param_mapping: bool,
     ) -> Self {
         let mut classes = HashMap::new();
-        let mut class = ClassMapping {
-            original: "",
-            obfuscated: "",
-            file_name: None,
-            members: HashMap::new(),
-        };
+        let mut class = ClassMapping::default();
         let mut unique_methods: HashSet<(&str, &str, &str)> = HashSet::new();
 
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {
             match record {
-                ProguardRecord::R8Header(R8Header::SourceFile { file_name }) => {
-                    class.file_name = Some(file_name);
+                ProguardRecord::R8Header(_) => {
+                    // R8 headers can be skipped; they are already
+                    // handled in the branches for `Class` and `Method`.
                 }
                 ProguardRecord::Header { .. } => {}
-                ProguardRecord::R8Header(R8Header::Other) => {}
                 ProguardRecord::Class {
                     original,
                     obfuscated,
@@ -249,13 +259,24 @@ impl<'s> ProguardMapper<'s> {
                     if !class.original.is_empty() {
                         classes.insert(class.obfuscated, class);
                     }
+
                     class = ClassMapping {
                         original,
                         obfuscated,
-                        file_name: None,
-                        members: HashMap::new(),
+                        ..Default::default()
                     };
                     unique_methods.clear();
+
+                    // consume R8 headers attached to this class
+                    while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
+                        match r8_header {
+                            R8Header::SourceFile { file_name } => class.file_name = Some(file_name),
+                            R8Header::Synthesized => class.is_synthesized = true,
+                            R8Header::Other => {}
+                        }
+
+                        records.next();
+                    }
                 }
                 ProguardRecord::Method {
                     original,
@@ -293,7 +314,7 @@ impl<'s> ProguardMapper<'s> {
                             mappings_by_params: Default::default(),
                         });
 
-                    let member_mapping = MemberMapping {
+                    let mut member_mapping = MemberMapping {
                         startline,
                         endline,
                         original_class,
@@ -301,7 +322,19 @@ impl<'s> ProguardMapper<'s> {
                         original,
                         original_startline,
                         original_endline,
+                        is_synthesized: false,
                     };
+
+                    // consume R8 headers attached to this method
+                    while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
+                        match r8_header {
+                            R8Header::Synthesized => member_mapping.is_synthesized = true,
+                            R8Header::SourceFile { .. } | R8Header::Other => {}
+                        }
+
+                        records.next();
+                    }
+
                     members.all_mappings.push(member_mapping.clone());
 
                     if !initialize_param_mapping {
@@ -333,7 +366,7 @@ impl<'s> ProguardMapper<'s> {
                             .push(member_mapping);
                     }
                 } // end ProguardRecord::Method
-                _ => {}
+                ProguardRecord::Field { .. } => {}
             }
         }
         if !class.original.is_empty() {
@@ -396,6 +429,7 @@ impl<'s> ProguardMapper<'s> {
         let Some(class) = self.classes.get(frame.class) else {
             return RemappedFrameIter::empty();
         };
+
         let Some(members) = class.members.get(frame.method) else {
             return RemappedFrameIter::empty();
         };
@@ -413,7 +447,7 @@ impl<'s> ProguardMapper<'s> {
             members.all_mappings.iter()
         };
 
-        RemappedFrameIter::members(frame, mappings)
+        RemappedFrameIter::members(frame, mappings, class.is_synthesized)
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.
@@ -580,6 +614,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 2,
                     file: Some("SourceFile"),
                     parameters: None,
+                    is_synthesized: false,
                 },
                 StackFrame {
                     class: "android.view.View",
@@ -587,6 +622,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 7393,
                     file: Some("View.java"),
                     parameters: None,
+                    is_synthesized: false,
                 },
             ],
             cause: Some(Box::new(StackTrace {
@@ -600,6 +636,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 1,
                     file: Some("SourceFile"),
                     parameters: None,
+                    is_synthesized: false,
                 }],
                 cause: None,
             })),

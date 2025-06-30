@@ -16,7 +16,6 @@ fn test_method_matches_callback_mapper() {
         28,
     ));
 
-    // The remapped frames should all be synthesized because the class is.
     assert_eq!(
         mapped.next().unwrap(),
         StackFrame::new(
@@ -24,7 +23,6 @@ fn test_method_matches_callback_mapper() {
             "onCreate$lambda$1",
             37,
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -56,7 +54,6 @@ fn test_method_matches_callback_cache() {
         28,
     ));
 
-    // The remapped frames should all be synthesized because the class is.
     assert_eq!(
         mapped.next().unwrap(),
         StackFrame::with_file(
@@ -65,7 +62,6 @@ fn test_method_matches_callback_cache() {
             37,
             "EditActivity",
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -93,7 +89,6 @@ fn test_method_matches_callback_extra_class_mapper() {
         28,
     ));
 
-    // The remapped frames should all be synthesized because the class is.
     assert_eq!(
         mapped.next().unwrap(),
         StackFrame::new(
@@ -101,7 +96,6 @@ fn test_method_matches_callback_extra_class_mapper() {
             "test2",
             10,
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -110,7 +104,6 @@ fn test_method_matches_callback_extra_class_mapper() {
             "test",
             6,
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -119,7 +112,6 @@ fn test_method_matches_callback_extra_class_mapper() {
             "onCreate$lambda$1",
             38,
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -152,7 +144,6 @@ fn test_method_matches_callback_extra_class_cache() {
         28,
     ));
 
-    // The remapped frames should all be synthesized because the class is.
     assert_eq!(
         mapped.next().unwrap(),
         StackFrame::with_file(
@@ -161,7 +152,6 @@ fn test_method_matches_callback_extra_class_cache() {
             10,
             "TestSourceContext",
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -171,7 +161,6 @@ fn test_method_matches_callback_extra_class_cache() {
             6,
             "TestSourceContext",
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -181,7 +170,6 @@ fn test_method_matches_callback_extra_class_cache() {
             38,
             "EditActivity",
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -208,7 +196,6 @@ fn test_method_matches_callback_inner_class_mapper() {
         28,
     ));
 
-    // The remapped frames should all be synthesized because the class is.
     assert_eq!(
         mapped.next().unwrap(),
         StackFrame::with_file(
@@ -217,7 +204,6 @@ fn test_method_matches_callback_inner_class_mapper() {
             19,
             "EditActivity",
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -227,7 +213,6 @@ fn test_method_matches_callback_inner_class_mapper() {
             45,
             "EditActivity",
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -260,7 +245,6 @@ fn test_method_matches_callback_inner_class_cache() {
         28,
     ));
 
-    // The remapped frames should all be synthesized because the class is.
     assert_eq!(
         mapped.next().unwrap(),
         StackFrame::with_file(
@@ -269,7 +253,6 @@ fn test_method_matches_callback_inner_class_cache() {
             19,
             "EditActivity.kt",
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),
@@ -278,7 +261,6 @@ fn test_method_matches_callback_inner_class_cache() {
             "onCreate$lambda$1",
             45,
         )
-        .with_synthesized(true)
     );
     assert_eq!(
         mapped.next().unwrap(),

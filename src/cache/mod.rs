@@ -251,7 +251,7 @@ impl<'data> ProguardCache<'data> {
             }) else {
                 return RemappedFrameIter::empty();
             };
-            RemappedFrameIter::members(self, frame, members.iter(), class.is_synthesized())
+            RemappedFrameIter::members(self, frame, members.iter())
         } else {
             let Some(members) = self.get_class_members(class) else {
                 return RemappedFrameIter::empty();
@@ -269,7 +269,7 @@ impl<'data> ProguardCache<'data> {
                 return RemappedFrameIter::empty();
             };
 
-            RemappedFrameIter::members(self, frame, members.iter(), class.is_synthesized())
+            RemappedFrameIter::members(self, frame, members.iter())
         }
     }
 
@@ -418,26 +418,20 @@ pub struct RemappedFrameIter<'r, 'data> {
         StackFrame<'data>,
         std::slice::Iter<'data, raw::Member>,
     )>,
-    synthesized_class: bool,
 }
 
 impl<'data> RemappedFrameIter<'_, 'data> {
     fn empty() -> Self {
-        Self {
-            inner: None,
-            synthesized_class: false,
-        }
+        Self { inner: None }
     }
 
     fn members(
         cache: &'data ProguardCache<'data>,
         frame: StackFrame<'data>,
         members: std::slice::Iter<'data, raw::Member>,
-        synthesized_class: bool,
     ) -> Self {
         Self {
             inner: Some((cache, frame, members)),
-            synthesized_class,
         }
     }
 }
@@ -448,9 +442,9 @@ impl<'data> Iterator for RemappedFrameIter<'_, 'data> {
     fn next(&mut self) -> Option<Self::Item> {
         let (cache, frame, members) = self.inner.as_mut()?;
         if frame.parameters.is_none() {
-            iterate_with_lines(cache, frame, members, self.synthesized_class)
+            iterate_with_lines(cache, frame, members)
         } else {
-            iterate_without_lines(cache, frame, members, self.synthesized_class)
+            iterate_without_lines(cache, frame, members)
         }
     }
 }
@@ -459,7 +453,6 @@ fn iterate_with_lines<'a>(
     cache: &ProguardCache<'a>,
     frame: &mut StackFrame<'a>,
     members: &mut std::slice::Iter<'_, raw::Member>,
-    synthesized_class: bool,
 ) -> Option<StackFrame<'a>> {
     for member in members {
         // skip any members which do not match our frames line
@@ -510,7 +503,7 @@ fn iterate_with_lines<'a>(
             file,
             line,
             parameters: frame.parameters,
-            is_synthesized: member.is_synthesized() || synthesized_class,
+            is_synthesized: member.is_synthesized(),
         });
     }
     None
@@ -520,7 +513,6 @@ fn iterate_without_lines<'a>(
     cache: &ProguardCache<'a>,
     frame: &mut StackFrame<'a>,
     members: &mut std::slice::Iter<'_, raw::Member>,
-    synthesized_class: bool,
 ) -> Option<StackFrame<'a>> {
     let member = members.next()?;
 
@@ -536,7 +528,7 @@ fn iterate_without_lines<'a>(
         file: None,
         line: 0,
         parameters: frame.parameters,
-        is_synthesized: member.is_synthesized() || synthesized_class,
+        is_synthesized: member.is_synthesized(),
     })
 }
 

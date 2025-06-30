@@ -74,6 +74,7 @@ struct ClassMembers<'s> {
 struct ClassMapping<'s> {
     original: &'s str,
     members: HashMap<&'s str, ClassMembers<'s>>,
+    // Note: It's currently unknown what effect a synthesized class has.
     is_synthesized: bool,
 }
 
@@ -83,20 +84,15 @@ type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
 #[derive(Clone, Debug, Default)]
 pub struct RemappedFrameIter<'m> {
     inner: Option<(StackFrame<'m>, MemberIter<'m>)>,
-    synthesized_class: bool,
 }
 
 impl<'m> RemappedFrameIter<'m> {
     fn empty() -> Self {
-        Self {
-            inner: None,
-            synthesized_class: false,
-        }
+        Self { inner: None }
     }
-    fn members(frame: StackFrame<'m>, members: MemberIter<'m>, synthesized_class: bool) -> Self {
+    fn members(frame: StackFrame<'m>, members: MemberIter<'m>) -> Self {
         Self {
             inner: Some((frame, members)),
-            synthesized_class,
         }
     }
 }
@@ -106,9 +102,9 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     fn next(&mut self) -> Option<Self::Item> {
         let (frame, ref mut members) = self.inner.as_mut()?;
         if frame.parameters.is_none() {
-            iterate_with_lines(frame, members, self.synthesized_class)
+            iterate_with_lines(frame, members)
         } else {
-            iterate_without_lines(frame, members, self.synthesized_class)
+            iterate_without_lines(frame, members)
         }
     }
 }
@@ -122,7 +118,6 @@ fn extract_class_name(full_path: &str) -> Option<&str> {
 fn iterate_with_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
-    synthesized_class: bool,
 ) -> Option<StackFrame<'a>> {
     for member in members {
         // skip any members which do not match our frames line
@@ -165,7 +160,7 @@ fn iterate_with_lines<'a>(
             file,
             line,
             parameters: frame.parameters,
-            is_synthesized: member.is_synthesized || synthesized_class,
+            is_synthesized: member.is_synthesized,
         });
     }
     None
@@ -174,7 +169,6 @@ fn iterate_with_lines<'a>(
 fn iterate_without_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
-    synthesized_class: bool,
 ) -> Option<StackFrame<'a>> {
     let member = members.next()?;
 
@@ -188,7 +182,7 @@ fn iterate_without_lines<'a>(
         file: None,
         line: 0,
         parameters: frame.parameters,
-        is_synthesized: member.is_synthesized || synthesized_class,
+        is_synthesized: member.is_synthesized,
     })
 }
 
@@ -393,7 +387,7 @@ impl<'s> ProguardMapper<'s> {
             members.all_mappings.iter()
         };
 
-        RemappedFrameIter::members(frame, mappings, class.is_synthesized)
+        RemappedFrameIter::members(frame, mappings)
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.

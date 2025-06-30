@@ -59,6 +59,9 @@ pub(crate) struct Class {
     /// Whether this class was synthesized by the compiler.
     ///
     /// `0` means `false`, all other values mean `true`.
+    ///
+    /// Note: It's currently unknown what effect a synthesized
+    /// class has.
     pub(crate) is_synthesized: u8,
 
     /// Reserved space.

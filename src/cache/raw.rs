@@ -59,7 +59,10 @@ pub(crate) struct Class {
     /// Whether this class was synthesized by the compiler.
     ///
     /// `0` means `false`, all other values mean `true`.
-    pub(crate) is_synthesized: u32,
+    pub(crate) is_synthesized: u8,
+
+    /// Reserved space.
+    pub(crate) _reserved: [u8; 3],
 }
 
 impl Class {
@@ -80,6 +83,7 @@ impl Default for Class {
             members_by_params_offset: u32::MAX,
             members_by_params_len: 0,
             is_synthesized: 0,
+            _reserved: [0; 3],
         }
     }
 }
@@ -109,7 +113,10 @@ pub(crate) struct Member {
     /// Whether this member was synthesized by the compiler.
     ///
     /// `0` means `false`, all other values mean `true`.
-    pub(crate) is_synthesized: u32,
+    pub(crate) is_synthesized: u8,
+
+    /// Reserved space.
+    pub(crate) _reserved: [u8; 3],
 }
 
 impl Member {
@@ -230,7 +237,7 @@ impl<'data> ProguardCache<'data> {
                     class: Class {
                         original_name_offset,
                         obfuscated_name_offset,
-                        is_synthesized: is_synthesized as u32,
+                        is_synthesized: is_synthesized as u8,
                         ..Default::default()
                     },
                     ..Default::default()
@@ -358,7 +365,7 @@ impl<'data> ProguardCache<'data> {
             .get(&member.method)
             .copied()
             .unwrap_or_default();
-        let is_synthesized = method_info.is_synthesized as u32;
+        let is_synthesized = method_info.is_synthesized as u8;
 
         Member {
             startline: member.startline as u32,
@@ -371,6 +378,7 @@ impl<'data> ProguardCache<'data> {
             obfuscated_name_offset,
             params_offset,
             is_synthesized,
+            _reserved: [0; 3],
         }
     }
 

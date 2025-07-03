@@ -1,12 +1,11 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
+use crate::builder::{Member, ParsedProguardMapping};
 use crate::java;
-use crate::mapping::R8Header;
-use crate::mapping::{ProguardMapping, ProguardRecord};
+use crate::mapping::ProguardMapping;
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
 
 /// A deobfuscated method signature.
@@ -50,59 +49,6 @@ impl fmt::Display for DeobfuscatedSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.format_signature())
     }
-}
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-struct ObfuscatedName<'s>(&'s str);
-
-impl std::ops::Deref for ObfuscatedName<'_> {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-struct OriginalName<'s>(&'s str);
-
-impl std::ops::Deref for OriginalName<'_> {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-struct ClassInfo<'s> {
-    source_file: Option<&'s str>,
-    members: HashMap<ObfuscatedName<'s>, Members<'s>>,
-}
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-struct MethodKey<'s> {
-    class: OriginalName<'s>,
-    name: OriginalName<'s>,
-    arguments: &'s str,
-}
-
-#[derive(Clone, Debug, Default)]
-struct MethodInfo {}
-
-#[derive(Clone, Debug)]
-struct Member<'s> {
-    method: MethodKey<'s>,
-    startline: usize,
-    endline: usize,
-    original_startline: usize,
-    original_endline: Option<usize>,
-}
-
-#[derive(Clone, Debug, Default)]
-struct Members<'s> {
-    all: Vec<Member<'s>>,
-    by_params: HashMap<&'s str, Vec<Member<'s>>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -276,153 +222,29 @@ impl<'s> ProguardMapper<'s> {
         mapping: ProguardMapping<'s>,
         initialize_param_mapping: bool,
     ) -> Self {
-        let mut classes = HashMap::new();
-        let mut methods = HashMap::new();
-        let mut class_name_mapping = HashMap::new();
-        // let mut method_name_mapping: HashMap::new();
-        let mut current_class_name = None;
-        let mut current_class = ClassInfo::default();
-        let mut unique_methods: HashSet<(&str, &str, &str)> = HashSet::new();
-
-        let mut records = mapping.iter().filter_map(Result::ok).peekable();
-        while let Some(record) = records.next() {
-            match record {
-                ProguardRecord::Header { .. } => {}
-                ProguardRecord::R8Header(_) => {}
-                ProguardRecord::Class {
-                    original,
-                    obfuscated,
-                } => {
-                    // Flush the previous class if there is one.
-                    if let Some(name) = current_class_name {
-                        classes.insert(name, current_class);
-                    }
-                    let key = OriginalName(original);
-                    current_class_name = Some(key);
-                    current_class = ClassInfo::default();
-                    class_name_mapping.insert(ObfuscatedName(obfuscated), key);
-                    unique_methods.clear();
-
-                    // consume R8 headers attached to this class
-                    while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
-                        match r8_header {
-                            R8Header::SourceFile { file_name } => {
-                                current_class.source_file = Some(file_name);
-                            }
-                            R8Header::Other => {}
-                        }
-
-                        records.next();
-                    }
-                }
-
-                ProguardRecord::Method {
-                    original,
-                    obfuscated,
-                    original_class,
-                    line_mapping,
-                    arguments,
-                    ..
-                } => {
-                    let current_line = if initialize_param_mapping {
-                        line_mapping
-                    } else {
-                        None
-                    };
-                    // in case the mapping has no line records, we use `0` here.
-                    let (startline, endline) =
-                        line_mapping.as_ref().map_or((0, 0), |line_mapping| {
-                            (line_mapping.startline, line_mapping.endline)
-                        });
-                    let (original_startline, original_endline) =
-                        line_mapping.map_or((0, None), |line_mapping| {
-                            match line_mapping.original_startline {
-                                Some(original_startline) => {
-                                    (original_startline, line_mapping.original_endline)
-                                }
-                                None => (line_mapping.startline, Some(line_mapping.endline)),
-                            }
-                        });
-
-                    let members = current_class
-                        .members
-                        .entry(ObfuscatedName(obfuscated))
-                        .or_default();
-
-                    let method = MethodKey {
-                        class: original_class
-                            .map(OriginalName)
-                            .or(current_class_name)
-                            .unwrap(),
-                        name: OriginalName(original),
-                        arguments,
-                    };
-
-                    let _method_info: &mut MethodInfo = methods.entry(method).or_default();
-                    let member = Member {
-                        method,
-                        startline,
-                        endline,
-                        original_startline,
-                        original_endline,
-                    };
-
-                    members.all.push(member.clone());
-
-                    if !initialize_param_mapping {
-                        continue;
-                    }
-                    // If the next line has the same leading line range then this method
-                    // has been inlined by the code minification process, as a result
-                    // it can't show in method traces and can be safely ignored.
-                    if let Some(ProguardRecord::Method {
-                        line_mapping: Some(next_line),
-                        ..
-                    }) = records.peek()
-                    {
-                        if let Some(current_line_mapping) = current_line {
-                            if (current_line_mapping.startline == next_line.startline)
-                                && (current_line_mapping.endline == next_line.endline)
-                            {
-                                continue;
-                            }
-                        }
-                    }
-
-                    let key = (obfuscated, arguments, original);
-                    if unique_methods.insert(key) {
-                        members
-                            .by_params
-                            .entry(arguments)
-                            .or_insert_with(|| Vec::with_capacity(1))
-                            .push(member);
-                    }
-                } // end ProguardRecord::Method
-                ProguardRecord::Field { .. } => {}
-            }
-        }
-
-        if let Some(name) = current_class_name {
-            classes.insert(name, current_class);
-        }
+        let ParsedProguardMapping {
+            class_names,
+            mut classes,
+        } = ParsedProguardMapping::parse(mapping, initialize_param_mapping);
 
         let mut class_mappings = HashMap::new();
 
-        for (obfuscated, original) in class_name_mapping {
+        for (obfuscated, original) in class_names {
             let Some(class) = classes.get_mut(&original) else {
                 continue;
             };
 
-            let class_mapping: &mut ClassMapping = class_mappings.entry(obfuscated.0).or_default();
+            let class_mapping: &mut ClassMapping =
+                class_mappings.entry(obfuscated.as_str()).or_default();
 
-            class_mapping.original = original.0;
+            class_mapping.original = original.as_str();
 
             let class_members = std::mem::take(&mut class.members);
 
             for (obfuscated_method, members) in class_members {
                 let method_mappings = class_mapping
                     .members
-                    .entry(obfuscated_method.0)
+                    .entry(obfuscated_method.as_str())
                     .or_default();
                 for Member {
                     method,
@@ -438,9 +260,9 @@ impl<'s> ProguardMapper<'s> {
                     let member_mapping = MemberMapping {
                         startline,
                         endline,
-                        original_class: original_class_name.map(|name| name.0),
+                        original_class: original_class_name.map(|name| name.as_str()),
                         original_file: original_class.and_then(|class| class.source_file),
-                        original: method.name.0,
+                        original: method.name.as_str(),
                         original_startline,
                         original_endline,
                     };
@@ -464,9 +286,9 @@ impl<'s> ProguardMapper<'s> {
                         let member_mapping = MemberMapping {
                             startline,
                             endline,
-                            original_class: original_class_name.map(|name| name.0),
+                            original_class: original_class_name.map(|name| name.as_str()),
                             original_file: original_class.and_then(|class| class.source_file),
-                            original: method.name.0,
+                            original: method.name.as_str(),
                             original_startline,
                             original_endline,
                         };

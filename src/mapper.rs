@@ -52,6 +52,59 @@ impl fmt::Display for DeobfuscatedSignature {
     }
 }
 
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+struct ObfuscatedName<'s>(&'s str);
+
+impl std::ops::Deref for ObfuscatedName<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+struct OriginalName<'s>(&'s str);
+
+impl std::ops::Deref for OriginalName<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct ClassInfo<'s> {
+    source_file: Option<&'s str>,
+    members: HashMap<ObfuscatedName<'s>, Members<'s>>,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+struct MethodKey<'s> {
+    class: OriginalName<'s>,
+    name: OriginalName<'s>,
+    arguments: &'s str,
+}
+
+#[derive(Clone, Debug, Default)]
+struct MethodInfo {}
+
+#[derive(Clone, Debug)]
+struct Member<'s> {
+    method: MethodKey<'s>,
+    startline: usize,
+    endline: usize,
+    original_startline: usize,
+    original_endline: Option<usize>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct Members<'s> {
+    all: Vec<Member<'s>>,
+    by_params: HashMap<&'s str, Vec<Member<'s>>>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct MemberMapping<'s> {
     startline: usize,
@@ -63,18 +116,16 @@ struct MemberMapping<'s> {
     original_endline: Option<usize>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct ClassMembers<'s> {
     all_mappings: Vec<MemberMapping<'s>>,
     // method_params -> Vec[MemberMapping]
     mappings_by_params: HashMap<&'s str, Vec<MemberMapping<'s>>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct ClassMapping<'s> {
     original: &'s str,
-    obfuscated: &'s str,
-    file_name: Option<&'s str>,
     members: HashMap<&'s str, ClassMembers<'s>>,
 }
 
@@ -226,37 +277,45 @@ impl<'s> ProguardMapper<'s> {
         initialize_param_mapping: bool,
     ) -> Self {
         let mut classes = HashMap::new();
-        let mut class = ClassMapping {
-            original: "",
-            obfuscated: "",
-            file_name: None,
-            members: HashMap::new(),
-        };
+        let mut methods = HashMap::new();
+        let mut class_name_mapping = HashMap::new();
+        // let mut method_name_mapping: HashMap::new();
+        let mut current_class_name = None;
+        let mut current_class = ClassInfo::default();
         let mut unique_methods: HashSet<(&str, &str, &str)> = HashSet::new();
 
         let mut records = mapping.iter().filter_map(Result::ok).peekable();
         while let Some(record) = records.next() {
             match record {
-                ProguardRecord::R8Header(R8Header::SourceFile { file_name }) => {
-                    class.file_name = Some(file_name);
-                }
                 ProguardRecord::Header { .. } => {}
-                ProguardRecord::R8Header(R8Header::Other) => {}
+                ProguardRecord::R8Header(_) => {}
                 ProguardRecord::Class {
                     original,
                     obfuscated,
                 } => {
-                    if !class.original.is_empty() {
-                        classes.insert(class.obfuscated, class);
+                    // Flush the previous class if there is one.
+                    if let Some(name) = current_class_name {
+                        classes.insert(name, current_class);
                     }
-                    class = ClassMapping {
-                        original,
-                        obfuscated,
-                        file_name: None,
-                        members: HashMap::new(),
-                    };
+                    let key = OriginalName(original);
+                    current_class_name = Some(key);
+                    current_class = ClassInfo::default();
+                    class_name_mapping.insert(ObfuscatedName(obfuscated), key);
                     unique_methods.clear();
+
+                    // consume R8 headers attached to this class
+                    while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
+                        match r8_header {
+                            R8Header::SourceFile { file_name } => {
+                                current_class.source_file = Some(file_name);
+                            }
+                            R8Header::Other => {}
+                        }
+
+                        records.next();
+                    }
                 }
+
                 ProguardRecord::Method {
                     original,
                     obfuscated,
@@ -285,24 +344,30 @@ impl<'s> ProguardMapper<'s> {
                             }
                         });
 
-                    let members = class
+                    let members = current_class
                         .members
-                        .entry(obfuscated)
-                        .or_insert_with(|| ClassMembers {
-                            all_mappings: Vec::with_capacity(1),
-                            mappings_by_params: Default::default(),
-                        });
+                        .entry(ObfuscatedName(obfuscated))
+                        .or_default();
 
-                    let member_mapping = MemberMapping {
+                    let method = MethodKey {
+                        class: original_class
+                            .map(OriginalName)
+                            .or(current_class_name)
+                            .unwrap(),
+                        name: OriginalName(original),
+                        arguments,
+                    };
+
+                    let _method_info: &mut MethodInfo = methods.entry(method).or_default();
+                    let member = Member {
+                        method,
                         startline,
                         endline,
-                        original_class,
-                        original_file: class.file_name,
-                        original,
                         original_startline,
                         original_endline,
                     };
-                    members.all_mappings.push(member_mapping.clone());
+
+                    members.all.push(member.clone());
 
                     if !initialize_param_mapping {
                         continue;
@@ -327,20 +392,94 @@ impl<'s> ProguardMapper<'s> {
                     let key = (obfuscated, arguments, original);
                     if unique_methods.insert(key) {
                         members
-                            .mappings_by_params
+                            .by_params
                             .entry(arguments)
                             .or_insert_with(|| Vec::with_capacity(1))
-                            .push(member_mapping);
+                            .push(member);
                     }
                 } // end ProguardRecord::Method
-                _ => {}
+                ProguardRecord::Field { .. } => {}
             }
         }
-        if !class.original.is_empty() {
-            classes.insert(class.obfuscated, class);
+
+        if let Some(name) = current_class_name {
+            classes.insert(name, current_class);
         }
 
-        Self { classes }
+        let mut class_mappings = HashMap::new();
+
+        for (obfuscated, original) in class_name_mapping {
+            let Some(class) = classes.get_mut(&original) else {
+                continue;
+            };
+
+            let class_mapping: &mut ClassMapping = class_mappings.entry(obfuscated.0).or_default();
+
+            class_mapping.original = original.0;
+
+            let class_members = std::mem::take(&mut class.members);
+
+            for (obfuscated_method, members) in class_members {
+                let method_mappings = class_mapping
+                    .members
+                    .entry(obfuscated_method.0)
+                    .or_default();
+                for Member {
+                    method,
+                    startline,
+                    endline,
+                    original_startline,
+                    original_endline,
+                } in members.all
+                {
+                    let original_class = classes.get(&method.class);
+                    let original_class_name =
+                        Some(&method.class).filter(|cn| **cn != original).copied();
+                    let member_mapping = MemberMapping {
+                        startline,
+                        endline,
+                        original_class: original_class_name.map(|name| name.0),
+                        original_file: original_class.and_then(|class| class.source_file),
+                        original: method.name.0,
+                        original_startline,
+                        original_endline,
+                    };
+
+                    method_mappings.all_mappings.push(member_mapping);
+                }
+
+                for (args, arg_members) in members.by_params {
+                    let arg_mappings = method_mappings.mappings_by_params.entry(args).or_default();
+                    for Member {
+                        method,
+                        startline,
+                        endline,
+                        original_startline,
+                        original_endline,
+                    } in arg_members
+                    {
+                        let original_class = classes.get(&method.class);
+                        let original_class_name =
+                            Some(&method.class).filter(|cn| **cn != original).copied();
+                        let member_mapping = MemberMapping {
+                            startline,
+                            endline,
+                            original_class: original_class_name.map(|name| name.0),
+                            original_file: original_class.and_then(|class| class.source_file),
+                            original: method.name.0,
+                            original_startline,
+                            original_endline,
+                        };
+
+                        arg_mappings.push(member_mapping);
+                    }
+                }
+            }
+        }
+
+        Self {
+            classes: class_mappings,
+        }
     }
 
     /// Remaps an obfuscated Class.
@@ -617,8 +756,8 @@ Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
         let mapper = ProguardMapper::from(mapping);
 
         assert_eq!(
-            expect,
-            mapper.remap_stacktrace_typed(&stacktrace).to_string()
+            mapper.remap_stacktrace_typed(&stacktrace).to_string(),
+            expect
         );
     }
 
@@ -654,6 +793,6 @@ Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
 
         let mapper = ProguardMapper::from(mapping);
 
-        assert_eq!(expect, mapper.remap_stacktrace(stacktrace).unwrap());
+        assert_eq!(mapper.remap_stacktrace(stacktrace).unwrap(), expect);
     }
 }

@@ -467,7 +467,7 @@ fn iterate_with_lines<'a>(
             .read_string(member.original_class_offset)
             .unwrap_or(frame.class);
 
-        let file = if member.original_file_offset != u32::MAX {
+        let file = if dbg!(member.original_file_offset) != u32::MAX {
             let Ok(file_name) = cache.read_string(member.original_file_offset) else {
                 continue;
             };
@@ -477,12 +477,12 @@ fn iterate_with_lines<'a>(
             } else {
                 Some(file_name)
             }
-        } else if member.original_class_offset != u32::MAX {
+        } else if dbg!(member.original_class_offset) != u32::MAX {
             // when an inlined function is from a foreign class, we
             // don’t know the file it is defined in.
             None
         } else {
-            frame.file
+            dbg!(frame.file)
         };
 
         let Ok(method) = cache.read_string(member.original_name_offset) else {

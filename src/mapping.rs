@@ -134,7 +134,7 @@ impl<'s> MappingSummary<'s> {
 }
 
 /// A Proguard Mapping file.
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct ProguardMapping<'s> {
     source: &'s [u8],
 }

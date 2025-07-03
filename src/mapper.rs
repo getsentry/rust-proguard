@@ -222,85 +222,82 @@ impl<'s> ProguardMapper<'s> {
         mapping: ProguardMapping<'s>,
         initialize_param_mapping: bool,
     ) -> Self {
-        let ParsedProguardMapping {
-            class_names,
-            mut classes,
-        } = ParsedProguardMapping::parse(mapping, initialize_param_mapping);
+        let parsed = ParsedProguardMapping::parse(mapping, initialize_param_mapping);
 
-        let mut class_mappings = HashMap::new();
+        // Initialize class mappings with obfuscated -> original name data. The mappings will be filled in afterwards.
+        let mut class_mappings: HashMap<&str, ClassMapping<'s>> = parsed
+            .class_names
+            .iter()
+            .map(|(obfuscated, original)| {
+                (
+                    obfuscated.as_str(),
+                    ClassMapping {
+                        original: original.as_str(),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
 
-        for (obfuscated, original) in class_names {
-            let Some(class) = classes.get_mut(&original) else {
-                continue;
-            };
+        for ((obfuscated_class, obfuscated_method), members) in &parsed.members {
+            let class_mapping = class_mappings.entry(obfuscated_class.as_str()).or_default();
 
-            let class_mapping: &mut ClassMapping =
-                class_mappings.entry(obfuscated.as_str()).or_default();
+            let method_mappings = class_mapping
+                .members
+                .entry(obfuscated_method.as_str())
+                .or_default();
 
-            class_mapping.original = original.as_str();
+            for member in members.all.iter().copied() {
+                method_mappings.all_mappings.push(Self::resolve_mapping(
+                    &parsed,
+                    class_mapping.original,
+                    member,
+                ));
+            }
 
-            let class_members = std::mem::take(&mut class.members);
+            for (args, param_members) in members.by_params.iter() {
+                let param_mappings = method_mappings.mappings_by_params.entry(args).or_default();
 
-            for (obfuscated_method, members) in class_members {
-                let method_mappings = class_mapping
-                    .members
-                    .entry(obfuscated_method.as_str())
-                    .or_default();
-                for Member {
-                    method,
-                    startline,
-                    endline,
-                    original_startline,
-                    original_endline,
-                } in members.all
-                {
-                    let original_class = classes.get(&method.class);
-                    let original_class_name =
-                        Some(&method.class).filter(|cn| **cn != original).copied();
-                    let member_mapping = MemberMapping {
-                        startline,
-                        endline,
-                        original_class: original_class_name.map(|name| name.as_str()),
-                        original_file: original_class.and_then(|class| class.source_file),
-                        original: method.name.as_str(),
-                        original_startline,
-                        original_endline,
-                    };
-
-                    method_mappings.all_mappings.push(member_mapping);
-                }
-
-                for (args, arg_members) in members.by_params {
-                    let arg_mappings = method_mappings.mappings_by_params.entry(args).or_default();
-                    for Member {
-                        method,
-                        startline,
-                        endline,
-                        original_startline,
-                        original_endline,
-                    } in arg_members
-                    {
-                        let original_class = classes.get(&method.class);
-                        let original_class_name =
-                            Some(&method.class).filter(|cn| **cn != original).copied();
-                        let member_mapping = MemberMapping {
-                            startline,
-                            endline,
-                            original_class: original_class_name.map(|name| name.as_str()),
-                            original_file: original_class.and_then(|class| class.source_file),
-                            original: method.name.as_str(),
-                            original_startline,
-                            original_endline,
-                        };
-
-                        arg_mappings.push(member_mapping);
-                    }
+                for member in param_members {
+                    param_mappings.push(Self::resolve_mapping(
+                        &parsed,
+                        class_mapping.original,
+                        *member,
+                    ));
                 }
             }
         }
 
         Self {
             classes: class_mappings,
+        }
+    }
+
+    fn resolve_mapping(
+        parsed: &ParsedProguardMapping<'s>,
+        current_class_name: &str,
+        member: Member<'s>,
+    ) -> MemberMapping<'s> {
+        let original_file = parsed
+            .classes
+            .get(&member.method.class)
+            .and_then(|class| class.source_file);
+
+        // Only fill in `original_class` if it is _not_ the current class
+        let original_class_name = if member.method.class.as_str() != current_class_name {
+            Some(member.method.class.as_str())
+        } else {
+            None
+        };
+
+        MemberMapping {
+            startline: member.startline,
+            endline: member.endline,
+            original_class: original_class_name,
+            original_file,
+            original: member.method.name.as_str(),
+            original_startline: member.original_startline,
+            original_endline: member.original_endline,
         }
     }
 

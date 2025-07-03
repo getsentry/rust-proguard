@@ -39,7 +39,6 @@ impl std::ops::Deref for OriginalName<'_> {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ClassInfo<'s> {
     pub(crate) source_file: Option<&'s str>,
-    pub(crate) members: HashMap<ObfuscatedName<'s>, Members<'s>>,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -67,18 +66,17 @@ pub(crate) struct Members<'s> {
     pub(crate) by_params: HashMap<&'s str, Vec<Member<'s>>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct ParsedProguardMapping<'s> {
     pub(crate) class_names: HashMap<ObfuscatedName<'s>, OriginalName<'s>>,
     pub(crate) classes: HashMap<OriginalName<'s>, ClassInfo<'s>>,
+    pub(crate) methods: HashMap<MethodKey<'s>, MethodInfo>,
+    pub(crate) members: HashMap<(ObfuscatedName<'s>, ObfuscatedName<'s>), Members<'s>>,
 }
 
 impl<'s> ParsedProguardMapping<'s> {
     pub(crate) fn parse(mapping: ProguardMapping<'s>, initialize_param_mapping: bool) -> Self {
-        let mut classes = HashMap::new();
-        let mut methods = HashMap::new();
-        let mut class_names = HashMap::new();
-        // let mut method_name_mapping: HashMap::new();
+        let mut slf = Self::default();
         let mut current_class_name = None;
         let mut current_class = ClassInfo::default();
         let mut unique_methods: HashSet<(&str, &str, &str)> = HashSet::new();
@@ -95,13 +93,14 @@ impl<'s> ParsedProguardMapping<'s> {
                     obfuscated,
                 } => {
                     // Flush the previous class if there is one.
-                    if let Some(name) = current_class_name {
-                        classes.insert(name, current_class);
+                    if let Some((obfuscated, original)) = current_class_name {
+                        slf.class_names.insert(obfuscated, original);
+                        slf.classes.insert(original, current_class);
                     }
-                    let key = OriginalName(original);
-                    current_class_name = Some(key);
+                    let new_orig = OriginalName(original);
+                    let new_obfus = ObfuscatedName(obfuscated);
+                    current_class_name = Some((new_obfus, new_orig));
                     current_class = ClassInfo::default();
-                    class_names.insert(ObfuscatedName(obfuscated), key);
                     unique_methods.clear();
 
                     // consume R8 headers attached to this class
@@ -145,21 +144,28 @@ impl<'s> ParsedProguardMapping<'s> {
                             }
                         });
 
-                    let members = current_class
+                    let Some((current_class_obfuscated, current_class_original)) =
+                        current_class_name
+                    else {
+                        return Self::default();
+                    };
+
+                    let members = slf
                         .members
-                        .entry(ObfuscatedName(obfuscated))
+                        .entry((current_class_obfuscated, ObfuscatedName(obfuscated)))
                         .or_default();
 
                     let method = MethodKey {
                         class: original_class
                             .map(OriginalName)
-                            .or(current_class_name)
-                            .unwrap(),
+                            .unwrap_or(current_class_original),
                         name: OriginalName(original),
                         arguments,
                     };
 
-                    let _method_info: &mut MethodInfo = methods.entry(method).or_default();
+                    // This does nothing for now because we are not saving any per-method information.
+                    let _method_info: &mut MethodInfo = slf.methods.entry(method).or_default();
+
                     let member = Member {
                         method,
                         startline,
@@ -202,13 +208,12 @@ impl<'s> ParsedProguardMapping<'s> {
             }
         }
 
-        if let Some(name) = current_class_name {
-            classes.insert(name, current_class);
+        // Flush the last class
+        if let Some((obfuscated, original)) = current_class_name {
+            slf.class_names.insert(obfuscated, original);
+            slf.classes.insert(original, current_class);
         }
 
-        Self {
-            classes,
-            class_names,
-        }
+        slf
     }
 }

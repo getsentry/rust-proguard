@@ -3,7 +3,7 @@ use std::fmt;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
-use crate::builder::{Member, ParsedProguardMapping};
+use crate::builder::{Member, MethodReceiver, ParsedProguardMapping};
 use crate::java;
 use crate::mapping::ProguardMapping;
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
@@ -248,22 +248,16 @@ impl<'s> ProguardMapper<'s> {
                 .or_default();
 
             for member in members.all.iter().copied() {
-                method_mappings.all_mappings.push(Self::resolve_mapping(
-                    &parsed,
-                    class_mapping.original,
-                    member,
-                ));
+                method_mappings
+                    .all_mappings
+                    .push(Self::resolve_mapping(&parsed, member));
             }
 
             for (args, param_members) in members.by_params.iter() {
                 let param_mappings = method_mappings.mappings_by_params.entry(args).or_default();
 
                 for member in param_members {
-                    param_mappings.push(Self::resolve_mapping(
-                        &parsed,
-                        class_mapping.original,
-                        *member,
-                    ));
+                    param_mappings.push(Self::resolve_mapping(&parsed, *member));
                 }
             }
         }
@@ -275,25 +269,23 @@ impl<'s> ProguardMapper<'s> {
 
     fn resolve_mapping(
         parsed: &ParsedProguardMapping<'s>,
-        current_class_name: &str,
         member: Member<'s>,
     ) -> MemberMapping<'s> {
         let original_file = parsed
             .class_infos
-            .get(&member.method.class)
+            .get(&member.method.receiver.name())
             .and_then(|class| class.source_file);
 
         // Only fill in `original_class` if it is _not_ the current class
-        let original_class_name = if member.method.class.as_str() != current_class_name {
-            Some(member.method.class.as_str())
-        } else {
-            None
+        let original_class = match member.method.receiver {
+            MethodReceiver::ThisClass(_) => None,
+            MethodReceiver::OtherClass(original_class_name) => Some(original_class_name.as_str()),
         };
 
         MemberMapping {
             startline: member.startline,
             endline: member.endline,
-            original_class: original_class_name,
+            original_class,
             original_file,
             original: member.method.name.as_str(),
             original_startline: member.original_startline,

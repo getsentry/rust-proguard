@@ -4,6 +4,7 @@
 //! [`ProguardCache`](crate::ProguardCache).
 
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 use crate::{mapping::R8Header, ProguardMapping, ProguardRecord};
 
@@ -50,11 +51,59 @@ pub(crate) struct ClassInfo<'s> {
     pub(crate) source_file: Option<&'s str>,
 }
 
+/// The receiver of a method.
+///
+/// This enum is used to keep track of whether
+/// a method's receiver is the class under which
+/// it is encountered (`ThisClass`) or another
+/// class (`OtherClass`).
+///
+/// # Example
+/// Consider this mapping:
+/// ```text
+/// example.Main -> a:
+///     1:1 run() 1:1 -> a
+///     2:2 example.Other.run() 1:1 -> b
+/// ```
+/// The `receiver` of the first method would be
+/// `ThisClass("example.Main")` (because it is defined
+/// under `"example.Main"` and has no explicit receiver),
+/// while the receiver of the second method would be
+/// `OtherClass("example.Other")`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum MethodReceiver<'s> {
+    ThisClass(OriginalName<'s>),
+    OtherClass(OriginalName<'s>),
+}
+
+impl<'s> MethodReceiver<'s> {
+    pub(crate) fn name(&self) -> OriginalName<'s> {
+        match self {
+            Self::ThisClass(name) => *name,
+            Self::OtherClass(name) => *name,
+        }
+    }
+}
+
+impl PartialEq for MethodReceiver<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name() == other.name()
+    }
+}
+
+impl Eq for MethodReceiver<'_> {}
+
+impl std::hash::Hash for MethodReceiver<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name().hash(state)
+    }
+}
+
 /// A key that uniquely identifies a method.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct MethodKey<'s> {
     /// The method's receiver.
-    pub(crate) class: OriginalName<'s>,
+    pub(crate) receiver: MethodReceiver<'s>,
     /// The method's name.
     pub(crate) name: OriginalName<'s>,
     /// The method's argument string.
@@ -190,9 +239,14 @@ impl<'s> ParsedProguardMapping<'s> {
                         .or_default();
 
                     let method = MethodKey {
-                        class: original_class
-                            .map(OriginalName)
-                            .unwrap_or(current_class_original),
+                        // Save the receiver name, keeping track of whether it's the current class
+                        // (i.e. the one to which this member record belongs) or another class.
+                        receiver: match original_class {
+                            Some(original_class) => {
+                                MethodReceiver::OtherClass(OriginalName(original_class))
+                            }
+                            None => MethodReceiver::ThisClass(current_class_original),
+                        },
                         name: OriginalName(original),
                         arguments,
                     };

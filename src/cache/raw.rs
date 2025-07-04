@@ -226,7 +226,6 @@ impl<'data> ProguardCache<'data> {
                     &mut string_table,
                     &parsed,
                     obfuscated_method_offset,
-                    current_class.class.original_name_offset,
                     member,
                 ));
                 current_class.class.members_len += 1;
@@ -243,7 +242,6 @@ impl<'data> ProguardCache<'data> {
                         &mut string_table,
                         &parsed,
                         obfuscated_method_offset,
-                        current_class.class.original_name_offset,
                         *member,
                     ));
                     current_class.class.members_by_params_len += 1;
@@ -326,25 +324,21 @@ impl<'data> ProguardCache<'data> {
         string_table: &mut StringTable,
         parsed: &ParsedProguardMapping<'_>,
         obfuscated_name_offset: u32,
-        current_class_name_offset: u32,
         member: builder::Member,
     ) -> Member {
         let original_file = parsed
             .class_infos
-            .get(&member.method.class)
+            .get(&member.method.receiver.name())
             .and_then(|class| class.source_file);
 
         let original_file_offset =
             original_file.map_or(u32::MAX, |s| string_table.insert(s) as u32);
         let original_name_offset = string_table.insert(member.method.name.as_str()) as u32;
 
-        let method_class_offset = string_table.insert(member.method.class.as_str()) as u32;
-
         // Only fill in `original_class` if it is _not_ the current class
-        let original_class_offset = if method_class_offset != current_class_name_offset {
-            method_class_offset
-        } else {
-            u32::MAX
+        let original_class_offset = match member.method.receiver {
+            builder::MethodReceiver::ThisClass(_) => u32::MAX,
+            builder::MethodReceiver::OtherClass(name) => string_table.insert(name.as_str()) as u32,
         };
 
         let params_offset = string_table.insert(member.method.arguments) as u32;

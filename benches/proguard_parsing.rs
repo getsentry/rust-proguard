@@ -18,7 +18,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("Proguard Parsing");
     group.bench_function("Proguard Mapper", |b| {
-        b.iter(|| proguard_mapper(black_box(mapping.clone())))
+        b.iter(|| proguard_mapper(black_box(mapping)))
     });
 
     group.bench_function("Proguard Cache creation", |b| {

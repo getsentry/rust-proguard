@@ -1,11 +1,10 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::Write;
 
 use watto::{Pod, StringTable};
 
 use crate::builder::{self, ParsedProguardMapping};
-use crate::mapping::R8Header;
-use crate::{ProguardMapping, ProguardRecord};
+use crate::ProguardMapping;
 
 use super::{CacheError, CacheErrorKind};
 
@@ -331,7 +330,7 @@ impl<'data> ProguardCache<'data> {
         member: builder::Member,
     ) -> Member {
         let original_file = parsed
-            .classes
+            .class_infos
             .get(&member.method.class)
             .and_then(|class| class.source_file);
 

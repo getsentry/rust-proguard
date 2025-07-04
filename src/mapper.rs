@@ -279,7 +279,7 @@ impl<'s> ProguardMapper<'s> {
         member: Member<'s>,
     ) -> MemberMapping<'s> {
         let original_file = parsed
-            .classes
+            .class_infos
             .get(&member.method.class)
             .and_then(|class| class.source_file);
 

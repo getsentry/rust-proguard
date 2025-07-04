@@ -1,7 +1,13 @@
+//! Contains functionality for parsing ProGuard mapping files into a
+//! structured representation ([`ParsedProguardMapping`]) that can be
+//! used to create a [`ProguardMapper`](crate::ProguardMapper) or
+//! [`ProguardCache`](crate::ProguardCache).
+
 use std::collections::{HashMap, HashSet};
 
 use crate::{mapping::R8Header, ProguardMapping, ProguardRecord};
 
+/// Newtype around &str for obfuscated class and method names.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct ObfuscatedName<'s>(&'s str);
 
@@ -19,6 +25,7 @@ impl std::ops::Deref for ObfuscatedName<'_> {
     }
 }
 
+/// Newtype around &str for original class and method names.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct OriginalName<'s>(&'s str);
 
@@ -36,41 +43,64 @@ impl std::ops::Deref for OriginalName<'_> {
     }
 }
 
+/// Information about a class in a ProGuard file.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ClassInfo<'s> {
+    /// The source file in which the class is defined.
     pub(crate) source_file: Option<&'s str>,
 }
 
+/// A key that uniquely identifies a method.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct MethodKey<'s> {
+    /// The method's receiver.
     pub(crate) class: OriginalName<'s>,
+    /// The method's name.
     pub(crate) name: OriginalName<'s>,
+    /// The method's argument string.
     pub(crate) arguments: &'s str,
 }
 
+/// Information about a method in a ProGuard file.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct MethodInfo {}
 
+/// A member record in a Proguard file.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Member<'s> {
+    /// The method the member refers to.
     pub(crate) method: MethodKey<'s>,
+    /// The obfuscated/minified start line.
     pub(crate) startline: usize,
+    /// The obfuscated/minified end line.
     pub(crate) endline: usize,
+    /// The original start line.
     pub(crate) original_startline: usize,
+    /// The original end line.
     pub(crate) original_endline: Option<usize>,
 }
 
+/// A collection of member records for a particular class
+/// and obfuscated method.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Members<'s> {
+    /// The complete list of members for the class and method.
     pub(crate) all: Vec<Member<'s>>,
+    /// The complete list of members for the class and method,
+    /// grouped by arguments string.
     pub(crate) by_params: HashMap<&'s str, Vec<Member<'s>>>,
 }
 
+/// A parsed representation of a [`ProguardMapping`].
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ParsedProguardMapping<'s> {
+    /// A mapping from obfuscated to original class names.
     pub(crate) class_names: HashMap<ObfuscatedName<'s>, OriginalName<'s>>,
-    pub(crate) classes: HashMap<OriginalName<'s>, ClassInfo<'s>>,
-    pub(crate) methods: HashMap<MethodKey<'s>, MethodInfo>,
+    /// A mapping from original class names to class information.
+    pub(crate) class_infos: HashMap<OriginalName<'s>, ClassInfo<'s>>,
+    /// A mapping from method keys to method information.
+    pub(crate) method_infos: HashMap<MethodKey<'s>, MethodInfo>,
+    /// A mapping from obfuscated class and method names to members.
     pub(crate) members: HashMap<(ObfuscatedName<'s>, ObfuscatedName<'s>), Members<'s>>,
 }
 
@@ -87,7 +117,9 @@ impl<'s> ParsedProguardMapping<'s> {
             match record {
                 ProguardRecord::Field { .. } => {}
                 ProguardRecord::Header { .. } => {}
-                ProguardRecord::R8Header(_) => {}
+                ProguardRecord::R8Header(_) => {
+                    // R8 headers are already handled in the class case below.
+                }
                 ProguardRecord::Class {
                     original,
                     obfuscated,
@@ -95,15 +127,14 @@ impl<'s> ParsedProguardMapping<'s> {
                     // Flush the previous class if there is one.
                     if let Some((obfuscated, original)) = current_class_name {
                         slf.class_names.insert(obfuscated, original);
-                        slf.classes.insert(original, current_class);
+                        slf.class_infos.insert(original, current_class);
                     }
-                    let new_orig = OriginalName(original);
-                    let new_obfus = ObfuscatedName(obfuscated);
-                    current_class_name = Some((new_obfus, new_orig));
+
+                    current_class_name = Some((ObfuscatedName(obfuscated), OriginalName(original)));
                     current_class = ClassInfo::default();
                     unique_methods.clear();
 
-                    // consume R8 headers attached to this class
+                    // Consume R8 headers attached to this class.
                     while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
                         match r8_header {
                             R8Header::SourceFile { file_name } => {
@@ -147,6 +178,9 @@ impl<'s> ParsedProguardMapping<'s> {
                     let Some((current_class_obfuscated, current_class_original)) =
                         current_class_name
                     else {
+                        // `current_class_name` is only `None` before the first class entry is encountered.
+                        // If we hit this case, there's a member record before the first class record, which
+                        // is an error. Properly handling this would be nice here, for now we return an empty `Self`.
                         return Self::default();
                     };
 
@@ -164,7 +198,7 @@ impl<'s> ParsedProguardMapping<'s> {
                     };
 
                     // This does nothing for now because we are not saving any per-method information.
-                    let _method_info: &mut MethodInfo = slf.methods.entry(method).or_default();
+                    let _method_info: &mut MethodInfo = slf.method_infos.entry(method).or_default();
 
                     let member = Member {
                         method,
@@ -211,7 +245,7 @@ impl<'s> ParsedProguardMapping<'s> {
         // Flush the last class
         if let Some((obfuscated, original)) = current_class_name {
             slf.class_names.insert(obfuscated, original);
-            slf.classes.insert(original, current_class);
+            slf.class_infos.insert(original, current_class);
         }
 
         slf

@@ -249,25 +249,6 @@ impl<'data> ProguardCache<'data> {
             }
         }
 
-        // let obfuscated_name_offset = string_table.insert(obfuscated) as u32;
-        // let original_name_offset = string_table.insert(original) as u32;
-        // let original_class_offset = original_class.map_or(u32::MAX, |class_name| {
-        //     string_table.insert(class_name) as u32
-        // });
-        // let params_offset = string_table.insert(arguments) as u32;
-        // let original_file_offset = current_class.class.file_name_offset;
-        // let member = Member {
-        //     obfuscated_name_offset,
-        //     startline,
-        //     endline,
-        //     original_class_offset,
-        //     original_file_offset,
-        //     original_name_offset,
-        //     original_startline,
-        //     original_endline,
-        //     params_offset,
-        // };
-
         // At this point, we know how many members/members-by-params each class has because we kept count,
         // but we don't know where each class's entries start. We'll rectify that below.
 

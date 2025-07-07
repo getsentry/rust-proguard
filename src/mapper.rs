@@ -74,7 +74,10 @@ struct ClassMembers<'s> {
 struct ClassMapping<'s> {
     original: &'s str,
     members: HashMap<&'s str, ClassMembers<'s>>,
-    // Note: It's currently unknown what effect a synthesized class has.
+    #[expect(
+        unused,
+        reason = "It is currently unknown what effect a synthesized class has."
+    )]
     is_synthesized: bool,
 }
 

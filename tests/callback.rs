@@ -56,20 +56,18 @@ fn test_method_matches_callback_cache() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::with_file(
+        StackFrame::new(
             "io.sentry.samples.instrumentation.ui.EditActivity",
             "onCreate$lambda$1",
             37,
-            "EditActivity",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::with_file(
+        StackFrame::new(
             "io.sentry.samples.instrumentation.ui.EditActivity$$InternalSyntheticLambda$1$ebaa538726b99bb77e0f5e7c86443911af17d6e5be2b8771952ae0caa4ff2ac7$0",
             "onMenuItemClick",
             0,
-            "EditActivity",
         )
         .with_synthesized(true)
     );
@@ -146,38 +144,34 @@ fn test_method_matches_callback_extra_class_cache() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::with_file(
+        StackFrame::new(
             "io.sentry.samples.instrumentation.ui.TestSourceContext",
             "test2",
             10,
-            "TestSourceContext",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::with_file(
+        StackFrame::new(
             "io.sentry.samples.instrumentation.ui.TestSourceContext",
             "test",
             6,
-            "TestSourceContext",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::with_file(
+        StackFrame::new(
             "io.sentry.samples.instrumentation.ui.EditActivity",
             "onCreate$lambda$1",
             38,
-            "EditActivity",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::with_file(
+        StackFrame::new(
             "io.sentry.samples.instrumentation.ui.EditActivity$$InternalSyntheticLambda$1$ebaa538726b99bb77e0f5e7c86443911af17d6e5be2b8771952ae0caa4ff2ac7$0",
             "onMenuItemClick",
             0,
-            "EditActivity",
         )
         .with_synthesized(true)
     );
@@ -202,25 +196,23 @@ fn test_method_matches_callback_inner_class_mapper() {
             "io.sentry.samples.instrumentation.ui.EditActivity$InnerEditActivityClass",
             "testInner",
             19,
-            "EditActivity",
+            "EditActivity.kt",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::with_file(
+        StackFrame::new(
             "io.sentry.samples.instrumentation.ui.EditActivity",
             "onCreate$lambda$1",
             45,
-            "EditActivity",
         )
     );
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::with_file(
+        StackFrame::new(
             "io.sentry.samples.instrumentation.ui.EditActivity$$InternalSyntheticLambda$1$ebaa538726b99bb77e0f5e7c86443911af17d6e5be2b8771952ae0caa4ff2ac7$0",
             "onMenuItemClick",
             0,
-            "EditActivity",
         )
         .with_synthesized(true)
     );

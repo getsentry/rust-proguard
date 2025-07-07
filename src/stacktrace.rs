@@ -158,7 +158,7 @@ pub struct StackFrame<'s> {
     pub(crate) line: usize,
     pub(crate) file: Option<&'s str>,
     pub(crate) parameters: Option<&'s str>,
-    pub(crate) is_synthesized: bool,
+    pub(crate) method_synthesized: bool,
 }
 
 impl<'s> StackFrame<'s> {
@@ -170,7 +170,7 @@ impl<'s> StackFrame<'s> {
             line,
             file: None,
             parameters: None,
-            is_synthesized: false,
+            method_synthesized: false,
         }
     }
 
@@ -182,7 +182,7 @@ impl<'s> StackFrame<'s> {
             line,
             file: Some(file),
             parameters: None,
-            is_synthesized: false,
+            method_synthesized: false,
         }
     }
 
@@ -195,13 +195,13 @@ impl<'s> StackFrame<'s> {
             line: 0,
             file: None,
             parameters: Some(arguments),
-            is_synthesized: false,
+            method_synthesized: false,
         }
     }
 
-    /// Flags `self` as being synthesized by the compiler according to `is_synthesized`.
-    pub fn with_synthesized(mut self, is_synthesized: bool) -> Self {
-        self.is_synthesized = is_synthesized;
+    /// Flags `self`'s method as being synthesized by the compiler according to `is_synthesized`.
+    pub fn with_method_synthesized(mut self, is_synthesized: bool) -> Self {
+        self.method_synthesized = is_synthesized;
         self
     }
 
@@ -258,9 +258,9 @@ impl<'s> StackFrame<'s> {
         self.parameters
     }
 
-    /// Returns whether this frame was synthesized by the compiler.
-    pub fn is_synthesized(&self) -> bool {
-        self.is_synthesized
+    /// Returns whether this frame's method was synthesized by the compiler.
+    pub fn method_synthesized(&self) -> bool {
+        self.method_synthesized
     }
 }
 
@@ -298,7 +298,7 @@ pub(crate) fn parse_frame(line: &str) -> Option<StackFrame> {
         file: Some(file),
         line,
         parameters: None,
-        is_synthesized: false,
+        method_synthesized: false,
     })
 }
 
@@ -406,7 +406,7 @@ mod tests {
                 line: 5,
                 file: Some("Util.java"),
                 parameters: None,
-                is_synthesized: false,
+                method_synthesized: false,
             }],
             cause: Some(Box::new(StackTrace {
                 exception: Some(Throwable {
@@ -419,7 +419,7 @@ mod tests {
                     line: 115,
                     file: None,
                     parameters: None,
-                    is_synthesized: false,
+                    method_synthesized: false,
                 }],
                 cause: None,
             })),
@@ -443,7 +443,7 @@ Caused by: com.example.Other: Invalid data
             line: 1,
             file: Some("SourceFile"),
             parameters: None,
-            is_synthesized: false,
+            method_synthesized: false,
         });
 
         assert_eq!(expect, stack_frame);
@@ -467,7 +467,7 @@ Caused by: com.example.Other: Invalid data
             line: 1,
             file: None,
             parameters: None,
-            is_synthesized: false,
+            method_synthesized: false,
         };
 
         assert_eq!(
@@ -481,7 +481,7 @@ Caused by: com.example.Other: Invalid data
             line: 1,
             file: Some("SourceFile"),
             parameters: None,
-            is_synthesized: false,
+            method_synthesized: false,
         };
 
         assert_eq!(

@@ -31,7 +31,7 @@ fn test_method_matches_callback_mapper() {
             "onMenuItemClick",
             0,
         )
-        .with_synthesized(true)
+        .with_method_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }
@@ -69,7 +69,7 @@ fn test_method_matches_callback_cache() {
             "onMenuItemClick",
             0,
         )
-        .with_synthesized(true)
+        .with_method_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }
@@ -118,7 +118,7 @@ fn test_method_matches_callback_extra_class_mapper() {
             "onMenuItemClick",
             0,
         )
-        .with_synthesized(true)
+        .with_method_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }
@@ -173,7 +173,7 @@ fn test_method_matches_callback_extra_class_cache() {
             "onMenuItemClick",
             0,
         )
-        .with_synthesized(true)
+        .with_method_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }
@@ -214,7 +214,7 @@ fn test_method_matches_callback_inner_class_mapper() {
             "onMenuItemClick",
             0,
         )
-        .with_synthesized(true)
+        .with_method_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }
@@ -261,7 +261,7 @@ fn test_method_matches_callback_inner_class_cache() {
             "onMenuItemClick",
             0,
         )
-        .with_synthesized(true)
+        .with_method_synthesized(true)
     );
     assert_eq!(mapped.next(), None);
 }

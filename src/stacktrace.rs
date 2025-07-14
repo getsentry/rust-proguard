@@ -158,6 +158,7 @@ pub struct StackFrame<'s> {
     pub(crate) line: usize,
     pub(crate) file: Option<&'s str>,
     pub(crate) parameters: Option<&'s str>,
+    pub(crate) method_synthesized: bool,
 }
 
 impl<'s> StackFrame<'s> {
@@ -169,6 +170,7 @@ impl<'s> StackFrame<'s> {
             line,
             file: None,
             parameters: None,
+            method_synthesized: false,
         }
     }
 
@@ -180,6 +182,7 @@ impl<'s> StackFrame<'s> {
             line,
             file: Some(file),
             parameters: None,
+            method_synthesized: false,
         }
     }
 
@@ -192,7 +195,14 @@ impl<'s> StackFrame<'s> {
             line: 0,
             file: None,
             parameters: Some(arguments),
+            method_synthesized: false,
         }
+    }
+
+    /// Flags `self`'s method as being synthesized by the compiler according to `is_synthesized`.
+    pub fn with_method_synthesized(mut self, is_synthesized: bool) -> Self {
+        self.method_synthesized = is_synthesized;
+        self
     }
 
     /// Parses a StackFrame from a line of a Java StackTrace.
@@ -247,6 +257,11 @@ impl<'s> StackFrame<'s> {
     pub fn parameters(&self) -> Option<&str> {
         self.parameters
     }
+
+    /// Returns whether this frame's method was synthesized by the compiler.
+    pub fn method_synthesized(&self) -> bool {
+        self.method_synthesized
+    }
 }
 
 impl Display for StackFrame<'_> {
@@ -283,6 +298,7 @@ pub(crate) fn parse_frame(line: &str) -> Option<StackFrame> {
         file: Some(file),
         line,
         parameters: None,
+        method_synthesized: false,
     })
 }
 
@@ -390,6 +406,7 @@ mod tests {
                 line: 5,
                 file: Some("Util.java"),
                 parameters: None,
+                method_synthesized: false,
             }],
             cause: Some(Box::new(StackTrace {
                 exception: Some(Throwable {
@@ -402,6 +419,7 @@ mod tests {
                     line: 115,
                     file: None,
                     parameters: None,
+                    method_synthesized: false,
                 }],
                 cause: None,
             })),
@@ -425,6 +443,7 @@ Caused by: com.example.Other: Invalid data
             line: 1,
             file: Some("SourceFile"),
             parameters: None,
+            method_synthesized: false,
         });
 
         assert_eq!(expect, stack_frame);
@@ -448,6 +467,7 @@ Caused by: com.example.Other: Invalid data
             line: 1,
             file: None,
             parameters: None,
+            method_synthesized: false,
         };
 
         assert_eq!(
@@ -461,6 +481,7 @@ Caused by: com.example.Other: Invalid data
             line: 1,
             file: Some("SourceFile"),
             parameters: None,
+            method_synthesized: false,
         };
 
         assert_eq!(

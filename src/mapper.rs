@@ -60,6 +60,7 @@ struct MemberMapping<'s> {
     original: &'s str,
     original_startline: usize,
     original_endline: Option<usize>,
+    is_synthesized: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -73,6 +74,11 @@ struct ClassMembers<'s> {
 struct ClassMapping<'s> {
     original: &'s str,
     members: HashMap<&'s str, ClassMembers<'s>>,
+    #[expect(
+        unused,
+        reason = "It is currently unknown what effect a synthesized class has."
+    )]
+    is_synthesized: bool,
 }
 
 type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
@@ -121,6 +127,7 @@ fn iterate_with_lines<'a>(
         if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline) {
             continue;
         }
+
         // parents of inlined frames don’t have an `endline`, and
         // the top inlined frame need to be correctly offset.
         let line = if member.original_endline.is_none()
@@ -130,6 +137,7 @@ fn iterate_with_lines<'a>(
         } else {
             member.original_startline + frame.line - member.startline
         };
+
         let file = if let Some(file_name) = member.original_file {
             if file_name == "R8$$SyntheticClass" {
                 extract_class_name(member.original_class.unwrap_or(frame.class))
@@ -143,16 +151,19 @@ fn iterate_with_lines<'a>(
         } else {
             frame.file
         };
+
         let class = match member.original_class {
             Some(class) => class,
             _ => frame.class,
         };
+
         return Some(StackFrame {
             class,
             method: member.original,
             file,
             line,
             parameters: frame.parameters,
+            method_synthesized: member.is_synthesized,
         });
     }
     None
@@ -174,6 +185,7 @@ fn iterate_without_lines<'a>(
         file: None,
         line: 0,
         parameters: frame.parameters,
+        method_synthesized: member.is_synthesized,
     })
 }
 
@@ -229,10 +241,16 @@ impl<'s> ProguardMapper<'s> {
             .class_names
             .iter()
             .map(|(obfuscated, original)| {
+                let is_synthesized = parsed
+                    .class_infos
+                    .get(original)
+                    .map(|ci| ci.is_synthesized)
+                    .unwrap_or_default();
                 (
                     obfuscated.as_str(),
                     ClassMapping {
                         original: original.as_str(),
+                        is_synthesized,
                         ..Default::default()
                     },
                 )
@@ -282,6 +300,13 @@ impl<'s> ProguardMapper<'s> {
             MethodReceiver::OtherClass(original_class_name) => Some(original_class_name.as_str()),
         };
 
+        let method_info = parsed
+            .method_infos
+            .get(&member.method)
+            .copied()
+            .unwrap_or_default();
+        let is_synthesized = method_info.is_synthesized;
+
         MemberMapping {
             startline: member.startline,
             endline: member.endline,
@@ -290,6 +315,7 @@ impl<'s> ProguardMapper<'s> {
             original: member.method.name.as_str(),
             original_startline: member.original_startline,
             original_endline: member.original_endline,
+            is_synthesized,
         }
     }
 
@@ -346,6 +372,7 @@ impl<'s> ProguardMapper<'s> {
         let Some(class) = self.classes.get(frame.class) else {
             return RemappedFrameIter::empty();
         };
+
         let Some(members) = class.members.get(frame.method) else {
             return RemappedFrameIter::empty();
         };
@@ -530,6 +557,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 2,
                     file: Some("SourceFile"),
                     parameters: None,
+                    method_synthesized: false,
                 },
                 StackFrame {
                     class: "android.view.View",
@@ -537,6 +565,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 7393,
                     file: Some("View.java"),
                     parameters: None,
+                    method_synthesized: false,
                 },
             ],
             cause: Some(Box::new(StackTrace {
@@ -550,6 +579,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 1,
                     file: Some("SourceFile"),
                     parameters: None,
+                    method_synthesized: false,
                 }],
                 cause: None,
             })),

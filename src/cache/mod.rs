@@ -13,17 +13,25 @@
 //!   it is by offset into this section.
 //!
 //! ## Class entries
-//! A class entry contains an obfuscated and an original name, optionally a file name,
-//! and an offset and length for the class's associated records in the `members`
-//! and `members_by_params` section, respectively.
+//! A class entry contains
+//! * an obfuscated and an original name,
+//! * optionally a file name,
+//! * an offset and length for the class's associated records in the `members` and `members_by_params` section, respectively,
+//! * and an `is_synthesized` flag.
 //!
 //! Class entries are sorted by obfuscated name.
 //!
 //! ## Member entries
-//! A member entry always contains an obfuscated and an original method name, a start
-//! and end line (1- based and inclusive), and a params string.
-//! It may also contain an original class name,
-//! original file name, and original start and end line.
+//! A member entry always contains
+//! * an obfuscated and an original method name,
+//! * a start and end line (1- based and inclusive),
+//! * a params string,
+//! * and an `is_synthesized` flag.
+//!
+//! It may also contain
+//! * an original class name,
+//! * an original file name,
+//! * and original start and end lines.
 //!
 //! Member entries in `members` are sorted by the class they belong to, then by
 //! obfuscated method name, and finally by the order in which they were encountered
@@ -268,7 +276,7 @@ impl<'data> ProguardCache<'data> {
     /// Finds the range of elements of `members` for which `f(m) == Ordering::Equal`.
     ///
     /// This works by first binary searching for any element fitting the criteria
-    /// and then linearly searching foraward and backward from that one to find
+    /// and then linearly searching forward and backward from that one to find
     /// the exact range.
     ///
     /// Obviously this only works if the criteria are consistent with the order
@@ -495,6 +503,7 @@ fn iterate_with_lines<'a>(
             file,
             line,
             parameters: frame.parameters,
+            method_synthesized: member.is_synthesized(),
         });
     }
     None
@@ -519,6 +528,7 @@ fn iterate_without_lines<'a>(
         file: None,
         line: 0,
         parameters: frame.parameters,
+        method_synthesized: member.is_synthesized(),
     })
 }
 
@@ -558,6 +568,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 2,
                     file: Some("SourceFile"),
                     parameters: None,
+                    method_synthesized: false,
                 },
                 StackFrame {
                     class: "android.view.View",
@@ -565,6 +576,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 7393,
                     file: Some("View.java"),
                     parameters: None,
+                    method_synthesized: false,
                 },
             ],
             cause: Some(Box::new(StackTrace {
@@ -578,6 +590,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     line: 1,
                     file: Some("SourceFile"),
                     parameters: None,
+                    method_synthesized: false,
                 }],
                 cause: None,
             })),

@@ -18,7 +18,7 @@ pub(crate) const PRGCACHE_MAGIC: u32 = u32::from_le_bytes(PRGCACHE_MAGIC_BYTES);
 /// The byte-flipped magic, which indicates an endianness mismatch.
 pub(crate) const PRGCACHE_MAGIC_FLIPPED: u32 = PRGCACHE_MAGIC.swap_bytes();
 
-pub const PRGCACHE_VERSION: u32 = 1;
+pub const PRGCACHE_VERSION: u32 = 2;
 
 /// The header of a proguard cache file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +56,23 @@ pub(crate) struct Class {
     pub(crate) members_by_params_offset: u32,
     /// The number of member-by-params entries for this class.
     pub(crate) members_by_params_len: u32,
+    /// Whether this class was synthesized by the compiler.
+    ///
+    /// `0` means `false`, all other values mean `true`.
+    ///
+    /// Note: It's currently unknown what effect a synthesized
+    /// class has.
+    pub(crate) is_synthesized: u8,
+
+    /// Reserved space.
+    pub(crate) _reserved: [u8; 3],
+}
+
+impl Class {
+    /// Returns true if this class was synthesized by the compiler.
+    pub(crate) fn is_synthesized(&self) -> bool {
+        self.is_synthesized != 0
+    }
 }
 
 impl Default for Class {
@@ -68,6 +85,8 @@ impl Default for Class {
             members_len: 0,
             members_by_params_offset: u32::MAX,
             members_by_params_len: 0,
+            is_synthesized: 0,
+            _reserved: [0; 3],
         }
     }
 }
@@ -94,6 +113,20 @@ pub(crate) struct Member {
     pub(crate) original_endline: u32,
     /// The entry's parameter string (offset into the strings section).
     pub(crate) params_offset: u32,
+    /// Whether this member was synthesized by the compiler.
+    ///
+    /// `0` means `false`, all other values mean `true`.
+    pub(crate) is_synthesized: u8,
+
+    /// Reserved space.
+    pub(crate) _reserved: [u8; 3],
+}
+
+impl Member {
+    /// Returns true if this member was synthesized by the compiler.
+    pub(crate) fn is_synthesized(&self) -> bool {
+        self.is_synthesized != 0
+    }
 }
 
 unsafe impl Pod for Header {}
@@ -198,10 +231,16 @@ impl<'data> ProguardCache<'data> {
             .map(|(obfuscated, original)| {
                 let obfuscated_name_offset = string_table.insert(obfuscated.as_str()) as u32;
                 let original_name_offset = string_table.insert(original.as_str()) as u32;
+                let is_synthesized = parsed
+                    .class_infos
+                    .get(original)
+                    .map(|ci| ci.is_synthesized)
+                    .unwrap_or_default();
                 let class = ClassInProgress {
                     class: Class {
                         original_name_offset,
                         obfuscated_name_offset,
+                        is_synthesized: is_synthesized as u8,
                         ..Default::default()
                     },
                     ..Default::default()
@@ -324,6 +363,13 @@ impl<'data> ProguardCache<'data> {
 
         let params_offset = string_table.insert(member.method.arguments) as u32;
 
+        let method_info = parsed
+            .method_infos
+            .get(&member.method)
+            .copied()
+            .unwrap_or_default();
+        let is_synthesized = method_info.is_synthesized as u8;
+
         Member {
             startline: member.startline as u32,
             endline: member.endline as u32,
@@ -334,6 +380,8 @@ impl<'data> ProguardCache<'data> {
             original_endline: member.original_endline.map_or(u32::MAX, |l| l as u32),
             obfuscated_name_offset,
             params_offset,
+            is_synthesized,
+            _reserved: [0; 3],
         }
     }
 
@@ -342,11 +390,13 @@ impl<'data> ProguardCache<'data> {
     /// Specifically it checks the following:
     /// * All string offsets in class and member entries are either `u32::MAX` or defined.
     /// * Member entries are ordered by the class they belong to.
+    /// * All `is_synthesized` fields on classes and members are either `0` or `1`.
     pub fn test(&self) {
         let mut prev_end = 0;
         for class in self.classes {
             assert!(self.read_string(class.obfuscated_name_offset).is_ok());
             assert!(self.read_string(class.original_name_offset).is_ok());
+            assert!(class.is_synthesized == 0 || class.is_synthesized == 1);
 
             if class.file_name_offset != u32::MAX {
                 assert!(self.read_string(class.file_name_offset).is_ok());
@@ -362,6 +412,7 @@ impl<'data> ProguardCache<'data> {
             for member in members {
                 assert!(self.read_string(member.obfuscated_name_offset).is_ok());
                 assert!(self.read_string(member.original_name_offset).is_ok());
+                assert!(member.is_synthesized == 0 || member.is_synthesized == 1);
 
                 if member.params_offset != u32::MAX {
                     assert!(self.read_string(member.params_offset).is_ok());

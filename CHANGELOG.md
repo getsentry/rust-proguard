@@ -1,5 +1,19 @@
 # Changelog
 
+## 5.6.0
+
+### Various fixes & improvements
+
+- feat: Handle "synthesized" class/member annotations (#52) by @loewenheim
+- ref: Parse ProGuard files smarter (#55) by @loewenheim
+- chore: Fix 1.88.0 clippy lints (#53) by @loewenheim
+- ref: Robustly parse R8 headers (#50) by @loewenheim
+- ref: Remove lazy_static dependency (#51) by @loewenheim
+- chore: Clippy (#49) by @loewenheim
+- chore: Simplify check (#47) by @loewenheim
+- chore(lint): Elided lifetimes (#46) by @jjbayer
+- cache: Add creation benchmark (#44) by @loewenheim
+
 ## 5.5.0
 
 ### Various fixes & improvements

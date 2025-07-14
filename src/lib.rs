@@ -35,6 +35,7 @@
 
 #![warn(missing_docs)]
 
+mod builder;
 mod cache;
 mod java;
 mod mapper;

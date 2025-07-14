@@ -1,10 +1,10 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::Write;
 
 use watto::{Pod, StringTable};
 
-use crate::mapping::R8Header;
-use crate::{ProguardMapping, ProguardRecord};
+use crate::builder::{self, ParsedProguardMapping};
+use crate::ProguardMapping;
 
 use super::{CacheError, CacheErrorKind};
 
@@ -188,127 +188,65 @@ impl<'data> ProguardCache<'data> {
     /// Writes a [`ProguardMapping`] into a writer in the proguard cache format.
     pub fn write<W: Write>(mapping: &ProguardMapping, writer: &mut W) -> std::io::Result<()> {
         let mut string_table = StringTable::new();
-        let mut classes: BTreeMap<&str, ClassInProgress> = BTreeMap::new();
-        // Create an empty [`ClassInProgress`]; this gets updated as we parse method records.
-        let mut current_class = ClassInProgress::default();
 
-        let mut records = mapping.iter().filter_map(Result::ok).peekable();
-        while let Some(record) = records.next() {
-            match record {
-                ProguardRecord::R8Header(R8Header::SourceFile { file_name }) => {
-                    current_class.class.file_name_offset = string_table.insert(file_name) as u32;
-                }
-                ProguardRecord::Header { .. } => {}
-                ProguardRecord::R8Header(R8Header::Other) => {}
-                ProguardRecord::Class {
-                    original,
-                    obfuscated,
-                } => {
-                    // Finalize the previous class, but only if it has a name (otherwise it's the dummy class we created at the beginning).
-                    if !current_class.name.is_empty() {
-                        classes.insert(current_class.name, current_class);
-                    }
+        let parsed = ParsedProguardMapping::parse(*mapping, true);
 
-                    let obfuscated_name_offset = string_table.insert(obfuscated) as u32;
-                    let original_name_offset = string_table.insert(original) as u32;
-
-                    // Create a new `ClassInProgress` for the record we just encountered.
-                    current_class = ClassInProgress {
-                        name: obfuscated,
-                        class: Class {
-                            original_name_offset,
-                            obfuscated_name_offset,
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    };
-                }
-
-                ProguardRecord::Method {
-                    original,
-                    obfuscated,
-                    original_class,
-                    line_mapping,
-                    arguments,
-                    ..
-                } => {
-                    // In case the mapping has no line records, we use `0` here.
-                    let (startline, endline) = line_mapping.map_or((0, 0), |line_mapping| {
-                        (line_mapping.startline as u32, line_mapping.endline as u32)
-                    });
-                    let (original_startline, original_endline) =
-                        line_mapping.map_or((0, u32::MAX), |line_mapping| {
-                            match line_mapping.original_startline {
-                                Some(original_startline) => (
-                                    original_startline as u32,
-                                    line_mapping.original_endline.map_or(u32::MAX, |l| l as u32),
-                                ),
-                                None => {
-                                    (line_mapping.startline as u32, line_mapping.endline as u32)
-                                }
-                            }
-                        });
-
-                    let obfuscated_name_offset = string_table.insert(obfuscated) as u32;
-                    let original_name_offset = string_table.insert(original) as u32;
-                    let original_class_offset = original_class.map_or(u32::MAX, |class_name| {
-                        string_table.insert(class_name) as u32
-                    });
-                    let params_offset = string_table.insert(arguments) as u32;
-                    let original_file_offset = current_class.class.file_name_offset;
-                    let member = Member {
-                        obfuscated_name_offset,
-                        startline,
-                        endline,
-                        original_class_offset,
-                        original_file_offset,
+        // Initialize class mappings with obfuscated -> original name data. The mappings will be filled in afterwards.
+        let mut classes: BTreeMap<&str, ClassInProgress> = parsed
+            .class_names
+            .iter()
+            .map(|(obfuscated, original)| {
+                let obfuscated_name_offset = string_table.insert(obfuscated.as_str()) as u32;
+                let original_name_offset = string_table.insert(original.as_str()) as u32;
+                let class = ClassInProgress {
+                    class: Class {
                         original_name_offset,
-                        original_startline,
-                        original_endline,
-                        params_offset,
-                    };
+                        obfuscated_name_offset,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
 
-                    current_class
-                        .members
-                        .entry(obfuscated)
-                        .or_default()
-                        .push(member.clone());
-                    current_class.class.members_len += 1;
+                (obfuscated.as_str(), class)
+            })
+            .collect();
 
-                    // If the next line has the same leading line range then this method
-                    // has been inlined by the code minification process, as a result
-                    // it can't show in method traces and can be safely ignored.
-                    if let Some(ProguardRecord::Method {
-                        line_mapping: Some(next_line),
-                        ..
-                    }) = records.peek()
-                    {
-                        if let Some(current_line_mapping) = line_mapping {
-                            if (current_line_mapping.startline == next_line.startline)
-                                && (current_line_mapping.endline == next_line.endline)
-                            {
-                                continue;
-                            }
-                        }
-                    }
+        for ((obfuscated_class, obfuscated_method), members) in &parsed.members {
+            let current_class = classes.entry(obfuscated_class.as_str()).or_default();
 
-                    let key = (obfuscated, arguments, original);
-                    if current_class.unique_methods.insert(key) {
-                        current_class
-                            .members_by_params
-                            .entry((obfuscated, arguments))
-                            .or_default()
-                            .push(member);
-                        current_class.class.members_by_params_len += 1;
-                    }
-                }
-                _ => {}
+            let obfuscated_method_offset = string_table.insert(obfuscated_method.as_str()) as u32;
+
+            let method_mappings = current_class
+                .members
+                .entry(obfuscated_method.as_str())
+                .or_default();
+
+            for member in members.all.iter().copied() {
+                method_mappings.push(Self::resolve_mapping(
+                    &mut string_table,
+                    &parsed,
+                    obfuscated_method_offset,
+                    member,
+                ));
+                current_class.class.members_len += 1;
             }
-        }
 
-        // Flush the last constructed class
-        if !current_class.name.is_empty() {
-            classes.insert(current_class.name, current_class);
+            for (args, param_members) in members.by_params.iter() {
+                let param_mappings = current_class
+                    .members_by_params
+                    .entry((obfuscated_method.as_str(), args))
+                    .or_default();
+
+                for member in param_members {
+                    param_mappings.push(Self::resolve_mapping(
+                        &mut string_table,
+                        &parsed,
+                        obfuscated_method_offset,
+                        *member,
+                    ));
+                    current_class.class.members_by_params_len += 1;
+                }
+            }
         }
 
         // At this point, we know how many members/members-by-params each class has because we kept count,
@@ -363,6 +301,42 @@ impl<'data> ProguardCache<'data> {
         Ok(())
     }
 
+    fn resolve_mapping(
+        string_table: &mut StringTable,
+        parsed: &ParsedProguardMapping<'_>,
+        obfuscated_name_offset: u32,
+        member: builder::Member,
+    ) -> Member {
+        let original_file = parsed
+            .class_infos
+            .get(&member.method.receiver.name())
+            .and_then(|class| class.source_file);
+
+        let original_file_offset =
+            original_file.map_or(u32::MAX, |s| string_table.insert(s) as u32);
+        let original_name_offset = string_table.insert(member.method.name.as_str()) as u32;
+
+        // Only fill in `original_class` if it is _not_ the current class
+        let original_class_offset = match member.method.receiver {
+            builder::MethodReceiver::ThisClass(_) => u32::MAX,
+            builder::MethodReceiver::OtherClass(name) => string_table.insert(name.as_str()) as u32,
+        };
+
+        let params_offset = string_table.insert(member.method.arguments) as u32;
+
+        Member {
+            startline: member.startline as u32,
+            endline: member.endline as u32,
+            original_class_offset,
+            original_file_offset,
+            original_name_offset,
+            original_startline: member.original_startline as u32,
+            original_endline: member.original_endline.map_or(u32::MAX, |l| l as u32),
+            obfuscated_name_offset,
+            params_offset,
+        }
+    }
+
     /// Tests the integrity of this cache.
     ///
     /// Specifically it checks the following:
@@ -412,15 +386,10 @@ impl<'data> ProguardCache<'data> {
 /// A class that is currently being constructed in the course of writing a [`ProguardCache`].
 #[derive(Debug, Clone, Default)]
 struct ClassInProgress<'data> {
-    /// The name of the class being constructed.
-    name: &'data str,
     /// The class record.
     class: Class,
     /// The members records for the class, grouped by method name.
     members: BTreeMap<&'data str, Vec<Member>>,
     /// The member records for the class, grouped by method name and parameter string.
     members_by_params: BTreeMap<(&'data str, &'data str), Vec<Member>>,
-    /// A map to keep track of which combinations of (obfuscated method name, original method name, parameters)
-    /// we have already seen for this class.
-    unique_methods: HashSet<(&'data str, &'data str, &'data str)>,
 }

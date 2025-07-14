@@ -1,12 +1,11 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
+use crate::builder::{Member, MethodReceiver, ParsedProguardMapping};
 use crate::java;
-use crate::mapping::R8Header;
-use crate::mapping::{ProguardMapping, ProguardRecord};
+use crate::mapping::ProguardMapping;
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
 
 /// A deobfuscated method signature.
@@ -63,18 +62,16 @@ struct MemberMapping<'s> {
     original_endline: Option<usize>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct ClassMembers<'s> {
     all_mappings: Vec<MemberMapping<'s>>,
     // method_params -> Vec[MemberMapping]
     mappings_by_params: HashMap<&'s str, Vec<MemberMapping<'s>>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct ClassMapping<'s> {
     original: &'s str,
-    obfuscated: &'s str,
-    file_name: Option<&'s str>,
     members: HashMap<&'s str, ClassMembers<'s>>,
 }
 
@@ -225,122 +222,75 @@ impl<'s> ProguardMapper<'s> {
         mapping: ProguardMapping<'s>,
         initialize_param_mapping: bool,
     ) -> Self {
-        let mut classes = HashMap::new();
-        let mut class = ClassMapping {
-            original: "",
-            obfuscated: "",
-            file_name: None,
-            members: HashMap::new(),
-        };
-        let mut unique_methods: HashSet<(&str, &str, &str)> = HashSet::new();
+        let parsed = ParsedProguardMapping::parse(mapping, initialize_param_mapping);
 
-        let mut records = mapping.iter().filter_map(Result::ok).peekable();
-        while let Some(record) = records.next() {
-            match record {
-                ProguardRecord::R8Header(R8Header::SourceFile { file_name }) => {
-                    class.file_name = Some(file_name);
+        // Initialize class mappings with obfuscated -> original name data. The mappings will be filled in afterwards.
+        let mut class_mappings: HashMap<&str, ClassMapping<'s>> = parsed
+            .class_names
+            .iter()
+            .map(|(obfuscated, original)| {
+                (
+                    obfuscated.as_str(),
+                    ClassMapping {
+                        original: original.as_str(),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+
+        for ((obfuscated_class, obfuscated_method), members) in &parsed.members {
+            let class_mapping = class_mappings.entry(obfuscated_class.as_str()).or_default();
+
+            let method_mappings = class_mapping
+                .members
+                .entry(obfuscated_method.as_str())
+                .or_default();
+
+            for member in members.all.iter().copied() {
+                method_mappings
+                    .all_mappings
+                    .push(Self::resolve_mapping(&parsed, member));
+            }
+
+            for (args, param_members) in members.by_params.iter() {
+                let param_mappings = method_mappings.mappings_by_params.entry(args).or_default();
+
+                for member in param_members {
+                    param_mappings.push(Self::resolve_mapping(&parsed, *member));
                 }
-                ProguardRecord::Header { .. } => {}
-                ProguardRecord::R8Header(R8Header::Other) => {}
-                ProguardRecord::Class {
-                    original,
-                    obfuscated,
-                } => {
-                    if !class.original.is_empty() {
-                        classes.insert(class.obfuscated, class);
-                    }
-                    class = ClassMapping {
-                        original,
-                        obfuscated,
-                        file_name: None,
-                        members: HashMap::new(),
-                    };
-                    unique_methods.clear();
-                }
-                ProguardRecord::Method {
-                    original,
-                    obfuscated,
-                    original_class,
-                    line_mapping,
-                    arguments,
-                    ..
-                } => {
-                    let current_line = if initialize_param_mapping {
-                        line_mapping
-                    } else {
-                        None
-                    };
-                    // in case the mapping has no line records, we use `0` here.
-                    let (startline, endline) =
-                        line_mapping.as_ref().map_or((0, 0), |line_mapping| {
-                            (line_mapping.startline, line_mapping.endline)
-                        });
-                    let (original_startline, original_endline) =
-                        line_mapping.map_or((0, None), |line_mapping| {
-                            match line_mapping.original_startline {
-                                Some(original_startline) => {
-                                    (original_startline, line_mapping.original_endline)
-                                }
-                                None => (line_mapping.startline, Some(line_mapping.endline)),
-                            }
-                        });
-
-                    let members = class
-                        .members
-                        .entry(obfuscated)
-                        .or_insert_with(|| ClassMembers {
-                            all_mappings: Vec::with_capacity(1),
-                            mappings_by_params: Default::default(),
-                        });
-
-                    let member_mapping = MemberMapping {
-                        startline,
-                        endline,
-                        original_class,
-                        original_file: class.file_name,
-                        original,
-                        original_startline,
-                        original_endline,
-                    };
-                    members.all_mappings.push(member_mapping.clone());
-
-                    if !initialize_param_mapping {
-                        continue;
-                    }
-                    // If the next line has the same leading line range then this method
-                    // has been inlined by the code minification process, as a result
-                    // it can't show in method traces and can be safely ignored.
-                    if let Some(ProguardRecord::Method {
-                        line_mapping: Some(next_line),
-                        ..
-                    }) = records.peek()
-                    {
-                        if let Some(current_line_mapping) = current_line {
-                            if (current_line_mapping.startline == next_line.startline)
-                                && (current_line_mapping.endline == next_line.endline)
-                            {
-                                continue;
-                            }
-                        }
-                    }
-
-                    let key = (obfuscated, arguments, original);
-                    if unique_methods.insert(key) {
-                        members
-                            .mappings_by_params
-                            .entry(arguments)
-                            .or_insert_with(|| Vec::with_capacity(1))
-                            .push(member_mapping);
-                    }
-                } // end ProguardRecord::Method
-                _ => {}
             }
         }
-        if !class.original.is_empty() {
-            classes.insert(class.obfuscated, class);
-        }
 
-        Self { classes }
+        Self {
+            classes: class_mappings,
+        }
+    }
+
+    fn resolve_mapping(
+        parsed: &ParsedProguardMapping<'s>,
+        member: Member<'s>,
+    ) -> MemberMapping<'s> {
+        let original_file = parsed
+            .class_infos
+            .get(&member.method.receiver.name())
+            .and_then(|class| class.source_file);
+
+        // Only fill in `original_class` if it is _not_ the current class
+        let original_class = match member.method.receiver {
+            MethodReceiver::ThisClass(_) => None,
+            MethodReceiver::OtherClass(original_class_name) => Some(original_class_name.as_str()),
+        };
+
+        MemberMapping {
+            startline: member.startline,
+            endline: member.endline,
+            original_class,
+            original_file,
+            original: member.method.name.as_str(),
+            original_startline: member.original_startline,
+            original_endline: member.original_endline,
+        }
     }
 
     /// Remaps an obfuscated Class.
@@ -617,8 +567,8 @@ Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
         let mapper = ProguardMapper::from(mapping);
 
         assert_eq!(
-            expect,
-            mapper.remap_stacktrace_typed(&stacktrace).to_string()
+            mapper.remap_stacktrace_typed(&stacktrace).to_string(),
+            expect
         );
     }
 
@@ -654,6 +604,6 @@ Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
 
         let mapper = ProguardMapper::from(mapping);
 
-        assert_eq!(expect, mapper.remap_stacktrace(stacktrace).unwrap());
+        assert_eq!(mapper.remap_stacktrace(stacktrace).unwrap(), expect);
     }
 }

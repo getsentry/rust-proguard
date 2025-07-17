@@ -52,7 +52,7 @@ use thiserror::Error;
 use crate::mapper::{format_cause, format_frames, format_throwable};
 use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Throwable};
 
-pub use raw::ProguardCache;
+pub use raw::{ProguardCache, PRGCACHE_VERSION};
 
 /// Errors returned while loading/parsing a serialized [`ProguardCache`].
 ///

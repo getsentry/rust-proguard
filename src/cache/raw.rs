@@ -18,6 +18,7 @@ pub(crate) const PRGCACHE_MAGIC: u32 = u32::from_le_bytes(PRGCACHE_MAGIC_BYTES);
 /// The byte-flipped magic, which indicates an endianness mismatch.
 pub(crate) const PRGCACHE_MAGIC_FLIPPED: u32 = PRGCACHE_MAGIC.swap_bytes();
 
+/// The current version of the ProguardCache format.
 pub const PRGCACHE_VERSION: u32 = 2;
 
 /// The header of a proguard cache file.

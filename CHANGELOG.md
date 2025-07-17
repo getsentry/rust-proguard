@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.6.1
+
+### Various fixes & improvements
+
+- feat(cache): Expose current cache version constant (#56) by @loewenheim
+
 ## 5.6.0
 
 ### Various fixes & improvements

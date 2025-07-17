@@ -808,6 +808,12 @@ mod tests {
     }
 
     #[test]
+    fn try_parse_r8_headers_invalid() {
+        let bytes = br#"# {123:"foobar"}"#;
+        assert!(ProguardRecord::try_parse(bytes).is_err(),);
+    }
+
+    #[test]
     fn try_parse_r8_headers() {
         let bytes = br#"# {"id":"foobar"}"#;
         assert_eq!(

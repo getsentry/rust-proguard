@@ -42,7 +42,7 @@ mod mapper;
 mod mapping;
 mod stacktrace;
 
-pub use cache::{CacheError, CacheErrorKind, ProguardCache};
+pub use cache::{CacheError, CacheErrorKind, ProguardCache, PRGCACHE_VERSION};
 pub use mapper::{DeobfuscatedSignature, ProguardMapper, RemappedFrameIter};
 pub use mapping::{
     LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord,

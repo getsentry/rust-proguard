@@ -521,7 +521,10 @@ fn parse_r8_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> 
 
     let (header, rest) = parse_until(bytes, is_newline)?;
 
-    let header = serde_json::from_str(header).unwrap();
+    let header = serde_json::from_str(header).map_err(|_| ParseError {
+        line: bytes,
+        kind: ParseErrorKind::ParseError("invalid r8 header"),
+    })?;
     Ok((
         ProguardRecord::R8Header(header),
         consume_leading_newlines(rest),
@@ -802,6 +805,12 @@ mod tests {
                 file_name: "Foobar.kt",
             }))
         );
+    }
+
+    #[test]
+    fn try_parse_r8_headers_invalid() {
+        let bytes = br#"# {123:"foobar"}"#;
+        assert!(ProguardRecord::try_parse(bytes).is_err(),);
     }
 
     #[test]

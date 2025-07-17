@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.6.2
+
+### Various fixes & improvements
+
+- fix(r8): Handle invalid headers gracefully (#57) by @Dav1dde
+
 ## 5.6.1
 
 ### Various fixes & improvements

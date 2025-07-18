@@ -15,13 +15,13 @@ impl ClassDebug<'_, '_> {
     fn obfuscated_name(&self) -> &str {
         self.cache
             .read_string(self.raw.obfuscated_name_offset)
-            .unwrap()
+            .unwrap_or("<unknown>")
     }
 
     fn original_name(&self) -> &str {
         self.cache
             .read_string(self.raw.original_name_offset)
-            .unwrap()
+            .unwrap_or("<unknown>")
     }
 
     fn file_name(&self) -> Option<&str> {
@@ -76,13 +76,13 @@ impl MemberDebug<'_, '_> {
     fn obfuscated_name(&self) -> &str {
         self.cache
             .read_string(self.raw.obfuscated_name_offset)
-            .unwrap()
+            .unwrap_or("<unknown>")
     }
 
     fn original_name(&self) -> &str {
         self.cache
             .read_string(self.raw.original_name_offset)
-            .unwrap()
+            .unwrap_or("<unknown>")
     }
 
     fn original_endline(&self) -> Option<u32> {

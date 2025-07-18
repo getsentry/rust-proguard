@@ -129,13 +129,11 @@ fn parse_stacktrace(content: &str) -> Option<StackTrace<'_>> {
         if let Some(frame) = parse_frame(line) {
             current.frames.push(frame);
         } else if let Some(line) = line.strip_prefix("Caused by: ") {
-            current.cause = Some(Box::new(StackTrace {
+            current = current.cause.insert(Box::new(StackTrace {
                 exception: parse_throwable(line),
                 frames: vec![],
                 cause: None,
             }));
-            // We just set the `cause` so it's safe to unwrap here
-            current = current.cause.as_deref_mut().unwrap();
         }
     }
 

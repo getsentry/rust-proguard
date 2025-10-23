@@ -117,6 +117,8 @@ pub(crate) struct MethodKey<'s> {
 pub(crate) struct MethodInfo {
     /// Whether this method was synthesized by the compiler.
     pub(crate) is_synthesized: bool,
+    /// Whether this method is an outline.
+    pub(crate) is_outline: bool,
 }
 
 /// A member record in a Proguard file.
@@ -143,6 +145,10 @@ pub(crate) struct Members<'s> {
     /// The complete list of members for the class and method,
     /// grouped by arguments string.
     pub(crate) by_params: HashMap<&'s str, Vec<Member<'s>>>,
+    /// Optional outline callsite positions map for this obfuscated method.
+    pub(crate) outline_callsite_positions: Option<HashMap<usize, usize>>,
+    /// Whether this obfuscated method is an outline method.
+    pub(crate) method_is_outline: bool,
 }
 
 /// A parsed representation of a [`ProguardMapping`].
@@ -196,6 +202,8 @@ impl<'s> ParsedProguardMapping<'s> {
                                 current_class.source_file = Some(file_name)
                             }
                             R8Header::Synthesized => current_class.is_synthesized = true,
+                            R8Header::Outline => {}
+                            R8Header::OutlineCallsite { .. } => {}
                             R8Header::Other => {}
                         }
 
@@ -264,6 +272,23 @@ impl<'s> ParsedProguardMapping<'s> {
                     while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
                         match r8_header {
                             R8Header::Synthesized => method_info.is_synthesized = true,
+                            R8Header::Outline => {
+                                method_info.is_outline = true;
+                                members.method_is_outline = true;
+                            }
+                            R8Header::OutlineCallsite {
+                                positions,
+                                outline: _,
+                            } => {
+                                // Attach outline callsite mapping to the current obfuscated method.
+                                let map: HashMap<usize, usize> = positions
+                                    .iter()
+                                    .filter_map(|(k, v)| k.parse::<usize>().ok().map(|kk| (kk, *v)))
+                                    .collect();
+                                if !map.is_empty() {
+                                    members.outline_callsite_positions = Some(map);
+                                }
+                            }
                             R8Header::SourceFile { .. } | R8Header::Other => {}
                         }
 

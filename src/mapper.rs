@@ -61,6 +61,7 @@ struct MemberMapping<'s> {
     original_startline: usize,
     original_endline: Option<usize>,
     is_synthesized: bool,
+    is_outline: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -68,6 +69,8 @@ struct ClassMembers<'s> {
     all_mappings: Vec<MemberMapping<'s>>,
     // method_params -> Vec[MemberMapping]
     mappings_by_params: HashMap<&'s str, Vec<MemberMapping<'s>>>,
+    outline_callsite_positions: Option<HashMap<usize, usize>>,
+    method_is_outline: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -278,6 +281,10 @@ impl<'s> ProguardMapper<'s> {
                     param_mappings.push(Self::resolve_mapping(&parsed, *member));
                 }
             }
+
+            // Propagate outline callsite info if present
+            method_mappings.outline_callsite_positions = members.outline_callsite_positions.clone();
+            method_mappings.method_is_outline = members.method_is_outline;
         }
 
         Self {
@@ -306,6 +313,7 @@ impl<'s> ProguardMapper<'s> {
             .copied()
             .unwrap_or_default();
         let is_synthesized = method_info.is_synthesized;
+        let is_outline = method_info.is_outline;
 
         MemberMapping {
             startline: member.startline,
@@ -316,7 +324,70 @@ impl<'s> ProguardMapper<'s> {
             original_startline: member.original_startline,
             original_endline: member.original_endline,
             is_synthesized,
+            is_outline,
         }
+    }
+
+    /// If the previous frame was an outline and carried a position, attempt to
+    /// map that outline position to a callsite position for the given method.
+    fn map_outline_position(&self, class: &str, method: &str, pos: usize) -> Option<usize> {
+        self.classes
+            .get(class)
+            .and_then(|c| c.members.get(method))
+            .and_then(|ms| ms.outline_callsite_positions.as_ref())
+            .and_then(|m| m.get(&pos).copied())
+    }
+
+    /// Determines if a frame refers to an outline method, either via the
+    /// method-level flag or via any matching mapping entry for the frame line.
+    fn is_outline_frame(
+        &self,
+        class: &str,
+        method: &str,
+        line: usize,
+        parameters: Option<&str>,
+    ) -> bool {
+        self.classes
+            .get(class)
+            .and_then(|c| c.members.get(method))
+            .map(|ms| {
+                if ms.method_is_outline {
+                    return true;
+                }
+                let mappings: &[_] = if let Some(params) = parameters {
+                    match ms.mappings_by_params.get(params) {
+                        Some(v) => &v[..],
+                        None => &[],
+                    }
+                } else {
+                    &ms.all_mappings[..]
+                };
+                mappings.iter().any(|m| {
+                    m.is_outline && (m.endline == 0 || (line >= m.startline && line <= m.endline))
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    /// Applies any carried outline position to the frame line and determines if
+    /// the (original) frame is an outline. Returns the adjusted frame and flag.
+    fn prepare_frame_for_mapping<'a>(
+        &self,
+        frame: &StackFrame<'a>,
+        carried_outline_pos: &mut Option<usize>,
+    ) -> (StackFrame<'a>, bool) {
+        let mut effective = frame.clone();
+        if let Some(pos) = carried_outline_pos.take() {
+            if let Some(mapped) = self.map_outline_position(effective.class, effective.method, pos)
+            {
+                effective.line = mapped;
+            }
+        }
+
+        let is_outline =
+            self.is_outline_frame(frame.class, frame.method, frame.line, frame.parameters);
+
+        (effective, is_outline)
     }
 
     /// Remaps an obfuscated Class.
@@ -423,12 +494,26 @@ impl<'s> ProguardMapper<'s> {
     pub fn remap_stacktrace(&self, input: &str) -> Result<String, std::fmt::Error> {
         let mut stacktrace = String::new();
         let mut lines = input.lines();
+        let mut carried_outline_pos: Option<usize> = None;
 
         if let Some(line) = lines.next() {
             match stacktrace::parse_throwable(line) {
                 None => match stacktrace::parse_frame(line) {
                     None => writeln!(&mut stacktrace, "{line}")?,
-                    Some(frame) => format_frames(&mut stacktrace, line, self.remap_frame(&frame))?,
+                    Some(frame) => {
+                        let (effective_frame, is_outline) =
+                            self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
+
+                        if is_outline {
+                            carried_outline_pos = Some(frame.line);
+                        } else {
+                            format_frames(
+                                &mut stacktrace,
+                                line,
+                                self.remap_frame(&effective_frame),
+                            )?;
+                        }
+                    }
                 },
                 Some(throwable) => {
                     format_throwable(&mut stacktrace, line, self.remap_throwable(&throwable))?
@@ -447,7 +532,16 @@ impl<'s> ProguardMapper<'s> {
                         format_cause(&mut stacktrace, line, self.remap_throwable(&cause))?
                     }
                 },
-                Some(frame) => format_frames(&mut stacktrace, line, self.remap_frame(&frame))?,
+                Some(frame) => {
+                    let (effective_frame, is_outline) =
+                        self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
+
+                    if is_outline {
+                        carried_outline_pos = Some(frame.line);
+                    } else {
+                        format_frames(&mut stacktrace, line, self.remap_frame(&effective_frame))?;
+                    }
+                }
             }
         }
         Ok(stacktrace)
@@ -460,20 +554,24 @@ impl<'s> ProguardMapper<'s> {
             .as_ref()
             .and_then(|t| self.remap_throwable(t));
 
-        let frames =
-            trace
-                .frames
-                .iter()
-                .fold(Vec::with_capacity(trace.frames.len()), |mut frames, f| {
-                    let mut peek_frames = self.remap_frame(f).peekable();
-                    if peek_frames.peek().is_some() {
-                        frames.extend(peek_frames);
-                    } else {
-                        frames.push(f.clone());
-                    }
+        let mut carried_outline_pos: Option<usize> = None;
+        let mut frames_out = Vec::with_capacity(trace.frames.len());
+        for f in trace.frames.iter() {
+            let (effective, is_outline) =
+                self.prepare_frame_for_mapping(f, &mut carried_outline_pos);
 
-                    frames
-                });
+            if is_outline {
+                carried_outline_pos = Some(f.line);
+                continue;
+            }
+
+            let mut iter = self.remap_frame(&effective).peekable();
+            if iter.peek().is_some() {
+                frames_out.extend(iter);
+            } else {
+                frames_out.push(f.clone());
+            }
+        }
 
         let cause = trace
             .cause
@@ -482,7 +580,7 @@ impl<'s> ProguardMapper<'s> {
 
         StackTrace {
             exception,
-            frames,
+            frames: frames_out,
             cause,
         }
     }

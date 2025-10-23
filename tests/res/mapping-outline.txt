@@ -1,0 +1,11 @@
+# compiler: R8
+# compiler_version: 2.0
+# min_api: 15
+outline.Class -> a:
+    1:2:int outline() -> a
+# { "id":"com.android.tools.r8.outline" }
+some.Class -> b:
+    4:4:int outlineCaller(int):98:98 -> s
+    5:5:int outlineCaller(int):100:100 -> s
+    27:27:int outlineCaller(int):0:0 -> s
+# { "id":"com.android.tools.r8.outlineCallsite", "positions": { "1": 4, "2": 5 }, "outline":"La;a()I"}

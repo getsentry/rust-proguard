@@ -196,7 +196,7 @@ impl<'data> ProguardCache<'data> {
     /// Creates a view of the cache that implements `Display`.
     ///
     /// The `Display` impl is very similar to the original proguard format.
-    pub fn display(&self) -> CacheDebug {
+    pub fn display(&self) -> CacheDebug<'_, '_> {
         CacheDebug { cache: self }
     }
 }

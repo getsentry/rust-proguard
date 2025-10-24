@@ -278,7 +278,7 @@ impl Display for StackFrame<'_> {
 /// Parses a single line from a Java StackTrace.
 ///
 /// Returns `None` if the line could not be parsed.
-pub(crate) fn parse_frame(line: &str) -> Option<StackFrame> {
+pub(crate) fn parse_frame(line: &str) -> Option<StackFrame<'_>> {
     let line = line.trim();
 
     if !line.starts_with("at ") || !line.ends_with(')') {

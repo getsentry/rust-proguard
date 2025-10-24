@@ -463,7 +463,7 @@ impl<'s> ProguardRecord<'s> {
 /// Parses a single line from a Proguard File.
 ///
 /// Returns `Err(ParseError)` if the line could not be parsed.
-fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &[u8]) {
+fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord<'_>, ParseError<'_>>, &[u8]) {
     let bytes = consume_leading_newlines(bytes);
 
     let result = if let Some(bytes) = bytes.trim_ascii_start().strip_prefix(b"#") {
@@ -497,7 +497,7 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord, ParseError>, &
 }
 
 /// Parses a single Proguard Header from a Proguard File.
-fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord<'_>, &[u8]), ParseError<'_>> {
     // Note: the leading `#` has already been parsed.
 
     // Existing logic for `key: value` format
@@ -516,7 +516,7 @@ fn parse_proguard_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseE
     Ok((record, consume_leading_newlines(bytes)))
 }
 
-fn parse_r8_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+fn parse_r8_header(bytes: &[u8]) -> Result<(ProguardRecord<'_>, &[u8]), ParseError<'_>> {
     // Note: the leading `#` has already been parsed.
 
     let (header, rest) = parse_until(bytes, is_newline)?;
@@ -532,7 +532,7 @@ fn parse_r8_header(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> 
 }
 
 /// Parses a single Proguard Field or Method from a Proguard File.
-fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord<'_>, &[u8]), ParseError<'_>> {
     // field line or method line:
     // `originalfieldtype originalfieldname -> obfuscatedfieldname`
     // `[startline:endline:]originalreturntype [originalclassname.]originalmethodname(originalargumenttype,...)[:originalstartline[:originalendline]] -> obfuscatedmethodname`
@@ -635,7 +635,7 @@ fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]
 }
 
 /// Parses a single Proguard Class from a Proguard File.
-fn parse_proguard_class(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseError> {
+fn parse_proguard_class(bytes: &[u8]) -> Result<(ProguardRecord<'_>, &[u8]), ParseError<'_>> {
     // class line:
     // `originalclassname -> obfuscatedclassname:`
     let (original, bytes) = parse_until_no_newline(bytes, |c| *c == b' ')?;
@@ -654,7 +654,7 @@ fn parse_proguard_class(bytes: &[u8]) -> Result<(ProguardRecord, &[u8]), ParseEr
     Ok((record, consume_leading_newlines(bytes)))
 }
 
-fn parse_usize(bytes: &[u8]) -> Result<(usize, &[u8]), ParseError> {
+fn parse_usize(bytes: &[u8]) -> Result<(usize, &[u8]), ParseError<'_>> {
     let (slice, rest) = match bytes.iter().position(|c| !(*c as char).is_numeric()) {
         Some(pos) => bytes.split_at(pos),
         None => (bytes, &[] as &[u8]),
@@ -682,7 +682,7 @@ fn parse_prefix<'s>(bytes: &'s [u8], prefix: &'s [u8]) -> Result<&'s [u8], Parse
     })
 }
 
-fn parse_until<P>(bytes: &[u8], predicate: P) -> Result<(&str, &[u8]), ParseError>
+fn parse_until<P>(bytes: &[u8], predicate: P) -> Result<(&str, &[u8]), ParseError<'_>>
 where
     P: Fn(&u8) -> bool,
 {
@@ -700,7 +700,7 @@ where
     }
 }
 
-fn parse_until_no_newline<P>(bytes: &[u8], predicate: P) -> Result<(&str, &[u8]), ParseError>
+fn parse_until_no_newline<P>(bytes: &[u8], predicate: P) -> Result<(&str, &[u8]), ParseError<'_>>
 where
     P: Fn(&u8) -> bool,
 {

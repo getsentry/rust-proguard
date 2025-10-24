@@ -8,7 +8,7 @@ fn proguard_mapper(mapping: ProguardMapping) -> ProguardMapper {
     ProguardMapper::new(mapping)
 }
 
-fn proguard_cache(cache: &[u8]) -> ProguardCache {
+fn proguard_cache(cache: &[u8]) -> ProguardCache<'_> {
     ProguardCache::parse(cache).unwrap()
 }
 

@@ -532,7 +532,9 @@ fn parse_r8_header(bytes: &[u8]) -> Result<(ProguardRecord<'_>, &[u8]), ParseErr
 }
 
 /// Parses a single Proguard Field or Method from a Proguard File.
-fn parse_proguard_field_or_method(bytes: &[u8]) -> Result<(ProguardRecord<'_>, &[u8]), ParseError<'_>> {
+fn parse_proguard_field_or_method(
+    bytes: &[u8],
+) -> Result<(ProguardRecord<'_>, &[u8]), ParseError<'_>> {
     // field line or method line:
     // `originalfieldtype originalfieldname -> obfuscatedfieldname`
     // `[startline:endline:]originalreturntype [originalclassname.]originalmethodname(originalargumenttype,...)[:originalstartline[:originalendline]] -> obfuscatedmethodname`

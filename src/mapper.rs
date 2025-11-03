@@ -280,7 +280,6 @@ impl<'s> ProguardMapper<'s> {
                     param_mappings.push(Self::resolve_mapping(&parsed, member));
                 }
             }
-
         }
 
         Self {

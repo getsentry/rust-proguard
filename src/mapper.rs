@@ -51,7 +51,7 @@ impl fmt::Display for DeobfuscatedSignature {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct MemberMapping<'s> {
     startline: usize,
     endline: usize,
@@ -62,6 +62,7 @@ struct MemberMapping<'s> {
     original_endline: Option<usize>,
     is_synthesized: bool,
     is_outline: bool,
+    outline_callsite_positions: Option<HashMap<usize, usize>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -69,7 +70,6 @@ struct ClassMembers<'s> {
     all_mappings: Vec<MemberMapping<'s>>,
     // method_params -> Vec[MemberMapping]
     mappings_by_params: HashMap<&'s str, Vec<MemberMapping<'s>>>,
-    outline_callsite_positions: Option<HashMap<usize, usize>>,
     method_is_outline: bool,
 }
 
@@ -268,7 +268,7 @@ impl<'s> ProguardMapper<'s> {
                 .entry(obfuscated_method.as_str())
                 .or_default();
 
-            for member in members.all.iter().copied() {
+            for member in members.all.iter() {
                 method_mappings
                     .all_mappings
                     .push(Self::resolve_mapping(&parsed, member));
@@ -277,13 +277,11 @@ impl<'s> ProguardMapper<'s> {
             for (args, param_members) in members.by_params.iter() {
                 let param_mappings = method_mappings.mappings_by_params.entry(args).or_default();
 
-                for member in param_members {
-                    param_mappings.push(Self::resolve_mapping(&parsed, *member));
+                for member in param_members.iter() {
+                    param_mappings.push(Self::resolve_mapping(&parsed, member));
                 }
             }
 
-            // Propagate outline callsite info if present
-            method_mappings.outline_callsite_positions = members.outline_callsite_positions.clone();
             method_mappings.method_is_outline = members.method_is_outline;
         }
 
@@ -294,7 +292,7 @@ impl<'s> ProguardMapper<'s> {
 
     fn resolve_mapping(
         parsed: &ParsedProguardMapping<'s>,
-        member: Member<'s>,
+        member: &Member<'s>,
     ) -> MemberMapping<'s> {
         let original_file = parsed
             .class_infos
@@ -315,6 +313,8 @@ impl<'s> ProguardMapper<'s> {
         let is_synthesized = method_info.is_synthesized;
         let is_outline = method_info.is_outline;
 
+        let outline_callsite_positions = member.outline_callsite_positions.clone();
+
         MemberMapping {
             startline: member.startline,
             endline: member.endline,
@@ -325,17 +325,41 @@ impl<'s> ProguardMapper<'s> {
             original_endline: member.original_endline,
             is_synthesized,
             is_outline,
+            outline_callsite_positions,
         }
     }
 
     /// If the previous frame was an outline and carried a position, attempt to
     /// map that outline position to a callsite position for the given method.
-    fn map_outline_position(&self, class: &str, method: &str, pos: usize) -> Option<usize> {
-        self.classes
-            .get(class)
-            .and_then(|c| c.members.get(method))
-            .and_then(|ms| ms.outline_callsite_positions.as_ref())
-            .and_then(|m| m.get(&pos).copied())
+    fn map_outline_position(
+        &self,
+        class: &str,
+        method: &str,
+        callsite_line: usize,
+        pos: usize,
+        parameters: Option<&str>,
+    ) -> Option<usize> {
+        let ms = self.classes.get(class)?.members.get(method)?;
+        let candidates: &[_] = if let Some(params) = parameters {
+            match ms.mappings_by_params.get(params) {
+                Some(v) => &v[..],
+                None => &[],
+            }
+        } else {
+            &ms.all_mappings[..]
+        };
+
+        // Find the member mapping covering the callsite line, then map the pos.
+        candidates
+            .iter()
+            .filter(|m| {
+                m.endline == 0 || (callsite_line >= m.startline && callsite_line <= m.endline)
+            })
+            .find_map(|m| {
+                m.outline_callsite_positions
+                    .as_ref()
+                    .and_then(|mm| mm.get(&pos).copied())
+            })
     }
 
     /// Determines if a frame refers to an outline method, either via the
@@ -378,8 +402,13 @@ impl<'s> ProguardMapper<'s> {
     ) -> (StackFrame<'a>, bool) {
         let mut effective = frame.clone();
         if let Some(pos) = carried_outline_pos.take() {
-            if let Some(mapped) = self.map_outline_position(effective.class, effective.method, pos)
-            {
+            if let Some(mapped) = self.map_outline_position(
+                effective.class,
+                effective.method,
+                effective.line,
+                pos,
+                effective.parameters,
+            ) {
                 effective.line = mapped;
             }
         }

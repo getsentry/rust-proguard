@@ -261,7 +261,7 @@ impl<'data> ProguardCache<'data> {
                 .entry(obfuscated_method.as_str())
                 .or_default();
 
-            for member in members.all.iter().copied() {
+            for member in members.all.iter() {
                 method_mappings.push(Self::resolve_mapping(
                     &mut string_table,
                     &parsed,
@@ -277,12 +277,12 @@ impl<'data> ProguardCache<'data> {
                     .entry((obfuscated_method.as_str(), args))
                     .or_default();
 
-                for member in param_members {
+                for member in param_members.iter() {
                     param_mappings.push(Self::resolve_mapping(
                         &mut string_table,
                         &parsed,
                         obfuscated_method_offset,
-                        *member,
+                        member,
                     ));
                     current_class.class.members_by_params_len += 1;
                 }
@@ -345,7 +345,7 @@ impl<'data> ProguardCache<'data> {
         string_table: &mut StringTable,
         parsed: &ParsedProguardMapping<'_>,
         obfuscated_name_offset: u32,
-        member: builder::Member,
+        member: &builder::Member,
     ) -> Member {
         let original_file = parsed
             .class_infos

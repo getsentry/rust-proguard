@@ -70,7 +70,6 @@ struct ClassMembers<'s> {
     all_mappings: Vec<MemberMapping<'s>>,
     // method_params -> Vec[MemberMapping]
     mappings_by_params: HashMap<&'s str, Vec<MemberMapping<'s>>>,
-    method_is_outline: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -282,7 +281,6 @@ impl<'s> ProguardMapper<'s> {
                 }
             }
 
-            method_mappings.method_is_outline = members.method_is_outline;
         }
 
         Self {
@@ -375,9 +373,6 @@ impl<'s> ProguardMapper<'s> {
             .get(class)
             .and_then(|c| c.members.get(method))
             .map(|ms| {
-                if ms.method_is_outline {
-                    return true;
-                }
                 let mappings: &[_] = if let Some(params) = parameters {
                     match ms.mappings_by_params.get(params) {
                         Some(v) => &v[..],

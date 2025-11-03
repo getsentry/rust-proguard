@@ -147,8 +147,6 @@ pub(crate) struct Members<'s> {
     /// The complete list of members for the class and method,
     /// grouped by arguments string.
     pub(crate) by_params: HashMap<&'s str, Vec<Member<'s>>>,
-    /// Whether this obfuscated method is an outline method.
-    pub(crate) method_is_outline: bool,
 }
 
 /// A parsed representation of a [`ProguardMapping`].
@@ -277,7 +275,6 @@ impl<'s> ParsedProguardMapping<'s> {
                             R8Header::Synthesized => method_info.is_synthesized = true,
                             R8Header::Outline => {
                                 method_info.is_outline = true;
-                                members.method_is_outline = true;
                             }
                             R8Header::OutlineCallsite {
                                 positions,

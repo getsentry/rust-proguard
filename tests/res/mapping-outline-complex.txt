@@ -179,6 +179,7 @@ com.example.MapAnnotations -> uu0.k:
     43:46:lv0.IProjectionMarker uu0.MapAnnotations.createProjectionMarker(lv0.IProjectionMarkerOptions):0 -> l
       # {"id":"com.android.tools.r8.outlineCallsite","positions":{"1":50,"3":52,"6":55},"outline":"Lev/h;b(Ljava/lang/String;Lcom/example/L;)V"}
     47:49:com.example.core.projection.marker.IProjectionMarker com.example.projection.MapProjectionViewController.createProjectionMarkerInternal(com.example.core.projection.marker.IProjectionMarkerOptions,com.example.core.projection.IProjection,float,com.example.core.latlng.IBoundsFactory):133:133 -> l
+      # {"id":"com.android.tools.r8.outlineCallsite","positions":{"2":51,"4":50,"5":40},"outline":"Lev/h;b(Ljava/lang/String;Lcom/example/L;)V"}
     47:49:com.example.core.projection.marker.IProjectionMarker com.example.projection.MapProjectionViewController.createProjectionMarker(com.example.core.projection.marker.IProjectionMarkerOptions):79 -> l
     47:49:com.example.core.projection.marker.IProjectionMarker createProjectionMarker(com.example.core.projection.marker.IProjectionMarkerOptions):63 -> l
     47:49:lv0.IProjectionMarker uu0.MapAnnotations.createProjectionMarker(lv0.IProjectionMarkerOptions):0 -> l

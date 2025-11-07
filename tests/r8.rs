@@ -193,6 +193,7 @@ fn test_remap_outlines_cache() {
     let mut buf = Vec::new();
     ProguardCache::write(&mapping, &mut buf).unwrap();
     let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
 
     let test = cache.remap_stacktrace(
         r#"
@@ -248,6 +249,7 @@ fn test_outline_header_parsing_cache() {
     let mut buf = Vec::new();
     ProguardCache::write(&mapping, &mut buf).unwrap();
     let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
 
     // Test that we can remap the outline class
     let class = cache.remap_class("a");
@@ -265,6 +267,7 @@ fn test_outline_frame_retracing_cache() {
     let mut buf = Vec::new();
     ProguardCache::write(&mapping, &mut buf).unwrap();
     let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
 
     // Test retracing a frame from the outline class
     let mut mapped = cache.remap_frame(&StackFrame::new("a", "a", 1));

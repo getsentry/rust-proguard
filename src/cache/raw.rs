@@ -511,6 +511,13 @@ impl<'data> ProguardCache<'data> {
                 assert!(self.read_string(member.obfuscated_name_offset).is_ok());
                 assert!(self.read_string(member.original_name_offset).is_ok());
                 assert!(member.is_synthesized == 0 || member.is_synthesized == 1);
+                assert!(member.is_outline == 0 || member.is_outline == 1);
+
+                // Ensure outline pair range is within bounds
+                let start = member.outline_pairs_offset as usize;
+                let len = member.outline_pairs_len as usize;
+                let end = start.saturating_add(len);
+                assert!(end <= self.outline_pairs.len());
 
                 if member.params_offset != u32::MAX {
                     assert!(self.read_string(member.params_offset).is_ok());

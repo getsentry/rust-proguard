@@ -472,9 +472,9 @@ impl<'data> ProguardCache<'data> {
             params_offset,
             is_synthesized,
             is_outline,
-            _reserved: [0; 2],
             outline_pairs_offset: 0,
             outline_pairs_len: 0,
+            _reserved: [0; 2],
         };
 
         MemberInProgress {

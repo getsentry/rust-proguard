@@ -107,6 +107,7 @@ impl fmt::Debug for MemberDebug<'_, '_> {
             .field("original_endline", &self.original_endline())
             .field("params", &self.params())
             .field("is_synthesized", &self.raw.is_synthesized())
+            .field("is_outline", &self.raw.is_outline())
             .finish()
     }
 }

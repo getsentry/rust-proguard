@@ -409,40 +409,37 @@ impl<'data> ProguardCache<'data> {
         line: usize,
         parameters: Option<&str>,
     ) -> bool {
-        let class = match self.get_class(class) {
-            Some(c) => c,
-            None => return false,
+        let Some(class) = self.get_class(class) else {
+            return false;
         };
 
         let candidates: &[raw::Member] = if let Some(params) = parameters {
-            let members = match self.get_class_members_by_params(class) {
-                Some(m) => m,
-                None => return false,
+            let Some(members) = self.get_class_members_by_params(class) else {
+                return false;
             };
-            match Self::find_range_by_binary_search(members, |m| {
+            let Some(range) = Self::find_range_by_binary_search(members, |m| {
                 let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
                     return Ordering::Greater;
                 };
                 let p = self.read_string(m.params_offset).unwrap_or_default();
                 (obfuscated_name, p).cmp(&(method, params))
-            }) {
-                Some(v) => v,
-                None => return false,
-            }
-        } else {
-            let members = match self.get_class_members(class) {
-                Some(m) => m,
-                None => return false,
+            }) else {
+                return false;
             };
-            match Self::find_range_by_binary_search(members, |m| {
+            range
+        } else {
+            let Some(members) = self.get_class_members(class) else {
+                return false;
+            };
+            let Some(range) = Self::find_range_by_binary_search(members, |m| {
                 let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
                     return Ordering::Greater;
                 };
                 obfuscated_name.cmp(method)
-            }) {
-                Some(v) => v,
-                None => return false,
-            }
+            }) else {
+                return false;
+            };
+            range
         };
 
         candidates.iter().any(|m| {

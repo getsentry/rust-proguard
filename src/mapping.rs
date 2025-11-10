@@ -317,6 +317,26 @@ pub enum R8Header<'s> {
     #[serde(rename = "com.android.tools.r8.synthesized")]
     Synthesized,
 
+    /// An outline header, stating that the method is an outline.
+    ///
+    /// See <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#outline-introduced-at-version-2_0>.
+    #[serde(rename = "com.android.tools.r8.outline")]
+    Outline,
+
+    /// An outline callsite header, providing a mapping from outline positions
+    /// to callsite positions for a particular outline method.
+    ///
+    /// See <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#outline-call-site-introduced-at-version-2_0-updated-at-2_2>.
+    /// The `outline` key (residual descriptor of the outline) was added in 2.2
+    /// and is therefore optional. We also parse it, but we don't use it.
+    #[serde(rename_all = "camelCase")]
+    #[serde(rename = "com.android.tools.r8.outlineCallsite")]
+    OutlineCallsite {
+        positions: std::collections::HashMap<&'s str, usize>,
+        #[serde(default)]
+        outline: Option<&'s str>,
+    },
+
     /// Catchall variant for headers we don't support.
     #[serde(other)]
     Other,
@@ -1145,6 +1165,53 @@ androidx.activity.OnBackPressedCallback
                     kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
                 }),
             ],
+        );
+    }
+
+    #[test]
+    fn try_parse_header_outline() {
+        let bytes = br#"# {"id":"com.android.tools.r8.outline"}"#;
+        assert_eq!(
+            ProguardRecord::try_parse(bytes).unwrap(),
+            ProguardRecord::R8Header(R8Header::Outline)
+        );
+    }
+
+    #[test]
+    fn try_parse_header_outline_callsite_without_outline_key() {
+        let bytes =
+            br#"# {"id":"com.android.tools.r8.outlineCallsite","positions":{"1:1":10,"2:3":42}}"#;
+        let parsed = ProguardRecord::try_parse(bytes).unwrap();
+
+        let mut expected_positions: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        expected_positions.insert("1:1", 10);
+        expected_positions.insert("2:3", 42);
+
+        assert_eq!(
+            parsed,
+            ProguardRecord::R8Header(R8Header::OutlineCallsite {
+                positions: expected_positions,
+                outline: None,
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_header_outline_callsite_with_outline_key() {
+        let bytes = br#"# {"id":"com.android.tools.r8.outlineCallsite","positions":{"5:7":13},"outline":"Lcom/example/Outline;->m()V"}"#;
+        let parsed = ProguardRecord::try_parse(bytes).unwrap();
+
+        let mut expected_positions: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        expected_positions.insert("5:7", 13);
+
+        assert_eq!(
+            parsed,
+            ProguardRecord::R8Header(R8Header::OutlineCallsite {
+                positions: expected_positions,
+                outline: Some("Lcom/example/Outline;->m()V"),
+            })
         );
     }
 }

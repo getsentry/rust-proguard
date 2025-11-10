@@ -117,10 +117,12 @@ pub(crate) struct MethodKey<'s> {
 pub(crate) struct MethodInfo {
     /// Whether this method was synthesized by the compiler.
     pub(crate) is_synthesized: bool,
+    /// Whether this method is an outline.
+    pub(crate) is_outline: bool,
 }
 
 /// A member record in a Proguard file.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Member<'s> {
     /// The method the member refers to.
     pub(crate) method: MethodKey<'s>,
@@ -132,6 +134,8 @@ pub(crate) struct Member<'s> {
     pub(crate) original_startline: usize,
     /// The original end line.
     pub(crate) original_endline: Option<usize>,
+    /// Optional outline callsite positions map attached to this member.
+    pub(crate) outline_callsite_positions: Option<HashMap<usize, usize>>,
 }
 
 /// A collection of member records for a particular class
@@ -196,6 +200,8 @@ impl<'s> ParsedProguardMapping<'s> {
                                 current_class.source_file = Some(file_name)
                             }
                             R8Header::Synthesized => current_class.is_synthesized = true,
+                            R8Header::Outline => {}
+                            R8Header::OutlineCallsite { .. } => {}
                             R8Header::Other => {}
                         }
 
@@ -260,10 +266,29 @@ impl<'s> ParsedProguardMapping<'s> {
 
                     let method_info: &mut MethodInfo = slf.method_infos.entry(method).or_default();
 
-                    // Consume R8 headers attached to this method.
+                    // Collect any OutlineCallsite mapping attached to this member.
+                    let mut outline_callsite_positions: Option<HashMap<usize, usize>> = None;
+
+                    // Consume R8 headers attached to this method/member.
                     while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
                         match r8_header {
                             R8Header::Synthesized => method_info.is_synthesized = true,
+                            R8Header::Outline => {
+                                method_info.is_outline = true;
+                            }
+                            R8Header::OutlineCallsite {
+                                positions,
+                                outline: _,
+                            } => {
+                                // Attach outline callsite mapping to this specific member.
+                                let map: HashMap<usize, usize> = positions
+                                    .iter()
+                                    .filter_map(|(k, v)| k.parse::<usize>().ok().map(|kk| (kk, *v)))
+                                    .collect();
+                                if !map.is_empty() {
+                                    outline_callsite_positions = Some(map);
+                                }
+                            }
                             R8Header::SourceFile { .. } | R8Header::Other => {}
                         }
 
@@ -276,9 +301,10 @@ impl<'s> ParsedProguardMapping<'s> {
                         endline,
                         original_startline,
                         original_endline,
+                        outline_callsite_positions,
                     };
 
-                    members.all.push(member);
+                    members.all.push(member.clone());
 
                     if !initialize_param_mapping {
                         continue;
@@ -306,7 +332,7 @@ impl<'s> ParsedProguardMapping<'s> {
                             .by_params
                             .entry(arguments)
                             .or_insert_with(|| Vec::with_capacity(1))
-                            .push(member);
+                            .push(member.clone());
                     }
                 } // end ProguardRecord::Method
             }

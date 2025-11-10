@@ -5,6 +5,8 @@ use proguard::{ProguardMapper, ProguardMapping, StackFrame};
 static MAPPING_R8: &[u8] = include_bytes!("res/mapping-r8.txt");
 static MAPPING_R8_SYMBOLICATED_FILE_NAMES: &[u8] =
     include_bytes!("res/mapping-r8-symbolicated_file_names.txt");
+static MAPPING_OUTLINE: &[u8] = include_bytes!("res/mapping-outline.txt");
+static MAPPING_OUTLINE_COMPLEX: &[u8] = include_bytes!("res/mapping-outline-complex.txt");
 
 static MAPPING_WIN_R8: LazyLock<Vec<u8>> = LazyLock::new(|| {
     MAPPING_R8
@@ -130,4 +132,96 @@ fn test_remap_source_file() {
 	at android.view.View.performClick(View.java:7659)
 	at android.view.View.performClickInternal(View.java:7636)
 	at android.view.View.-$$Nest$mperformClickInternal(Unknown Source:0)"#.trim(), test.unwrap().trim());
+}
+
+#[test]
+fn test_remap_outlines() {
+    let mapping = ProguardMapping::new(MAPPING_OUTLINE_COMPLEX);
+
+    let mapper = ProguardMapper::new(mapping);
+
+    let test = mapper.remap_stacktrace(
+        r#"
+    java.lang.IllegalStateException: Oops!
+    at ev.h.b(SourceFile:3)
+    at uu0.k.l(SourceFile:43)
+    at b80.f.a(SourceFile:33)
+    at er3.f.invoke(SourceFile:3)
+    at yv0.g.d(SourceFile:17)
+    at er3.g$a.invoke(SourceFile:36)
+    at h1.p0.d(SourceFile:5)
+    at p1.k.c(SourceFile:135)
+    at h1.y.A(SourceFile:111)
+    at h1.y.m(SourceFile:6)
+    at h1.e3.invoke(SourceFile:231)
+    at w2.r0$c.doFrame(SourceFile:7)
+    at w2.q0$c.doFrame(SourceFile:48)
+    at android.view.Choreographer$CallbackRecord.run(Choreographer.java:1899)"#,
+    );
+
+    assert_eq!(r#"
+    java.lang.IllegalStateException: Oops!
+    at com.example.projection.MapProjectionViewController.onProjectionView(MapProjectionViewController.kt:160)
+    at com.example.projection.MapProjectionViewController.createProjectionMarkerInternal(MapProjectionViewController.kt:133)
+    at com.example.projection.MapProjectionViewController.createProjectionMarker(MapProjectionViewController.kt:79)
+    at com.example.MapAnnotations.createProjectionMarker(MapAnnotations.kt:63)
+    at com.example.mapcomponents.marker.currentlocation.DotRendererDelegate.createCurrentLocationProjectionMarker(DotRendererDelegate.kt:101)
+    at com.example.mapcomponents.marker.currentlocation.DotRendererDelegate.render(DotRendererDelegate.kt:34)
+    at com.example.mapcomponents.marker.currentlocation.CurrentLocationRenderer.render(CurrentLocationRenderer.kt:39)
+    at com.example.map.internal.CurrentLocationMarkerMapCollectionKt$CurrentLocationMarkerMapCollection$1$1$mapReadyCallback$1.invoke(CurrentLocationMarkerMapCollection.kt:36)
+    at com.example.map.internal.CurrentLocationMarkerMapCollectionKt$CurrentLocationMarkerMapCollection$1$1$mapReadyCallback$1.invoke(CurrentLocationMarkerMapCollection.kt:36)
+    at com.example.mapbox.MapboxMapView.addMapReadyCallback(MapboxMapView.kt:368)
+    at com.example.map.internal.CurrentLocationMarkerMapCollectionKt$CurrentLocationMarkerMapCollection$1$1.invoke(CurrentLocationMarkerMapCollection.kt:40)
+    at com.example.map.internal.CurrentLocationMarkerMapCollectionKt$CurrentLocationMarkerMapCollection$1$1.invoke(CurrentLocationMarkerMapCollection.kt:35)
+    at androidx.compose.runtime.DisposableEffectImpl.onRemembered(Effects.kt:85)
+    at androidx.compose.runtime.internal.RememberEventDispatcher.dispatchRememberList(RememberEventDispatcher.kt:253)
+    at androidx.compose.runtime.internal.RememberEventDispatcher.dispatchRememberObservers(RememberEventDispatcher.kt:225)
+    at androidx.compose.runtime.CompositionImpl.applyChangesInLocked(Composition.kt:1122)
+    at androidx.compose.runtime.CompositionImpl.applyChanges(Composition.kt:1149)
+    at androidx.compose.runtime.Recomposer$runRecomposeAndApplyChanges$2.invokeSuspend$lambda$22(Recomposer.kt:705)
+    at androidx.compose.ui.platform.AndroidUiFrameClock$withFrameNanos$2$callback$1.doFrame(AndroidUiFrameClock.android.kt:39)
+    at androidx.compose.ui.platform.AndroidUiDispatcher.performFrameDispatch(AndroidUiDispatcher.android.kt:108)
+    at androidx.compose.ui.platform.AndroidUiDispatcher.access$performFrameDispatch(AndroidUiDispatcher.android.kt:41)
+    at androidx.compose.ui.platform.AndroidUiDispatcher$dispatchCallback$1.doFrame(AndroidUiDispatcher.android.kt:69)
+    at android.view.Choreographer$CallbackRecord.run(Choreographer.java:1899)"#.trim(), test.unwrap().trim());
+}
+
+#[test]
+fn test_outline_header_parsing() {
+    let mapping = ProguardMapping::new(MAPPING_OUTLINE);
+    assert!(mapping.is_valid());
+
+    let mapper = ProguardMapper::new(mapping);
+
+    // Test that we can remap the outline class
+    let class = mapper.remap_class("a");
+    assert_eq!(class, Some("outline.Class"));
+
+    // Test that we can remap the other class
+    let class = mapper.remap_class("b");
+    assert_eq!(class, Some("some.Class"));
+}
+
+#[test]
+fn test_outline_frame_retracing() {
+    let mapping = ProguardMapping::new(MAPPING_OUTLINE);
+    let mapper = ProguardMapper::new(mapping);
+
+    // Test retracing a frame from the outline class
+    let mut mapped = mapper.remap_frame(&StackFrame::new("a", "a", 1));
+
+    assert_eq!(
+        mapped.next().unwrap(),
+        StackFrame::new("outline.Class", "outline", 1)
+    );
+    assert_eq!(mapped.next(), None);
+
+    // Test retracing a frame from the class with outlineCallsite
+    let mut mapped = mapper.remap_frame(&StackFrame::new("b", "s", 27));
+
+    assert_eq!(
+        mapped.next().unwrap(),
+        StackFrame::new("some.Class", "outlineCaller", 0)
+    );
+    assert_eq!(mapped.next(), None);
 }

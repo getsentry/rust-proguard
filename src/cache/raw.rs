@@ -19,7 +19,7 @@ pub(crate) const PRGCACHE_MAGIC: u32 = u32::from_le_bytes(PRGCACHE_MAGIC_BYTES);
 pub(crate) const PRGCACHE_MAGIC_FLIPPED: u32 = PRGCACHE_MAGIC.swap_bytes();
 
 /// The current version of the ProguardCache format.
-pub const PRGCACHE_VERSION: u32 = 2;
+pub const PRGCACHE_VERSION: u32 = 3;
 
 /// The header of a proguard cache file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +35,8 @@ pub(crate) struct Header {
     pub(crate) num_members: u32,
     /// The total number of member-by-params entries in this cache.
     pub(crate) num_members_by_params: u32,
+    /// The total number of outline mapping pairs across all members.
+    pub(crate) num_outline_pairs: u32,
     /// The number of string bytes in this cache.
     pub(crate) string_bytes: u32,
 }
@@ -114,13 +116,20 @@ pub(crate) struct Member {
     pub(crate) original_endline: u32,
     /// The entry's parameter string (offset into the strings section).
     pub(crate) params_offset: u32,
+    /// Offset into the outline pairs section for this member's outline callsite mapping.
+    pub(crate) outline_pairs_offset: u32,
+    /// Number of outline pairs for this member.
+    pub(crate) outline_pairs_len: u32,
     /// Whether this member was synthesized by the compiler.
     ///
     /// `0` means `false`, all other values mean `true`.
     pub(crate) is_synthesized: u8,
-
+    /// Whether this member refers to an outline method.
+    ///
+    /// `0` means `false`, all other values mean `true`.
+    pub(crate) is_outline: u8,
     /// Reserved space.
-    pub(crate) _reserved: [u8; 3],
+    pub(crate) _reserved: [u8; 2],
 }
 
 impl Member {
@@ -128,11 +137,25 @@ impl Member {
     pub(crate) fn is_synthesized(&self) -> bool {
         self.is_synthesized != 0
     }
+    /// Returns true if this member refers to an outline method.
+    pub(crate) fn is_outline(&self) -> bool {
+        self.is_outline != 0
+    }
 }
 
 unsafe impl Pod for Header {}
 unsafe impl Pod for Class {}
 unsafe impl Pod for Member {}
+
+/// A single outline mapping pair: outline position -> callsite line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub(crate) struct OutlinePair {
+    pub(crate) outline_pos: u32,
+    pub(crate) callsite_line: u32,
+}
+
+unsafe impl Pod for OutlinePair {}
 
 /// The serialized `ProguardCache` binary format.
 #[derive(Clone, PartialEq, Eq)]
@@ -153,6 +176,8 @@ pub struct ProguardCache<'data> {
     /// These entries are sorted by class, then
     /// obfuscated method name, then params string.
     pub(crate) members_by_params: &'data [Member],
+    /// A flat list of outline mapping pairs.
+    pub(crate) outline_pairs: &'data [OutlinePair],
     /// The collection of all strings in the cache file.
     pub(crate) string_bytes: &'data [u8],
 }
@@ -196,6 +221,11 @@ impl<'data> ProguardCache<'data> {
             Member::slice_from_prefix(rest, header.num_members_by_params as usize)
                 .ok_or(CacheErrorKind::InvalidMembers)?;
 
+        let (_, rest) = watto::align_to(rest, 8).ok_or(CacheErrorKind::InvalidMembers)?;
+        let (outline_pairs, rest) =
+            OutlinePair::slice_from_prefix(rest, header.num_outline_pairs as usize)
+                .ok_or(CacheErrorKind::InvalidMembers)?;
+
         let (_, string_bytes) =
             watto::align_to(rest, 8).ok_or(CacheErrorKind::UnexpectedStringBytes {
                 expected: header.string_bytes as usize,
@@ -215,6 +245,7 @@ impl<'data> ProguardCache<'data> {
             classes,
             members,
             members_by_params,
+            outline_pairs,
             string_bytes,
         })
     }
@@ -292,7 +323,6 @@ impl<'data> ProguardCache<'data> {
         // At this point, we know how many members/members-by-params each class has because we kept count,
         // but we don't know where each class's entries start. We'll rectify that below.
 
-        let mut writer = watto::Writer::new(writer);
         let string_bytes = string_table.into_bytes();
 
         let num_members = classes.values().map(|c| c.class.members_len).sum::<u32>();
@@ -301,41 +331,86 @@ impl<'data> ProguardCache<'data> {
             .map(|c| c.class.members_by_params_len)
             .sum::<u32>();
 
+        // Build output vectors first to know outline pair count.
+        let mut out_classes: Vec<Class> = Vec::with_capacity(classes.len());
+        let mut members: Vec<Member> = Vec::with_capacity(num_members as usize);
+        let mut members_by_params: Vec<Member> = Vec::with_capacity(num_members_by_params as usize);
+        let mut outline_pairs: Vec<OutlinePair> = Vec::new();
+
+        for mut c in classes.into_values() {
+            // Set offsets relative to current vector sizes
+            c.class.members_offset = members.len() as u32;
+            c.class.members_by_params_offset = members_by_params.len() as u32;
+
+            // Serialize members without params
+            for (_method, ms) in c.members.into_iter() {
+                for mut mp in ms.into_iter() {
+                    let start = outline_pairs.len() as u32;
+                    if !mp.outline_pairs.is_empty() {
+                        mp.member.outline_pairs_offset = start;
+                        mp.member.outline_pairs_len = mp.outline_pairs.len() as u32;
+                        outline_pairs.extend(mp.outline_pairs.into_iter());
+                    } else {
+                        mp.member.outline_pairs_offset = start;
+                        mp.member.outline_pairs_len = 0;
+                    }
+                    members.push(mp.member);
+                }
+            }
+
+            // Serialize members by params
+            for (_key, ms) in c.members_by_params.into_iter() {
+                for mut mp in ms.into_iter() {
+                    let start = outline_pairs.len() as u32;
+                    if !mp.outline_pairs.is_empty() {
+                        mp.member.outline_pairs_offset = start;
+                        mp.member.outline_pairs_len = mp.outline_pairs.len() as u32;
+                        outline_pairs.extend(mp.outline_pairs.into_iter());
+                    } else {
+                        mp.member.outline_pairs_offset = start;
+                        mp.member.outline_pairs_len = 0;
+                    }
+                    members_by_params.push(mp.member);
+                }
+            }
+
+            out_classes.push(c.class);
+        }
+
+        let num_outline_pairs = outline_pairs.len() as u32;
+
         let header = Header {
             magic: PRGCACHE_MAGIC,
             version: PRGCACHE_VERSION,
-            num_classes: classes.len() as u32,
+            num_classes: out_classes.len() as u32,
             num_members,
             num_members_by_params,
+            num_outline_pairs,
             string_bytes: string_bytes.len() as u32,
         };
 
+        let mut writer = watto::Writer::new(writer);
         writer.write_all(header.as_bytes())?;
         writer.align_to(8)?;
 
-        let mut members = Vec::new();
-        let mut members_by_params = Vec::new();
-
-        for mut c in classes.into_values() {
-            // We can now set the class's members_offset/members_by_params_offset.
-            c.class.members_offset = members.len() as u32;
-            c.class.members_by_params_offset = members.len() as u32;
-            members.extend(c.members.into_values().flat_map(|m| m.into_iter()));
-            members_by_params.extend(
-                c.members_by_params
-                    .into_values()
-                    .flat_map(|m| m.into_iter()),
-            );
-            writer.write_all(c.class.as_bytes())?;
+        // Write classes
+        for c in out_classes.iter() {
+            writer.write_all(c.as_bytes())?;
         }
         writer.align_to(8)?;
 
+        // Write member sections
         writer.write_all(members.as_bytes())?;
         writer.align_to(8)?;
 
         writer.write_all(members_by_params.as_bytes())?;
         writer.align_to(8)?;
 
+        // Write outline pairs
+        writer.write_all(outline_pairs.as_bytes())?;
+        writer.align_to(8)?;
+
+        // Write strings
         writer.write_all(&string_bytes)?;
 
         Ok(())
@@ -346,7 +421,7 @@ impl<'data> ProguardCache<'data> {
         parsed: &ParsedProguardMapping<'_>,
         obfuscated_name_offset: u32,
         member: &builder::Member,
-    ) -> Member {
+    ) -> MemberInProgress {
         let original_file = parsed
             .class_infos
             .get(&member.method.receiver.name())
@@ -370,8 +445,22 @@ impl<'data> ProguardCache<'data> {
             .copied()
             .unwrap_or_default();
         let is_synthesized = method_info.is_synthesized as u8;
+        let is_outline = method_info.is_outline as u8;
 
-        Member {
+        let outline_pairs: Vec<OutlinePair> = member
+            .outline_callsite_positions
+            .as_ref()
+            .map(|m| {
+                m.iter()
+                    .map(|(k, v)| OutlinePair {
+                        outline_pos: *k as u32,
+                        callsite_line: *v as u32,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let member = Member {
             startline: member.startline as u32,
             endline: member.endline as u32,
             original_class_offset,
@@ -382,7 +471,15 @@ impl<'data> ProguardCache<'data> {
             obfuscated_name_offset,
             params_offset,
             is_synthesized,
-            _reserved: [0; 3],
+            is_outline,
+            outline_pairs_offset: 0,
+            outline_pairs_len: 0,
+            _reserved: [0; 2],
+        };
+
+        MemberInProgress {
+            member,
+            outline_pairs,
         }
     }
 
@@ -414,6 +511,13 @@ impl<'data> ProguardCache<'data> {
                 assert!(self.read_string(member.obfuscated_name_offset).is_ok());
                 assert!(self.read_string(member.original_name_offset).is_ok());
                 assert!(member.is_synthesized == 0 || member.is_synthesized == 1);
+                assert!(member.is_outline == 0 || member.is_outline == 1);
+
+                // Ensure outline pair range is within bounds
+                let start = member.outline_pairs_offset as usize;
+                let len = member.outline_pairs_len as usize;
+                let end = start.saturating_add(len);
+                assert!(end <= self.outline_pairs.len());
 
                 if member.params_offset != u32::MAX {
                     assert!(self.read_string(member.params_offset).is_ok());
@@ -441,7 +545,13 @@ struct ClassInProgress<'data> {
     /// The class record.
     class: Class,
     /// The members records for the class, grouped by method name.
-    members: BTreeMap<&'data str, Vec<Member>>,
+    members: BTreeMap<&'data str, Vec<MemberInProgress>>,
     /// The member records for the class, grouped by method name and parameter string.
-    members_by_params: BTreeMap<(&'data str, &'data str), Vec<Member>>,
+    members_by_params: BTreeMap<(&'data str, &'data str), Vec<MemberInProgress>>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct MemberInProgress {
+    member: Member,
+    outline_pairs: Vec<OutlinePair>,
 }

@@ -2,15 +2,17 @@
 //!
 //! # Structure
 //! A [`ProguardCache`] file comprises the following parts:
-//! * A [header](ProguardCache::header), containing the version number, the numbers of class, member, and
-//!   member-by-params entries, and the length of the string section;
+//! * A [header](ProguardCache::header), containing:
+//!   - the format version,
+//!   - the number of class, member, and member-by-params entries,
+//!   - the number of outline mapping pairs,
+//!   - and the length of the string section;
 //! * A [list](ProguardCache::classes) of [`Class`](raw::Class) entries;
 //! * A [list](ProguardCache::members) of [`Member`](raw::Member) entries;
-//! * Another [list](Proguard_cache::members_by_params) of `Member` entries, sorted
-//!   by parameter strings;
-//! * A [string section](ProguardCache::string_bytes) in which class names, method
-//!   names, &c. are collected. Whenever a class or member entry references a string,
-//!   it is by offset into this section.
+//! * Another [list](Proguard_cache::members_by_params) of `Member` entries, sorted by parameter strings;
+//! * A [list] of outline mapping pairs shared by all members;
+//! * A [string section](ProguardCache::string_bytes) in which class names, method names, &c. are collected.
+//!   Whenever a class or member entry references a string, it is by offset into this section.
 //!
 //! ## Class entries
 //! A class entry contains
@@ -26,7 +28,10 @@
 //! * an obfuscated and an original method name,
 //! * a start and end line (1- based and inclusive),
 //! * a params string,
-//! * and an `is_synthesized` flag.
+//! * an `is_synthesized` flag,
+//! * an `is_outline` flag designating outline methods,
+//! * an `outline_pairs_offset` and `outline_pairs_len` which slice into the global outline
+//!   pairs section.
 //!
 //! It may also contain
 //! * an original class name,
@@ -37,9 +42,15 @@
 //! obfuscated method name, and finally by the order in which they were encountered
 //! in the original proguard file.
 //!
-//! Member entries in `members_by_params` are sorted by the class they belong to,
-//! then by obfuscated method name, then by params string, and finally
-//! by the order in which they were encountered in the original proguard file.
+//! Member entries in `members_by_params` are sorted by the class they belong to, then by obfuscated
+//! method name, then by params string, and finally by the order in which they were encountered in the
+//! original proguard file.
+//!
+//! ## Outline pairs section
+//! The outline pairs section is a flat array of pairs mapping an outline-position to a callsite line.
+//! Each [`Member`](raw::Member) that carries outline callsite information references a sub-slice of this
+//! section via its `outline_pairs_offset` and `outline_pairs_len`. This keeps members fixed-size and
+//! enables zero-copy parsing while supporting variable-length metadata.
 
 mod debug;
 mod raw;
@@ -332,17 +343,164 @@ impl<'data> ProguardCache<'data> {
         })
     }
 
+    /// Returns the outline mapping pairs slice for a given member.
+    fn member_outline_pairs(&self, member: &raw::Member) -> &'data [raw::OutlinePair] {
+        let start = member.outline_pairs_offset as usize;
+        let end = start + member.outline_pairs_len as usize;
+        if start >= self.outline_pairs.len() || end > self.outline_pairs.len() {
+            &self.outline_pairs[0..0]
+        } else {
+            &self.outline_pairs[start..end]
+        }
+    }
+
+    /// If the previous frame was an outline and carried a position, attempt to
+    /// map that outline position to a callsite position for the given method.
+    fn map_outline_position(
+        &self,
+        class: &str,
+        method: &str,
+        callsite_line: usize,
+        pos: usize,
+        parameters: Option<&str>,
+    ) -> Option<usize> {
+        let class = self.get_class(class)?;
+
+        let candidates: &[raw::Member] = if let Some(params) = parameters {
+            let members = self.get_class_members_by_params(class)?;
+            Self::find_range_by_binary_search(members, |m| {
+                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
+                    return Ordering::Greater;
+                };
+                let p = self.read_string(m.params_offset).unwrap_or_default();
+                (obfuscated_name, p).cmp(&(method, params))
+            })?
+        } else {
+            let members = self.get_class_members(class)?;
+            Self::find_range_by_binary_search(members, |m| {
+                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
+                    return Ordering::Greater;
+                };
+                obfuscated_name.cmp(method)
+            })?
+        };
+
+        candidates
+            .iter()
+            .filter(|m| {
+                m.endline == 0
+                    || (callsite_line >= m.startline as usize
+                        && callsite_line <= m.endline as usize)
+            })
+            .find_map(|m| {
+                self.member_outline_pairs(m)
+                    .iter()
+                    .find(|pair| pair.outline_pos as usize == pos)
+                    .map(|pair| pair.callsite_line as usize)
+            })
+    }
+
+    /// Determines if a frame refers to an outline method, either via the
+    /// method-level flag or via any matching mapping entry for the frame line.
+    fn is_outline_frame(
+        &self,
+        class: &str,
+        method: &str,
+        line: usize,
+        parameters: Option<&str>,
+    ) -> bool {
+        let Some(class) = self.get_class(class) else {
+            return false;
+        };
+
+        let candidates: &[raw::Member] = if let Some(params) = parameters {
+            let Some(members) = self.get_class_members_by_params(class) else {
+                return false;
+            };
+            let Some(range) = Self::find_range_by_binary_search(members, |m| {
+                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
+                    return Ordering::Greater;
+                };
+                let p = self.read_string(m.params_offset).unwrap_or_default();
+                (obfuscated_name, p).cmp(&(method, params))
+            }) else {
+                return false;
+            };
+            range
+        } else {
+            let Some(members) = self.get_class_members(class) else {
+                return false;
+            };
+            let Some(range) = Self::find_range_by_binary_search(members, |m| {
+                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
+                    return Ordering::Greater;
+                };
+                obfuscated_name.cmp(method)
+            }) else {
+                return false;
+            };
+            range
+        };
+
+        candidates.iter().any(|m| {
+            m.is_outline()
+                && (m.endline == 0 || (line >= m.startline as usize && line <= m.endline as usize))
+        })
+    }
+
+    /// Applies any carried outline position to the frame line and returns the adjusted frame.
+    fn prepare_frame_for_mapping<'a>(
+        &self,
+        frame: &StackFrame<'a>,
+        carried_outline_pos: &mut Option<usize>,
+    ) -> StackFrame<'a> {
+        let mut effective = frame.clone();
+        if let Some(pos) = carried_outline_pos.take() {
+            if let Some(mapped) = self.map_outline_position(
+                effective.class,
+                effective.method,
+                effective.line,
+                pos,
+                effective.parameters,
+            ) {
+                effective.line = mapped;
+            }
+        }
+
+        effective
+    }
+
     /// Remaps a complete Java StackTrace, similar to [`Self::remap_stacktrace_typed`] but instead works on
     /// strings as input and output.
     pub fn remap_stacktrace(&self, input: &str) -> Result<String, std::fmt::Error> {
         let mut stacktrace = String::new();
         let mut lines = input.lines();
 
+        let mut carried_outline_pos: Option<usize> = None;
+
         if let Some(line) = lines.next() {
             match stacktrace::parse_throwable(line) {
                 None => match stacktrace::parse_frame(line) {
                     None => writeln!(&mut stacktrace, "{line}")?,
-                    Some(frame) => format_frames(&mut stacktrace, line, self.remap_frame(&frame))?,
+                    Some(frame) => {
+                        if self.is_outline_frame(
+                            frame.class,
+                            frame.method,
+                            frame.line,
+                            frame.parameters,
+                        ) {
+                            carried_outline_pos = Some(frame.line);
+                        } else {
+                            let effective_frame =
+                                self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
+
+                            format_frames(
+                                &mut stacktrace,
+                                line,
+                                self.remap_frame(&effective_frame),
+                            )?;
+                        }
+                    }
                 },
                 Some(throwable) => {
                     format_throwable(&mut stacktrace, line, self.remap_throwable(&throwable))?
@@ -361,7 +519,21 @@ impl<'data> ProguardCache<'data> {
                         format_cause(&mut stacktrace, line, self.remap_throwable(&cause))?
                     }
                 },
-                Some(frame) => format_frames(&mut stacktrace, line, self.remap_frame(&frame))?,
+                Some(frame) => {
+                    if self.is_outline_frame(
+                        frame.class,
+                        frame.method,
+                        frame.line,
+                        frame.parameters,
+                    ) {
+                        carried_outline_pos = Some(frame.line);
+                        continue;
+                    }
+
+                    let effective_frame =
+                        self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
+                    format_frames(&mut stacktrace, line, self.remap_frame(&effective_frame))?;
+                }
             }
         }
         Ok(stacktrace)
@@ -374,20 +546,22 @@ impl<'data> ProguardCache<'data> {
             .as_ref()
             .and_then(|t| self.remap_throwable(t));
 
-        let frames =
-            trace
-                .frames
-                .iter()
-                .fold(Vec::with_capacity(trace.frames.len()), |mut frames, f| {
-                    let mut peek_frames = self.remap_frame(f).peekable();
-                    if peek_frames.peek().is_some() {
-                        frames.extend(peek_frames);
-                    } else {
-                        frames.push(f.clone());
-                    }
+        let mut carried_outline_pos: Option<usize> = None;
+        let mut frames: Vec<StackFrame<'a>> = Vec::with_capacity(trace.frames.len());
+        for f in trace.frames.iter() {
+            if self.is_outline_frame(f.class, f.method, f.line, f.parameters) {
+                carried_outline_pos = Some(f.line);
+                continue;
+            }
 
-                    frames
-                });
+            let effective = self.prepare_frame_for_mapping(f, &mut carried_outline_pos);
+            let mut iter = self.remap_frame(&effective).peekable();
+            if iter.peek().is_some() {
+                frames.extend(iter);
+            } else {
+                frames.push(f.clone());
+            }
+        }
 
         let cause = trace
             .cause

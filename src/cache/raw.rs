@@ -116,6 +116,10 @@ pub(crate) struct Member {
     pub(crate) original_endline: u32,
     /// The entry's parameter string (offset into the strings section).
     pub(crate) params_offset: u32,
+    /// Offset into the outline pairs section for this member's outline callsite mapping.
+    pub(crate) outline_pairs_offset: u32,
+    /// Number of outline pairs for this member.
+    pub(crate) outline_pairs_len: u32,
     /// Whether this member was synthesized by the compiler.
     ///
     /// `0` means `false`, all other values mean `true`.
@@ -124,10 +128,6 @@ pub(crate) struct Member {
     ///
     /// `0` means `false`, all other values mean `true`.
     pub(crate) is_outline: u8,
-    /// Offset into the outline pairs section for this member's outline callsite mapping.
-    pub(crate) outline_pairs_offset: u32,
-    /// Number of outline pairs for this member.
-    pub(crate) outline_pairs_len: u32,
     /// Reserved space.
     pub(crate) _reserved: [u8; 2],
 }

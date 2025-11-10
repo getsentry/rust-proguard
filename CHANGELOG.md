@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.7.0
+
+### Various fixes & improvements
+
+- feat(r8): Support outline and outlineCallsite annotations in ProguardCache (#62) by @romtsn
+- feat(r8): Support outline and outlineCallsite annotations in ProguardMapping (#60) by @romtsn
+- build: Fix new compiler warnings (#61) by @romtsn
+- ref: Forbid `unwrap` except in tests and benches (#58) by @loewenheim
+
 ## 5.6.2
 
 ### Various fixes & improvements

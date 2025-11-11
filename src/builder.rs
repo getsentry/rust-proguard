@@ -121,6 +121,29 @@ pub(crate) struct MethodInfo {
     pub(crate) is_outline: bool,
 }
 
+/// Supported rewrite frame actions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RewriteAction<'s> {
+    RemoveInnerFrames(usize),
+    /// Placeholder to retain unsupported action strings for future handling.
+    Unknown(&'s str),
+}
+
+/// Supported rewrite frame conditions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RewriteCondition<'s> {
+    Throws(&'s str),
+    /// Placeholder to retain unsupported condition strings for future handling.
+    Unknown(&'s str),
+}
+
+/// A rewrite frame rule attached to a method mapping.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RewriteRule<'s> {
+    pub(crate) conditions: Vec<RewriteCondition<'s>>,
+    pub(crate) actions: Vec<RewriteAction<'s>>,
+}
+
 /// A member record in a Proguard file.
 #[derive(Clone, Debug)]
 pub(crate) struct Member<'s> {
@@ -136,6 +159,55 @@ pub(crate) struct Member<'s> {
     pub(crate) original_endline: Option<usize>,
     /// Optional outline callsite positions map attached to this member.
     pub(crate) outline_callsite_positions: Option<HashMap<usize, usize>>,
+    /// Optional rewrite rule attached to this member.
+    pub(crate) rewrite_rule: Option<RewriteRule<'s>>,
+}
+
+fn parse_rewrite_rule<'s>(conditions: &[&'s str], actions: &[&'s str]) -> Option<RewriteRule<'s>> {
+    if conditions.is_empty() || actions.is_empty() {
+        return None;
+    }
+
+    let mut parsed_conditions = Vec::with_capacity(conditions.len());
+    for condition in conditions {
+        let condition = condition.trim();
+        if condition.is_empty() {
+            return None;
+        }
+        if let Some(rest) = condition.strip_prefix("throws(") {
+            let Some(descriptor) = rest.strip_suffix(')') else {
+                return None;
+            };
+            if descriptor.is_empty() {
+                return None;
+            }
+            parsed_conditions.push(RewriteCondition::Throws(descriptor));
+        } else {
+            parsed_conditions.push(RewriteCondition::Unknown(condition));
+        }
+    }
+
+    let mut parsed_actions = Vec::with_capacity(actions.len());
+    for action in actions {
+        let action = action.trim();
+        if action.is_empty() {
+            return None;
+        }
+        if let Some(rest) = action.strip_prefix("removeInnerFrames(") {
+            let Some(count_str) = rest.strip_suffix(')') else {
+                return None;
+            };
+            let count = count_str.parse().ok()?;
+            parsed_actions.push(RewriteAction::RemoveInnerFrames(count));
+        } else {
+            parsed_actions.push(RewriteAction::Unknown(action));
+        }
+    }
+
+    Some(RewriteRule {
+        conditions: parsed_conditions,
+        actions: parsed_actions,
+    })
 }
 
 /// A collection of member records for a particular class
@@ -196,6 +268,7 @@ impl<'s> ParsedProguardMapping<'s> {
                     // Consume R8 headers attached to this class.
                     while let Some(ProguardRecord::R8Header(r8_header)) = records.peek() {
                         match r8_header {
+                            R8Header::RewriteFrame { .. } => {}
                             R8Header::SourceFile { file_name } => {
                                 current_class.source_file = Some(file_name)
                             }
@@ -251,6 +324,7 @@ impl<'s> ParsedProguardMapping<'s> {
                         .entry((current_class_obfuscated, ObfuscatedName(obfuscated)))
                         .or_default();
 
+                    let mut rewrite_rule: Option<RewriteRule<'s>> = None;
                     let method = MethodKey {
                         // Save the receiver name, keeping track of whether it's the current class
                         // (i.e. the one to which this member record belongs) or another class.
@@ -275,6 +349,14 @@ impl<'s> ParsedProguardMapping<'s> {
                             R8Header::Synthesized => method_info.is_synthesized = true,
                             R8Header::Outline => {
                                 method_info.is_outline = true;
+                            }
+                            R8Header::RewriteFrame {
+                                conditions,
+                                actions,
+                            } => {
+                                if rewrite_rule.is_none() {
+                                    rewrite_rule = parse_rewrite_rule(conditions, actions);
+                                }
                             }
                             R8Header::OutlineCallsite {
                                 positions,
@@ -302,6 +384,7 @@ impl<'s> ParsedProguardMapping<'s> {
                         original_startline,
                         original_endline,
                         outline_callsite_positions,
+                        rewrite_rule,
                     };
 
                     members.all.push(member.clone());

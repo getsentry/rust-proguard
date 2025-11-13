@@ -402,7 +402,7 @@ impl<'data> ProguardCache<'data> {
 
     /// Determines if a frame refers to an outline method, either via the
     /// method-level flag or via any matching mapping entry for the frame line.
-    fn is_outline_frame(
+    pub fn is_outline_frame(
         &self,
         class: &str,
         method: &str,
@@ -449,7 +449,7 @@ impl<'data> ProguardCache<'data> {
     }
 
     /// Applies any carried outline position to the frame line and returns the adjusted frame.
-    fn prepare_frame_for_mapping<'a>(
+    pub fn prepare_frame_for_mapping<'a>(
         &self,
         frame: &StackFrame<'a>,
         carried_outline_pos: &mut Option<usize>,

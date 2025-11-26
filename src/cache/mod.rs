@@ -443,9 +443,7 @@ impl<'data> ProguardCache<'data> {
             range
         };
 
-        candidates
-            .first()
-            .map_or(false, |member| member.is_outline())
+        candidates.first().is_some_and(|member| member.is_outline())
     }
 
     /// Applies any carried outline position to the frame line and returns the adjusted frame.

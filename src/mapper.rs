@@ -381,7 +381,7 @@ impl<'s> ProguardMapper<'s> {
                 } else {
                     &ms.all_mappings[..]
                 };
-                mappings.first().map_or(false, |m| m.is_outline)
+                mappings.first().is_some_and(|m| m.is_outline)
             })
             .unwrap_or(false)
     }

@@ -360,30 +360,14 @@ impl<'s> ProguardMapper<'s> {
     }
 
     /// Determines if a frame refers to an outline method via the method-level flag.
-    /// Outline metadata is consistent across all mappings for a method, so we can
-    /// inspect the first entry rather than matching individual line ranges.
-    fn is_outline_frame(
-        &self,
-        class: &str,
-        method: &str,
-        _line: usize,
-        parameters: Option<&str>,
-    ) -> bool {
+    /// Outline metadata is consistent across all mappings for a method, so checking
+    /// a single mapping entry is sufficient.
+    fn is_outline_frame(&self, class: &str, method: &str) -> bool {
         self.classes
             .get(class)
             .and_then(|c| c.members.get(method))
-            .map(|ms| {
-                let mappings: &[MemberMapping<'_>] = if let Some(params) = parameters {
-                    match ms.mappings_by_params.get(params) {
-                        Some(v) => &v[..],
-                        None => &[],
-                    }
-                } else {
-                    &ms.all_mappings[..]
-                };
-                mappings.first().is_some_and(|m| m.is_outline)
-            })
-            .unwrap_or(false)
+            .and_then(|ms| ms.all_mappings.first())
+            .is_some_and(|m| m.is_outline)
     }
 
     /// Applies any carried outline position to the frame line and returns the adjusted frame.
@@ -519,12 +503,7 @@ impl<'s> ProguardMapper<'s> {
                 None => match stacktrace::parse_frame(line) {
                     None => writeln!(&mut stacktrace, "{line}")?,
                     Some(frame) => {
-                        if self.is_outline_frame(
-                            frame.class,
-                            frame.method,
-                            frame.line,
-                            frame.parameters,
-                        ) {
+                        if self.is_outline_frame(frame.class, frame.method) {
                             carried_outline_pos = Some(frame.line);
                         } else {
                             let effective_frame =
@@ -556,12 +535,7 @@ impl<'s> ProguardMapper<'s> {
                     }
                 },
                 Some(frame) => {
-                    if self.is_outline_frame(
-                        frame.class,
-                        frame.method,
-                        frame.line,
-                        frame.parameters,
-                    ) {
+                    if self.is_outline_frame(frame.class, frame.method) {
                         carried_outline_pos = Some(frame.line);
                         continue;
                     }
@@ -586,7 +560,7 @@ impl<'s> ProguardMapper<'s> {
         let mut carried_outline_pos: Option<usize> = None;
         let mut frames_out = Vec::with_capacity(trace.frames.len());
         for f in trace.frames.iter() {
-            if self.is_outline_frame(f.class, f.method, f.line, f.parameters) {
+            if self.is_outline_frame(f.class, f.method) {
                 carried_outline_pos = Some(f.line);
                 continue;
             }

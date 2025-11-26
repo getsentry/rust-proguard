@@ -400,13 +400,14 @@ impl<'data> ProguardCache<'data> {
             })
     }
 
-    /// Determines if a frame refers to an outline method, either via the
-    /// method-level flag or via any matching mapping entry for the frame line.
+    /// Determines if a frame refers to an outline method via the method-level flag.
+    /// Outline metadata is consistent across all mapping entries for a method, so
+    /// we only need to inspect the method itself instead of individual line ranges.
     pub fn is_outline_frame(
         &self,
         class: &str,
         method: &str,
-        line: usize,
+        _line: usize,
         parameters: Option<&str>,
     ) -> bool {
         let Some(class) = self.get_class(class) else {
@@ -442,10 +443,9 @@ impl<'data> ProguardCache<'data> {
             range
         };
 
-        candidates.iter().any(|m| {
-            m.is_outline()
-                && (m.endline == 0 || (line >= m.startline as usize && line <= m.endline as usize))
-        })
+        candidates
+            .first()
+            .map_or(false, |member| member.is_outline())
     }
 
     /// Applies any carried outline position to the frame line and returns the adjusted frame.

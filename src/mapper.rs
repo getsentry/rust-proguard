@@ -359,20 +359,21 @@ impl<'s> ProguardMapper<'s> {
             })
     }
 
-    /// Determines if a frame refers to an outline method, either via the
-    /// method-level flag or via any matching mapping entry for the frame line.
+    /// Determines if a frame refers to an outline method via the method-level flag.
+    /// Outline metadata is consistent across all mappings for a method, so we can
+    /// inspect the first entry rather than matching individual line ranges.
     fn is_outline_frame(
         &self,
         class: &str,
         method: &str,
-        line: usize,
+        _line: usize,
         parameters: Option<&str>,
     ) -> bool {
         self.classes
             .get(class)
             .and_then(|c| c.members.get(method))
             .map(|ms| {
-                let mappings: &[_] = if let Some(params) = parameters {
+                let mappings: &[MemberMapping<'_>] = if let Some(params) = parameters {
                     match ms.mappings_by_params.get(params) {
                         Some(v) => &v[..],
                         None => &[],
@@ -380,9 +381,7 @@ impl<'s> ProguardMapper<'s> {
                 } else {
                     &ms.all_mappings[..]
                 };
-                mappings.iter().any(|m| {
-                    m.is_outline && (m.endline == 0 || (line >= m.startline && line <= m.endline))
-                })
+                mappings.first().map_or(false, |m| m.is_outline)
             })
             .unwrap_or(false)
     }

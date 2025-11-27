@@ -400,56 +400,32 @@ impl<'data> ProguardCache<'data> {
             })
     }
 
-    /// Determines if a frame refers to an outline method, either via the
-    /// method-level flag or via any matching mapping entry for the frame line.
-    fn is_outline_frame(
-        &self,
-        class: &str,
-        method: &str,
-        line: usize,
-        parameters: Option<&str>,
-    ) -> bool {
+    /// Determines if a frame refers to an outline method via the method-level flag.
+    /// Outline metadata is consistent across all mapping entries for a method, so
+    /// we only need to inspect the method metadata instead of individual lines.
+    pub fn is_outline_frame(&self, class: &str, method: &str) -> bool {
         let Some(class) = self.get_class(class) else {
             return false;
         };
 
-        let candidates: &[raw::Member] = if let Some(params) = parameters {
-            let Some(members) = self.get_class_members_by_params(class) else {
-                return false;
-            };
-            let Some(range) = Self::find_range_by_binary_search(members, |m| {
-                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                    return Ordering::Greater;
-                };
-                let p = self.read_string(m.params_offset).unwrap_or_default();
-                (obfuscated_name, p).cmp(&(method, params))
-            }) else {
-                return false;
-            };
-            range
-        } else {
-            let Some(members) = self.get_class_members(class) else {
-                return false;
-            };
-            let Some(range) = Self::find_range_by_binary_search(members, |m| {
-                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                    return Ordering::Greater;
-                };
-                obfuscated_name.cmp(method)
-            }) else {
-                return false;
-            };
-            range
+        let Some(members) = self.get_class_members(class) else {
+            return false;
         };
 
-        candidates.iter().any(|m| {
-            m.is_outline()
-                && (m.endline == 0 || (line >= m.startline as usize && line <= m.endline as usize))
-        })
+        let Some(candidates) = Self::find_range_by_binary_search(members, |m| {
+            let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
+                return Ordering::Greater;
+            };
+            obfuscated_name.cmp(method)
+        }) else {
+            return false;
+        };
+
+        candidates.first().is_some_and(|member| member.is_outline())
     }
 
     /// Applies any carried outline position to the frame line and returns the adjusted frame.
-    fn prepare_frame_for_mapping<'a>(
+    pub fn prepare_frame_for_mapping<'a>(
         &self,
         frame: &StackFrame<'a>,
         carried_outline_pos: &mut Option<usize>,
@@ -483,12 +459,7 @@ impl<'data> ProguardCache<'data> {
                 None => match stacktrace::parse_frame(line) {
                     None => writeln!(&mut stacktrace, "{line}")?,
                     Some(frame) => {
-                        if self.is_outline_frame(
-                            frame.class,
-                            frame.method,
-                            frame.line,
-                            frame.parameters,
-                        ) {
+                        if self.is_outline_frame(frame.class, frame.method) {
                             carried_outline_pos = Some(frame.line);
                         } else {
                             let effective_frame =
@@ -520,12 +491,7 @@ impl<'data> ProguardCache<'data> {
                     }
                 },
                 Some(frame) => {
-                    if self.is_outline_frame(
-                        frame.class,
-                        frame.method,
-                        frame.line,
-                        frame.parameters,
-                    ) {
+                    if self.is_outline_frame(frame.class, frame.method) {
                         carried_outline_pos = Some(frame.line);
                         continue;
                     }
@@ -549,7 +515,7 @@ impl<'data> ProguardCache<'data> {
         let mut carried_outline_pos: Option<usize> = None;
         let mut frames: Vec<StackFrame<'a>> = Vec::with_capacity(trace.frames.len());
         for f in trace.frames.iter() {
-            if self.is_outline_frame(f.class, f.method, f.line, f.parameters) {
+            if self.is_outline_frame(f.class, f.method) {
                 carried_outline_pos = Some(f.line);
                 continue;
             }

@@ -1,6 +1,8 @@
 use std::sync::LazyLock;
 
 use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame};
+#[cfg(feature = "uuid")]
+use uuid::uuid;
 
 static MAPPING: &[u8] = include_bytes!("res/mapping.txt");
 
@@ -222,7 +224,7 @@ fn test_inlines() {
     {
         assert_eq!(
             mapping.uuid(),
-            "3828bd45-950f-5e77-9737-b6b3a1d80299".parse().unwrap()
+            uuid!("3828bd45-950f-5e77-9737-b6b3a1d80299")
         );
     }
 
@@ -274,7 +276,7 @@ fn test_inlines_cache() {
     {
         assert_eq!(
             mapping.uuid(),
-            "3828bd45-950f-5e77-9737-b6b3a1d80299".parse().unwrap()
+            uuid!("3828bd45-950f-5e77-9737-b6b3a1d80299")
         );
     }
 
@@ -324,7 +326,7 @@ fn test_inlines_cache() {
 fn test_uuid() {
     assert_eq!(
         ProguardMapping::new(MAPPING).uuid(),
-        "5cd8e873-1127-5276-81b7-8ff25043ecfd".parse().unwrap()
+        uuid!("5cd8e873-1127-5276-81b7-8ff25043ecfd")
     );
 }
 
@@ -333,6 +335,6 @@ fn test_uuid() {
 fn test_uuid_win() {
     assert_eq!(
         ProguardMapping::new(&MAPPING_WIN[..]).uuid(),
-        "71d468f2-0dc4-5017-9f12-1a81081913ef".parse().unwrap()
+        uuid!("71d468f2-0dc4-5017-9f12-1a81081913ef")
     );
 }

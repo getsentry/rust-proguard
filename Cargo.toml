@@ -9,6 +9,7 @@ homepage = "https://sentry.io/welcome/"
 license = "BSD-3-Clause"
 readme = "README.md"
 edition = "2021"
+rust-version = "1.83.0"
 
 [features]
 uuid = ["dep:uuid"]
@@ -19,12 +20,12 @@ unwrap-used = "warn"
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
-thiserror = "1.0.61"
-uuid = { version = "1.0.0", features = ["v5"], optional = true }
-watto = { version = "0.1.0", features = ["writer", "strings"] }
+thiserror = "2.0.17"
+uuid = { version = "1.18.0", features = ["v5"], optional = true }
+watto = { version = "0.2.0", features = ["writer", "strings"] }
 
 [dev-dependencies]
-criterion = "0.4"
+criterion = "0.7"
 
 [[bench]]
 name = "proguard_parsing"

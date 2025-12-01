@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use proguard::{ProguardCache, ProguardMapper, ProguardMapping};
 
 static MAPPING: &[u8] = include_bytes!("../tests/res/mapping.txt");
@@ -19,7 +19,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("Proguard Parsing");
     group.bench_function("Proguard Mapper", |b| {
-        b.iter(|| proguard_mapper(black_box(mapping)))
+        b.iter(|| proguard_mapper(std::hint::black_box(mapping)))
     });
 
     group.bench_function("Proguard Cache creation", |b| {
@@ -31,7 +31,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     group.bench_function("Proguard Cache parsing", |b| {
-        b.iter(|| proguard_cache(black_box(&cache)))
+        b.iter(|| proguard_cache(std::hint::black_box(&cache)))
     });
 }
 

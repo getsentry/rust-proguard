@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.8.1
+
+- build: Update dependencies and set MSRV 1.83.0 by @loewenheim in [#65](https://github.com/getsentry/rust-proguard/pull/65)
+
 ## 5.8.0
 
 - feat(outline): Expose is_outline and prepare_frame_for_mapping by @romtsn in [#64](https://github.com/getsentry/rust-proguard/pull/64)

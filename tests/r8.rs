@@ -10,6 +10,7 @@ static MAPPING_R8_SYMBOLICATED_FILE_NAMES: &[u8] =
     include_bytes!("res/mapping-r8-symbolicated_file_names.txt");
 static MAPPING_OUTLINE: &[u8] = include_bytes!("res/mapping-outline.txt");
 static MAPPING_OUTLINE_COMPLEX: &[u8] = include_bytes!("res/mapping-outline-complex.txt");
+static MAPPING_REWRITE_COMPLEX: &str = include_str!("res/mapping-rewrite-complex.txt");
 
 static MAPPING_WIN_R8: LazyLock<Vec<u8>> = LazyLock::new(|| {
     MAPPING_R8
@@ -329,4 +330,33 @@ fn test_outline_frame_retracing() {
         StackFrame::new("some.Class", "outlineCaller", 0)
     );
     assert_eq!(mapped.next(), None);
+}
+
+#[test]
+fn rewrite_frame_complex_stacktrace() {
+    let mapper = ProguardMapper::from(MAPPING_REWRITE_COMPLEX);
+
+    let input = "\
+java.lang.NullPointerException: Primary issue
+    at a.start(SourceFile:10)
+    at b.dispatch(SourceFile:5)
+    at c.draw(SourceFile:20)
+Caused by: java.lang.IllegalStateException: Secondary issue
+    at b.dispatch(SourceFile:5)
+    at c.draw(SourceFile:20)
+";
+
+    let expected = "\
+java.lang.NullPointerException: Primary issue
+    at com.example.flow.Initializer.start(SourceFile:42)
+    at com.example.flow.StreamRouter$Inline.internalDispatch(<unknown>:30)
+    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
+    at com.example.flow.UiBridge.render(SourceFile:200)
+Caused by: java.lang.IllegalStateException: Secondary issue
+    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
+    at com.example.flow.UiBridge.render(SourceFile:200)
+";
+
+    let actual = mapper.remap_stacktrace(input).unwrap();
+    assert_eq!(actual, expected);
 }

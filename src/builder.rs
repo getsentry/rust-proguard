@@ -175,9 +175,7 @@ fn parse_rewrite_rule<'s>(conditions: &[&'s str], actions: &[&'s str]) -> Option
             return None;
         }
         if let Some(rest) = condition.strip_prefix("throws(") {
-            let Some(descriptor) = rest.strip_suffix(')') else {
-                return None;
-            };
+            let descriptor = rest.strip_suffix(')')?;
             if descriptor.is_empty() {
                 return None;
             }
@@ -194,9 +192,7 @@ fn parse_rewrite_rule<'s>(conditions: &[&'s str], actions: &[&'s str]) -> Option
             return None;
         }
         if let Some(rest) = action.strip_prefix("removeInnerFrames(") {
-            let Some(count_str) = rest.strip_suffix(')') else {
-                return None;
-            };
+            let count_str = rest.strip_suffix(')')?;
             let count = count_str.parse().ok()?;
             parsed_actions.push(RewriteAction::RemoveInnerFrames(count));
         } else {

@@ -2,6 +2,9 @@ use std::sync::LazyLock;
 
 use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame};
 
+#[cfg(feature = "uuid")]
+use uuid::uuid;
+
 static MAPPING_R8: &[u8] = include_bytes!("res/mapping-r8.txt");
 static MAPPING_R8_SYMBOLICATED_FILE_NAMES: &[u8] =
     include_bytes!("res/mapping-r8-symbolicated_file_names.txt");
@@ -92,7 +95,7 @@ fn test_summary() {
 fn test_uuid() {
     assert_eq!(
         ProguardMapping::new(MAPPING_R8).uuid(),
-        "c96fb926-797c-53de-90ee-df2aeaf28340".parse().unwrap()
+        uuid!("c96fb926-797c-53de-90ee-df2aeaf28340")
     );
 }
 
@@ -101,7 +104,7 @@ fn test_uuid() {
 fn test_uuid_win() {
     assert_eq!(
         ProguardMapping::new(&MAPPING_WIN_R8[..]).uuid(),
-        "d8b03b44-58df-5cd7-adc7-aefcfb0e2ade".parse().unwrap()
+        uuid!("d8b03b44-58df-5cd7-adc7-aefcfb0e2ade")
     );
 }
 

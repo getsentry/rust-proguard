@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use proguard::{ProguardCache, ProguardMapper, ProguardMapping};
 
 static MAPPING: &[u8] = include_bytes!("../tests/res/mapping-inlines.txt");
@@ -29,22 +29,22 @@ fn benchmark_remapping(c: &mut Criterion) {
     let mut group = c.benchmark_group("Proguard Remapping");
 
     group.bench_function("Cache, preparsed", |b| {
-        b.iter(|| cache.remap_stacktrace(black_box(RAW)))
+        b.iter(|| cache.remap_stacktrace(std::hint::black_box(RAW)))
     });
     group.bench_function("Mapper, preparsed", |b| {
-        b.iter(|| mapper.remap_stacktrace(black_box(RAW)))
+        b.iter(|| mapper.remap_stacktrace(std::hint::black_box(RAW)))
     });
 
     group.bench_function("Cache", |b| {
         b.iter(|| {
-            let cache = ProguardCache::parse(black_box(&cache_buf)).unwrap();
-            cache.remap_stacktrace(black_box(RAW))
+            let cache = ProguardCache::parse(std::hint::black_box(&cache_buf)).unwrap();
+            cache.remap_stacktrace(std::hint::black_box(RAW))
         })
     });
     group.bench_function("Mapper", |b| {
         b.iter(|| {
-            let mapper = ProguardMapper::new(black_box(ProguardMapping::new(MAPPING)));
-            mapper.remap_stacktrace(black_box(RAW))
+            let mapper = ProguardMapper::new(std::hint::black_box(ProguardMapping::new(MAPPING)));
+            mapper.remap_stacktrace(std::hint::black_box(RAW))
         })
     });
 

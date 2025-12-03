@@ -196,12 +196,8 @@ fn map_member_without_lines<'a>(
     }
 }
 
-fn apply_rewrite_rules<'s>(
-    frames: &mut Vec<StackFrame<'s>>,
-    rewrite_rules: &[&'s RewriteRule<'s>],
-    thrown_descriptor: Option<&str>,
-) {
-    for rule in rewrite_rules {
+fn apply_rewrite_rules<'s>(collected: &mut CollectedFrames<'s>, thrown_descriptor: Option<&str>) {
+    for rule in &collected.rewrite_rules {
         let matches = rule.conditions.iter().all(|condition| match condition {
             RewriteCondition::Throws(descriptor) => Some(*descriptor) == thrown_descriptor,
             RewriteCondition::Unknown(_) => false,
@@ -214,16 +210,16 @@ fn apply_rewrite_rules<'s>(
         for action in &rule.actions {
             match action {
                 RewriteAction::RemoveInnerFrames(count) => {
-                    if *count >= frames.len() {
-                        frames.clear();
+                    if *count >= collected.frames.len() {
+                        collected.frames.clear();
                     } else {
-                        frames.drain(0..*count);
+                        collected.frames.drain(0..*count);
                     }
                 }
                 RewriteAction::Unknown(_) => {}
             }
         }
-        if frames.is_empty() {
+        if collected.frames.is_empty() {
             break;
         }
     }
@@ -622,8 +618,7 @@ impl<'s> ProguardMapper<'s> {
                 if let Some(mut collected) = self.collect_remapped_frames(&effective_frame) {
                     if next_frame_can_rewrite {
                         apply_rewrite_rules(
-                            &mut collected.frames,
-                            &collected.rewrite_rules,
+                            &mut collected,
                             current_exception_descriptor.as_deref(),
                         );
                     }
@@ -693,11 +688,7 @@ impl<'s> ProguardMapper<'s> {
             let effective = self.prepare_frame_for_mapping(f, &mut carried_outline_pos);
             if let Some(mut collected) = self.collect_remapped_frames(&effective) {
                 if next_frame_can_rewrite {
-                    apply_rewrite_rules(
-                        &mut collected.frames,
-                        &collected.rewrite_rules,
-                        exception_descriptor.as_deref(),
-                    );
+                    apply_rewrite_rules(&mut collected, exception_descriptor.as_deref());
                 }
                 next_frame_can_rewrite = false;
 

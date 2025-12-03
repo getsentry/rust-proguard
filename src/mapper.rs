@@ -65,7 +65,7 @@ struct MemberMapping<'s> {
     is_synthesized: bool,
     is_outline: bool,
     outline_callsite_positions: Option<HashMap<usize, usize>>,
-    rewrite_rule: Option<RewriteRule<'s>>,
+    rewrite_rules: Vec<RewriteRule<'s>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -382,7 +382,7 @@ impl<'s> ProguardMapper<'s> {
             is_synthesized,
             is_outline,
             outline_callsite_positions,
-            rewrite_rule: member.rewrite_rule.clone(),
+            rewrite_rules: member.rewrite_rules.clone(),
         }
     }
 
@@ -490,18 +490,14 @@ impl<'s> ProguardMapper<'s> {
             for member in mapping_entries {
                 if let Some(mapped) = map_member_with_lines(&frame, member) {
                     collected.frames.push(mapped);
-                    if let Some(rule) = member.rewrite_rule.as_ref() {
-                        collected.rewrite_rules.push(rule);
-                    }
+                    collected.rewrite_rules.extend(member.rewrite_rules.iter());
                 }
             }
         } else {
             for member in mapping_entries {
                 let mapped = map_member_without_lines(&frame, member);
                 collected.frames.push(mapped);
-                if let Some(rule) = member.rewrite_rule.as_ref() {
-                    collected.rewrite_rules.push(rule);
-                }
+                collected.rewrite_rules.extend(member.rewrite_rules.iter());
             }
         }
 
@@ -953,5 +949,35 @@ some.Class -> a:
         assert_eq!(remapped.frames[0].class, "some.Class");
         assert_eq!(remapped.frames[0].method, "caller");
         assert_eq!(remapped.frames[0].line, 7);
+    }
+
+    #[test]
+    fn rewrite_frame_multiple_rules_or_semantics() {
+        let mapping = "\
+some.Class -> a:
+    4:4:void other.Class.inlinee():23:23 -> call
+    4:4:void outer():7 -> call
+    # {\"id\":\"com.android.tools.r8.rewriteFrame\",\"conditions\":[\"throws(Ljava/lang/NullPointerException;)\"],\"actions\":[\"removeInnerFrames(1)\"]}
+    # {\"id\":\"com.android.tools.r8.rewriteFrame\",\"conditions\":[\"throws(Ljava/lang/IllegalStateException;)\"],\"actions\":[\"removeInnerFrames(1)\"]}
+";
+        let mapper = ProguardMapper::from(mapping);
+
+        let input_npe = "\
+java.lang.NullPointerException: Boom
+    at a.call(SourceFile:4)";
+        let expected_npe = "\
+java.lang.NullPointerException: Boom
+    at some.Class.outer(SourceFile:7)
+";
+        assert_eq!(mapper.remap_stacktrace(input_npe).unwrap(), expected_npe);
+
+        let input_ise = "\
+java.lang.IllegalStateException: Boom
+    at a.call(SourceFile:4)";
+        let expected_ise = "\
+java.lang.IllegalStateException: Boom
+    at some.Class.outer(SourceFile:7)
+";
+        assert_eq!(mapper.remap_stacktrace(input_ise).unwrap(), expected_ise);
     }
 }

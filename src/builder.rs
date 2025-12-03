@@ -159,8 +159,8 @@ pub(crate) struct Member<'s> {
     pub(crate) original_endline: Option<usize>,
     /// Optional outline callsite positions map attached to this member.
     pub(crate) outline_callsite_positions: Option<HashMap<usize, usize>>,
-    /// Optional rewrite rule attached to this member.
-    pub(crate) rewrite_rule: Option<RewriteRule<'s>>,
+    /// Optional rewrite rules attached to this member.
+    pub(crate) rewrite_rules: Vec<RewriteRule<'s>>,
 }
 
 fn parse_rewrite_rule<'s>(conditions: &[&'s str], actions: &[&'s str]) -> Option<RewriteRule<'s>> {
@@ -320,7 +320,7 @@ impl<'s> ParsedProguardMapping<'s> {
                         .entry((current_class_obfuscated, ObfuscatedName(obfuscated)))
                         .or_default();
 
-                    let mut rewrite_rule: Option<RewriteRule<'s>> = None;
+                    let mut rewrite_rules: Vec<RewriteRule<'s>> = Vec::new();
                     let method = MethodKey {
                         // Save the receiver name, keeping track of whether it's the current class
                         // (i.e. the one to which this member record belongs) or another class.
@@ -350,8 +350,8 @@ impl<'s> ParsedProguardMapping<'s> {
                                 conditions,
                                 actions,
                             } => {
-                                if rewrite_rule.is_none() {
-                                    rewrite_rule = parse_rewrite_rule(conditions, actions);
+                                if let Some(rule) = parse_rewrite_rule(conditions, actions) {
+                                    rewrite_rules.push(rule);
                                 }
                             }
                             R8Header::OutlineCallsite {
@@ -380,7 +380,7 @@ impl<'s> ParsedProguardMapping<'s> {
                         original_startline,
                         original_endline,
                         outline_callsite_positions,
-                        rewrite_rule,
+                        rewrite_rules,
                     };
 
                     members.all.push(member.clone());

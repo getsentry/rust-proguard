@@ -337,6 +337,16 @@ pub enum R8Header<'s> {
         outline: Option<&'s str>,
     },
 
+    /// A rewrite frame header, describing how retracing should rewrite frames.
+    ///
+    /// See <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#rewriteframe-introduced-at-version-2_0>.
+    #[serde(rename_all = "camelCase")]
+    #[serde(rename = "com.android.tools.r8.rewriteFrame")]
+    RewriteFrame {
+        conditions: Vec<&'s str>,
+        actions: Vec<&'s str>,
+    },
+
     /// Catchall variant for headers we don't support.
     #[serde(other)]
     Other,
@@ -1174,6 +1184,33 @@ androidx.activity.OnBackPressedCallback
         assert_eq!(
             ProguardRecord::try_parse(bytes).unwrap(),
             ProguardRecord::R8Header(R8Header::Outline)
+        );
+    }
+
+    #[test]
+    fn try_parse_header_rewrite_frame() {
+        let bytes = br#"# {"id":"com.android.tools.r8.rewriteFrame","conditions":["throws(Ljava/lang/NullPointerException;)"],"actions":["removeInnerFrames(1)"]}"#;
+        assert_eq!(
+            ProguardRecord::try_parse(bytes).unwrap(),
+            ProguardRecord::R8Header(R8Header::RewriteFrame {
+                conditions: vec!["throws(Ljava/lang/NullPointerException;)"],
+                actions: vec!["removeInnerFrames(1)"],
+            })
+        );
+    }
+
+    #[test]
+    fn try_parse_header_rewrite_frame_multiple_entries() {
+        let bytes = br#"# {"id":"com.android.tools.r8.rewriteFrame","conditions":["throws(Ljava/lang/NullPointerException;)","throws(Ljava/lang/IllegalStateException;)"],"actions":["removeInnerFrames(2)"]}"#;
+        assert_eq!(
+            ProguardRecord::try_parse(bytes).unwrap(),
+            ProguardRecord::R8Header(R8Header::RewriteFrame {
+                conditions: vec![
+                    "throws(Ljava/lang/NullPointerException;)",
+                    "throws(Ljava/lang/IllegalStateException;)"
+                ],
+                actions: vec!["removeInnerFrames(2)"],
+            })
         );
     }
 

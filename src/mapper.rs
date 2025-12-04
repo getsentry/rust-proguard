@@ -3,7 +3,9 @@ use std::fmt;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
-use crate::builder::{Member, MethodReceiver, ParsedProguardMapping};
+use crate::builder::{
+    Member, MethodReceiver, ParsedProguardMapping, RewriteAction, RewriteCondition, RewriteRule,
+};
 use crate::java;
 use crate::mapping::ProguardMapping;
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
@@ -63,6 +65,7 @@ struct MemberMapping<'s> {
     is_synthesized: bool,
     is_outline: bool,
     outline_callsite_positions: Option<HashMap<usize, usize>>,
+    rewrite_rules: Vec<RewriteRule<'s>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -81,6 +84,12 @@ struct ClassMapping<'s> {
         reason = "It is currently unknown what effect a synthesized class has."
     )]
     is_synthesized: bool,
+}
+
+#[derive(Default)]
+struct CollectedFrames<'s> {
+    frames: Vec<StackFrame<'s>>,
+    rewrite_rules: Vec<&'s RewriteRule<'s>>,
 }
 
 type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
@@ -120,53 +129,110 @@ fn extract_class_name(full_path: &str) -> Option<&str> {
     after_last_period.split('$').next()
 }
 
+fn class_name_to_descriptor(class: &str) -> String {
+    let mut descriptor = String::with_capacity(class.len() + 2);
+    descriptor.push('L');
+    descriptor.push_str(&class.replace('.', "/"));
+    descriptor.push(';');
+    descriptor
+}
+
+fn map_member_with_lines<'a>(
+    frame: &StackFrame<'a>,
+    member: &MemberMapping<'a>,
+) -> Option<StackFrame<'a>> {
+    if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline) {
+        return None;
+    }
+
+    // parents of inlined frames don’t have an `endline`, and
+    // the top inlined frame need to be correctly offset.
+    let line = if member.original_endline.is_none()
+        || member.original_endline == Some(member.original_startline)
+    {
+        member.original_startline
+    } else {
+        member.original_startline + frame.line - member.startline
+    };
+
+    let file = if let Some(file_name) = member.original_file {
+        if file_name == "R8$$SyntheticClass" {
+            extract_class_name(member.original_class.unwrap_or(frame.class))
+        } else {
+            member.original_file
+        }
+    } else if member.original_class.is_some() {
+        // when an inlined function is from a foreign class, we
+        // don’t know the file it is defined in.
+        None
+    } else {
+        frame.file
+    };
+
+    let class = member.original_class.unwrap_or(frame.class);
+
+    Some(StackFrame {
+        class,
+        method: member.original,
+        file,
+        line,
+        parameters: frame.parameters,
+        method_synthesized: member.is_synthesized,
+    })
+}
+
+fn map_member_without_lines<'a>(
+    frame: &StackFrame<'a>,
+    member: &MemberMapping<'a>,
+) -> StackFrame<'a> {
+    let class = member.original_class.unwrap_or(frame.class);
+    StackFrame {
+        class,
+        method: member.original,
+        file: None,
+        line: 0,
+        parameters: frame.parameters,
+        method_synthesized: member.is_synthesized,
+    }
+}
+
+fn apply_rewrite_rules<'s>(collected: &mut CollectedFrames<'s>, thrown_descriptor: Option<&str>) {
+    for rule in &collected.rewrite_rules {
+        let matches = rule.conditions.iter().all(|condition| match condition {
+            RewriteCondition::Throws(descriptor) => Some(*descriptor) == thrown_descriptor,
+            RewriteCondition::Unknown(_) => false,
+        });
+
+        if !matches {
+            continue;
+        }
+
+        for action in &rule.actions {
+            match action {
+                RewriteAction::RemoveInnerFrames(count) => {
+                    if *count >= collected.frames.len() {
+                        collected.frames.clear();
+                    } else {
+                        collected.frames.drain(0..*count);
+                    }
+                }
+                RewriteAction::Unknown(_) => {}
+            }
+        }
+        if collected.frames.is_empty() {
+            break;
+        }
+    }
+}
+
 fn iterate_with_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
 ) -> Option<StackFrame<'a>> {
     for member in members {
-        // skip any members which do not match our frames line
-        if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline) {
-            continue;
+        if let Some(mapped) = map_member_with_lines(frame, member) {
+            return Some(mapped);
         }
-
-        // parents of inlined frames don’t have an `endline`, and
-        // the top inlined frame need to be correctly offset.
-        let line = if member.original_endline.is_none()
-            || member.original_endline == Some(member.original_startline)
-        {
-            member.original_startline
-        } else {
-            member.original_startline + frame.line - member.startline
-        };
-
-        let file = if let Some(file_name) = member.original_file {
-            if file_name == "R8$$SyntheticClass" {
-                extract_class_name(member.original_class.unwrap_or(frame.class))
-            } else {
-                member.original_file
-            }
-        } else if member.original_class.is_some() {
-            // when an inlined function is from a foreign class, we
-            // don’t know the file it is defined in.
-            None
-        } else {
-            frame.file
-        };
-
-        let class = match member.original_class {
-            Some(class) => class,
-            _ => frame.class,
-        };
-
-        return Some(StackFrame {
-            class,
-            method: member.original,
-            file,
-            line,
-            parameters: frame.parameters,
-            method_synthesized: member.is_synthesized,
-        });
     }
     None
 }
@@ -175,20 +241,9 @@ fn iterate_without_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
 ) -> Option<StackFrame<'a>> {
-    let member = members.next()?;
-
-    let class = match member.original_class {
-        Some(class) => class,
-        _ => frame.class,
-    };
-    Some(StackFrame {
-        class,
-        method: member.original,
-        file: None,
-        line: 0,
-        parameters: frame.parameters,
-        method_synthesized: member.is_synthesized,
-    })
+    members
+        .next()
+        .map(|member| map_member_without_lines(frame, member))
 }
 
 impl FusedIterator for RemappedFrameIter<'_> {}
@@ -323,6 +378,7 @@ impl<'s> ProguardMapper<'s> {
             is_synthesized,
             is_outline,
             outline_callsite_positions,
+            rewrite_rules: member.rewrite_rules.clone(),
         }
     }
 
@@ -410,6 +466,45 @@ impl<'s> ProguardMapper<'s> {
         self.classes.get(class).map(|class| class.original)
     }
 
+    fn collect_remapped_frames(&'s self, frame: &StackFrame<'s>) -> CollectedFrames<'s> {
+        let mut collected = CollectedFrames::default();
+        let Some(class) = self.classes.get(frame.class) else {
+            return collected;
+        };
+        let Some(members) = class.members.get(frame.method) else {
+            return collected;
+        };
+
+        let mut frame = frame.clone();
+        frame.class = class.original;
+
+        let mapping_entries: &[MemberMapping<'s>] = if let Some(parameters) = frame.parameters {
+            let Some(typed_members) = members.mappings_by_params.get(parameters) else {
+                return collected;
+            };
+            typed_members.as_slice()
+        } else {
+            members.all_mappings.as_slice()
+        };
+
+        if frame.parameters.is_none() {
+            for member in mapping_entries {
+                if let Some(mapped) = map_member_with_lines(&frame, member) {
+                    collected.frames.push(mapped);
+                    collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                }
+            }
+        } else {
+            for member in mapping_entries {
+                let mapped = map_member_without_lines(&frame, member);
+                collected.frames.push(mapped);
+                collected.rewrite_rules.extend(member.rewrite_rules.iter());
+            }
+        }
+
+        collected
+    }
+
     /// returns a tuple where the first element is the list of the function
     /// parameters and the second one is the return type
     pub fn deobfuscate_signature(&'s self, signature: &str) -> Option<DeobfuscatedSignature> {
@@ -495,57 +590,77 @@ impl<'s> ProguardMapper<'s> {
     /// strings as input and output.
     pub fn remap_stacktrace(&self, input: &str) -> Result<String, std::fmt::Error> {
         let mut stacktrace = String::new();
-        let mut lines = input.lines();
         let mut carried_outline_pos: Option<usize> = None;
+        let mut current_exception_descriptor: Option<String> = None;
+        let mut next_frame_can_rewrite = false;
 
-        if let Some(line) = lines.next() {
-            match stacktrace::parse_throwable(line) {
-                None => match stacktrace::parse_frame(line) {
-                    None => writeln!(&mut stacktrace, "{line}")?,
-                    Some(frame) => {
-                        if self.is_outline_frame(frame.class, frame.method) {
-                            carried_outline_pos = Some(frame.line);
-                        } else {
-                            let effective_frame =
-                                self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
-
-                            format_frames(
-                                &mut stacktrace,
-                                line,
-                                self.remap_frame(&effective_frame),
-                            )?;
-                        }
-                    }
-                },
-                Some(throwable) => {
-                    format_throwable(&mut stacktrace, line, self.remap_throwable(&throwable))?
-                }
+        for line in input.lines() {
+            if let Some(throwable) = stacktrace::parse_throwable(line) {
+                let remapped_throwable = self.remap_throwable(&throwable);
+                let descriptor_class = remapped_throwable
+                    .as_ref()
+                    .map(|t| t.class)
+                    .unwrap_or(throwable.class);
+                current_exception_descriptor = Some(class_name_to_descriptor(descriptor_class));
+                next_frame_can_rewrite = true;
+                format_throwable(&mut stacktrace, line, remapped_throwable)?;
+                continue;
             }
-        }
 
-        for line in lines {
-            match stacktrace::parse_frame(line) {
-                None => match line
-                    .strip_prefix("Caused by: ")
-                    .and_then(stacktrace::parse_throwable)
-                {
-                    None => writeln!(&mut stacktrace, "{line}")?,
-                    Some(cause) => {
-                        format_cause(&mut stacktrace, line, self.remap_throwable(&cause))?
+            if let Some(frame) = stacktrace::parse_frame(line) {
+                if self.is_outline_frame(frame.class, frame.method) {
+                    carried_outline_pos = Some(frame.line);
+                    continue;
+                }
+
+                let effective_frame =
+                    self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
+
+                let mut collected = self.collect_remapped_frames(&effective_frame);
+                if !collected.frames.is_empty() {
+                    if next_frame_can_rewrite {
+                        apply_rewrite_rules(
+                            &mut collected,
+                            current_exception_descriptor.as_deref(),
+                        );
                     }
-                },
-                Some(frame) => {
-                    if self.is_outline_frame(frame.class, frame.method) {
-                        carried_outline_pos = Some(frame.line);
+
+                    next_frame_can_rewrite = false;
+                    current_exception_descriptor = None;
+
+                    if collected.frames.is_empty() {
                         continue;
                     }
 
-                    let effective_frame =
-                        self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
-
-                    format_frames(&mut stacktrace, line, self.remap_frame(&effective_frame))?;
+                    let drained = collected.frames.drain(..);
+                    format_frames(&mut stacktrace, line, drained)?;
+                    continue;
                 }
+
+                next_frame_can_rewrite = false;
+                current_exception_descriptor = None;
+                format_frames(&mut stacktrace, line, std::iter::empty())?;
+                continue;
             }
+
+            if let Some(cause) = line
+                .strip_prefix("Caused by: ")
+                .and_then(stacktrace::parse_throwable)
+            {
+                let remapped_cause = self.remap_throwable(&cause);
+                let descriptor_class = remapped_cause
+                    .as_ref()
+                    .map(|t| t.class)
+                    .unwrap_or(cause.class);
+                current_exception_descriptor = Some(class_name_to_descriptor(descriptor_class));
+                next_frame_can_rewrite = true;
+                format_cause(&mut stacktrace, line, remapped_cause)?;
+                continue;
+            }
+
+            current_exception_descriptor = None;
+            next_frame_can_rewrite = false;
+            writeln!(&mut stacktrace, "{line}")?;
         }
         Ok(stacktrace)
     }
@@ -556,9 +671,17 @@ impl<'s> ProguardMapper<'s> {
             .exception
             .as_ref()
             .and_then(|t| self.remap_throwable(t));
+        let exception_descriptor = trace.exception.as_ref().map(|original| {
+            let class = exception
+                .as_ref()
+                .map(|t| t.class)
+                .unwrap_or(original.class);
+            class_name_to_descriptor(class)
+        });
 
         let mut carried_outline_pos: Option<usize> = None;
         let mut frames_out = Vec::with_capacity(trace.frames.len());
+        let mut next_frame_can_rewrite = exception_descriptor.is_some();
         for f in trace.frames.iter() {
             if self.is_outline_frame(f.class, f.method) {
                 carried_outline_pos = Some(f.line);
@@ -566,12 +689,23 @@ impl<'s> ProguardMapper<'s> {
             }
 
             let effective = self.prepare_frame_for_mapping(f, &mut carried_outline_pos);
-            let mut iter = self.remap_frame(&effective).peekable();
-            if iter.peek().is_some() {
-                frames_out.extend(iter);
-            } else {
-                frames_out.push(f.clone());
+            let mut collected = self.collect_remapped_frames(&effective);
+            if !collected.frames.is_empty() {
+                if next_frame_can_rewrite {
+                    apply_rewrite_rules(&mut collected, exception_descriptor.as_deref());
+                }
+                next_frame_can_rewrite = false;
+
+                if collected.frames.is_empty() {
+                    continue;
+                }
+
+                frames_out.append(&mut collected.frames);
+                continue;
             }
+
+            next_frame_can_rewrite = false;
+            frames_out.push(f.clone());
         }
 
         let cause = trace
@@ -734,5 +868,131 @@ Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
         let mapper = ProguardMapper::from(mapping);
 
         assert_eq!(mapper.remap_stacktrace(stacktrace).unwrap(), expect);
+    }
+
+    #[test]
+    fn rewrite_frame_remove_inner_frame() {
+        let mapping = "\
+some.Class -> a:
+    4:4:void other.Class.inlinee():23:23 -> a
+    4:4:void caller(other.Class):7 -> a
+    # {\"id\":\"com.android.tools.r8.rewriteFrame\",\"conditions\":[\"throws(Ljava/lang/NullPointerException;)\"],\"actions\":[\"removeInnerFrames(1)\"]}
+";
+        let stacktrace = "\
+java.lang.NullPointerException: Boom
+    at a.a(SourceFile:4)";
+        let expect = "\
+java.lang.NullPointerException: Boom
+    at some.Class.caller(SourceFile:7)
+";
+
+        let mapper = ProguardMapper::from(mapping);
+
+        assert_eq!(mapper.remap_stacktrace(stacktrace).unwrap(), expect);
+    }
+
+    #[test]
+    fn rewrite_frame_condition_mismatch() {
+        let mapping = "\
+some.Class -> a:
+    4:4:void other.Class.inlinee():23:23 -> a
+    4:4:void caller(other.Class):7 -> a
+    # {\"id\":\"com.android.tools.r8.rewriteFrame\",\"conditions\":[\"throws(Ljava/lang/NullPointerException;)\"],\"actions\":[\"removeInnerFrames(1)\"]}
+";
+        let stacktrace = "\
+java.lang.IllegalStateException: Boom
+    at a.a(SourceFile:4)";
+        let expect = "\
+java.lang.IllegalStateException: Boom
+    at other.Class.inlinee(<unknown>:23)
+    at some.Class.caller(SourceFile:7)
+";
+
+        let mapper = ProguardMapper::from(mapping);
+
+        assert_eq!(mapper.remap_stacktrace(stacktrace).unwrap(), expect);
+    }
+
+    #[test]
+    fn rewrite_frame_typed_stacktrace() {
+        let mapping = "\
+some.Class -> a:
+    4:4:void other.Class.inlinee():23:23 -> a
+    4:4:void caller(other.Class):7 -> a
+    # {\"id\":\"com.android.tools.r8.rewriteFrame\",\"conditions\":[\"throws(Ljava/lang/NullPointerException;)\"],\"actions\":[\"removeInnerFrames(1)\"]}
+";
+        let trace = StackTrace {
+            exception: Some(Throwable {
+                class: "java.lang.NullPointerException",
+                message: Some("Boom"),
+            }),
+            frames: vec![StackFrame {
+                class: "a",
+                method: "a",
+                line: 4,
+                file: Some("SourceFile"),
+                parameters: None,
+                method_synthesized: false,
+            }],
+            cause: None,
+        };
+
+        let mapper = ProguardMapper::from(mapping);
+        let remapped = mapper.remap_stacktrace_typed(&trace);
+
+        assert_eq!(remapped.frames.len(), 1);
+        assert_eq!(remapped.frames[0].class, "some.Class");
+        assert_eq!(remapped.frames[0].method, "caller");
+        assert_eq!(remapped.frames[0].line, 7);
+    }
+
+    #[test]
+    fn rewrite_frame_multiple_rules_or_semantics() {
+        let mapping = "\
+some.Class -> a:
+    4:4:void other.Class.inlinee():23:23 -> call
+    4:4:void outer():7 -> call
+    # {\"id\":\"com.android.tools.r8.rewriteFrame\",\"conditions\":[\"throws(Ljava/lang/NullPointerException;)\"],\"actions\":[\"removeInnerFrames(1)\"]}
+    # {\"id\":\"com.android.tools.r8.rewriteFrame\",\"conditions\":[\"throws(Ljava/lang/IllegalStateException;)\"],\"actions\":[\"removeInnerFrames(1)\"]}
+";
+        let mapper = ProguardMapper::from(mapping);
+
+        let input_npe = "\
+java.lang.NullPointerException: Boom
+    at a.call(SourceFile:4)";
+        let expected_npe = "\
+java.lang.NullPointerException: Boom
+    at some.Class.outer(SourceFile:7)
+";
+        assert_eq!(mapper.remap_stacktrace(input_npe).unwrap(), expected_npe);
+
+        let input_ise = "\
+java.lang.IllegalStateException: Boom
+    at a.call(SourceFile:4)";
+        let expected_ise = "\
+java.lang.IllegalStateException: Boom
+    at some.Class.outer(SourceFile:7)
+";
+        assert_eq!(mapper.remap_stacktrace(input_ise).unwrap(), expected_ise);
+    }
+
+    #[test]
+    fn remap_frame_without_mapping_keeps_original_line() {
+        let mapping = "\
+some.Class -> a:
+    1:1:void some.Class.existing():10:10 -> a
+";
+        let mapper = ProguardMapper::from(mapping);
+
+        let input = "\
+java.lang.RuntimeException: boom
+    at a.missing(SourceFile:42)
+";
+        let expected = "\
+java.lang.RuntimeException: boom
+    at a.missing(SourceFile:42)
+";
+
+        assert_eq!(mapper.remap_stacktrace(input).unwrap(), expected);
     }
 }

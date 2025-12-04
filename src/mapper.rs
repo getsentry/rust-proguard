@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
-use std::mem;
 
 use crate::builder::{
     Member, MethodReceiver, ParsedProguardMapping, RewriteAction, RewriteCondition, RewriteRule,

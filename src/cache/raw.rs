@@ -19,7 +19,7 @@ pub(crate) const PRGCACHE_MAGIC: u32 = u32::from_le_bytes(PRGCACHE_MAGIC_BYTES);
 pub(crate) const PRGCACHE_MAGIC_FLIPPED: u32 = PRGCACHE_MAGIC.swap_bytes();
 
 /// The current version of the ProguardCache format.
-pub const PRGCACHE_VERSION: u32 = 3;
+pub const PRGCACHE_VERSION: u32 = 4;
 
 /// The header of a proguard cache file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +37,10 @@ pub(crate) struct Header {
     pub(crate) num_members_by_params: u32,
     /// The total number of outline mapping pairs across all members.
     pub(crate) num_outline_pairs: u32,
+    /// The total number of rewrite rule entries across all members.
+    pub(crate) num_rewrite_rule_entries: u32,
+    /// The total number of rewrite rule components across all members.
+    pub(crate) num_rewrite_rule_components: u32,
     /// The number of string bytes in this cache.
     pub(crate) string_bytes: u32,
 }
@@ -120,6 +124,10 @@ pub(crate) struct Member {
     pub(crate) outline_pairs_offset: u32,
     /// Number of outline pairs for this member.
     pub(crate) outline_pairs_len: u32,
+    /// Offset into the rewrite rule entries section for this member.
+    pub(crate) rewrite_rules_offset: u32,
+    /// Number of rewrite rule entries for this member.
+    pub(crate) rewrite_rules_len: u32,
     /// Whether this member was synthesized by the compiler.
     ///
     /// `0` means `false`, all other values mean `true`.
@@ -157,6 +165,32 @@ pub(crate) struct OutlinePair {
 
 unsafe impl Pod for OutlinePair {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub(crate) struct RewriteRuleEntry {
+    pub(crate) conditions_offset: u32,
+    pub(crate) conditions_len: u32,
+    pub(crate) actions_offset: u32,
+    pub(crate) actions_len: u32,
+}
+
+unsafe impl Pod for RewriteRuleEntry {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub(crate) struct RewriteComponent {
+    pub(crate) kind: u32,
+    pub(crate) value: u32,
+}
+
+unsafe impl Pod for RewriteComponent {}
+
+pub(crate) const REWRITE_CONDITION_THROWS: u32 = 0;
+pub(crate) const REWRITE_CONDITION_UNKNOWN: u32 = 1;
+
+pub(crate) const REWRITE_ACTION_REMOVE_INNER_FRAMES: u32 = 0;
+pub(crate) const REWRITE_ACTION_UNKNOWN: u32 = 1;
+
 /// The serialized `ProguardCache` binary format.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ProguardCache<'data> {
@@ -178,6 +212,10 @@ pub struct ProguardCache<'data> {
     pub(crate) members_by_params: &'data [Member],
     /// A flat list of outline mapping pairs.
     pub(crate) outline_pairs: &'data [OutlinePair],
+    /// A flat list of rewrite rule entries.
+    pub(crate) rewrite_rule_entries: &'data [RewriteRuleEntry],
+    /// A flat list of rewrite rule components.
+    pub(crate) rewrite_rule_components: &'data [RewriteComponent],
     /// The collection of all strings in the cache file.
     pub(crate) string_bytes: &'data [u8],
 }
@@ -226,6 +264,16 @@ impl<'data> ProguardCache<'data> {
             OutlinePair::slice_from_prefix(rest, header.num_outline_pairs as usize)
                 .ok_or(CacheErrorKind::InvalidMembers)?;
 
+        let (_, rest) = watto::align_to(rest, 8).ok_or(CacheErrorKind::InvalidMembers)?;
+        let (rewrite_rule_entries, rest) =
+            RewriteRuleEntry::slice_from_prefix(rest, header.num_rewrite_rule_entries as usize)
+                .ok_or(CacheErrorKind::InvalidMembers)?;
+
+        let (_, rest) = watto::align_to(rest, 8).ok_or(CacheErrorKind::InvalidMembers)?;
+        let (rewrite_rule_components, rest) =
+            RewriteComponent::slice_from_prefix(rest, header.num_rewrite_rule_components as usize)
+                .ok_or(CacheErrorKind::InvalidMembers)?;
+
         let (_, string_bytes) =
             watto::align_to(rest, 8).ok_or(CacheErrorKind::UnexpectedStringBytes {
                 expected: header.string_bytes as usize,
@@ -246,6 +294,8 @@ impl<'data> ProguardCache<'data> {
             members,
             members_by_params,
             outline_pairs,
+            rewrite_rule_entries,
+            rewrite_rule_components,
             string_bytes,
         })
     }
@@ -336,6 +386,8 @@ impl<'data> ProguardCache<'data> {
         let mut members: Vec<Member> = Vec::with_capacity(num_members as usize);
         let mut members_by_params: Vec<Member> = Vec::with_capacity(num_members_by_params as usize);
         let mut outline_pairs: Vec<OutlinePair> = Vec::new();
+        let mut rewrite_rule_entries: Vec<RewriteRuleEntry> = Vec::new();
+        let mut rewrite_rule_components: Vec<RewriteComponent> = Vec::new();
 
         for mut c in classes.into_values() {
             // Set offsets relative to current vector sizes
@@ -354,6 +406,27 @@ impl<'data> ProguardCache<'data> {
                         mp.member.outline_pairs_offset = start;
                         mp.member.outline_pairs_len = 0;
                     }
+
+                    let rule_start = rewrite_rule_entries.len() as u32;
+                    let mut rule_count = 0;
+                    for rule in mp.rewrite_rules.into_iter() {
+                        let cond_start = rewrite_rule_components.len() as u32;
+                        rewrite_rule_components.extend(rule.conditions.into_iter());
+                        let cond_len = rewrite_rule_components.len() as u32 - cond_start;
+                        let action_start = rewrite_rule_components.len() as u32;
+                        rewrite_rule_components.extend(rule.actions.into_iter());
+                        let action_len = rewrite_rule_components.len() as u32 - action_start;
+                        rewrite_rule_entries.push(RewriteRuleEntry {
+                            conditions_offset: cond_start,
+                            conditions_len: cond_len,
+                            actions_offset: action_start,
+                            actions_len: action_len,
+                        });
+                        rule_count += 1;
+                    }
+                    mp.member.rewrite_rules_offset = rule_start;
+                    mp.member.rewrite_rules_len = rule_count;
+
                     members.push(mp.member);
                 }
             }
@@ -370,6 +443,27 @@ impl<'data> ProguardCache<'data> {
                         mp.member.outline_pairs_offset = start;
                         mp.member.outline_pairs_len = 0;
                     }
+
+                    let rule_start = rewrite_rule_entries.len() as u32;
+                    let mut rule_count = 0;
+                    for rule in mp.rewrite_rules.into_iter() {
+                        let cond_start = rewrite_rule_components.len() as u32;
+                        rewrite_rule_components.extend(rule.conditions.into_iter());
+                        let cond_len = rewrite_rule_components.len() as u32 - cond_start;
+                        let action_start = rewrite_rule_components.len() as u32;
+                        rewrite_rule_components.extend(rule.actions.into_iter());
+                        let action_len = rewrite_rule_components.len() as u32 - action_start;
+                        rewrite_rule_entries.push(RewriteRuleEntry {
+                            conditions_offset: cond_start,
+                            conditions_len: cond_len,
+                            actions_offset: action_start,
+                            actions_len: action_len,
+                        });
+                        rule_count += 1;
+                    }
+                    mp.member.rewrite_rules_offset = rule_start;
+                    mp.member.rewrite_rules_len = rule_count;
+
                     members_by_params.push(mp.member);
                 }
             }
@@ -378,6 +472,8 @@ impl<'data> ProguardCache<'data> {
         }
 
         let num_outline_pairs = outline_pairs.len() as u32;
+        let num_rewrite_rule_entries = rewrite_rule_entries.len() as u32;
+        let num_rewrite_rule_components = rewrite_rule_components.len() as u32;
 
         let header = Header {
             magic: PRGCACHE_MAGIC,
@@ -386,6 +482,8 @@ impl<'data> ProguardCache<'data> {
             num_members,
             num_members_by_params,
             num_outline_pairs,
+            num_rewrite_rule_entries,
+            num_rewrite_rule_components,
             string_bytes: string_bytes.len() as u32,
         };
 
@@ -408,6 +506,12 @@ impl<'data> ProguardCache<'data> {
 
         // Write outline pairs
         writer.write_all(outline_pairs.as_bytes())?;
+        writer.align_to(8)?;
+
+        writer.write_all(rewrite_rule_entries.as_bytes())?;
+        writer.align_to(8)?;
+
+        writer.write_all(rewrite_rule_components.as_bytes())?;
         writer.align_to(8)?;
 
         // Write strings
@@ -460,7 +564,57 @@ impl<'data> ProguardCache<'data> {
             })
             .unwrap_or_default();
 
-        let member = Member {
+        let rewrite_rules = member
+            .rewrite_rules
+            .iter()
+            .map(|rule| {
+                let mut conditions = Vec::new();
+                for condition in &rule.conditions {
+                    match condition {
+                        builder::RewriteCondition::Throws(descriptor) => {
+                            let offset = string_table.insert(descriptor) as u32;
+                            conditions.push(RewriteComponent {
+                                kind: REWRITE_CONDITION_THROWS,
+                                value: offset,
+                            });
+                        }
+                        builder::RewriteCondition::Unknown(value) => {
+                            let offset = string_table.insert(value) as u32;
+                            conditions.push(RewriteComponent {
+                                kind: REWRITE_CONDITION_UNKNOWN,
+                                value: offset,
+                            });
+                        }
+                    }
+                }
+
+                let mut actions = Vec::new();
+                for action in &rule.actions {
+                    match action {
+                        builder::RewriteAction::RemoveInnerFrames(count) => {
+                            actions.push(RewriteComponent {
+                                kind: REWRITE_ACTION_REMOVE_INNER_FRAMES,
+                                value: *count as u32,
+                            });
+                        }
+                        builder::RewriteAction::Unknown(value) => {
+                            let offset = string_table.insert(value) as u32;
+                            actions.push(RewriteComponent {
+                                kind: REWRITE_ACTION_UNKNOWN,
+                                value: offset,
+                            });
+                        }
+                    }
+                }
+
+                RewriteRuleInProgress {
+                    conditions,
+                    actions,
+                }
+            })
+            .collect();
+
+        let member: Member = Member {
             startline: member.startline as u32,
             endline: member.endline as u32,
             original_class_offset,
@@ -474,12 +628,15 @@ impl<'data> ProguardCache<'data> {
             is_outline,
             outline_pairs_offset: 0,
             outline_pairs_len: 0,
+            rewrite_rules_offset: 0,
+            rewrite_rules_len: 0,
             _reserved: [0; 2],
         };
 
         MemberInProgress {
             member,
             outline_pairs,
+            rewrite_rules,
         }
     }
 
@@ -519,6 +676,22 @@ impl<'data> ProguardCache<'data> {
                 let end = start.saturating_add(len);
                 assert!(end <= self.outline_pairs.len());
 
+                let rule_start = member.rewrite_rules_offset as usize;
+                let rule_len = member.rewrite_rules_len as usize;
+                let rule_end = rule_start.saturating_add(rule_len);
+                assert!(rule_end <= self.rewrite_rule_entries.len());
+                for entry in &self.rewrite_rule_entries[rule_start..rule_end] {
+                    let cond_start = entry.conditions_offset as usize;
+                    let cond_len = entry.conditions_len as usize;
+                    let cond_end = cond_start.saturating_add(cond_len);
+                    assert!(cond_end <= self.rewrite_rule_components.len());
+
+                    let action_start = entry.actions_offset as usize;
+                    let action_len = entry.actions_len as usize;
+                    let action_end = action_start.saturating_add(action_len);
+                    assert!(action_end <= self.rewrite_rule_components.len());
+                }
+
                 if member.params_offset != u32::MAX {
                     assert!(self.read_string(member.params_offset).is_ok());
                 }
@@ -554,4 +727,11 @@ struct ClassInProgress<'data> {
 struct MemberInProgress {
     member: Member,
     outline_pairs: Vec<OutlinePair>,
+    rewrite_rules: Vec<RewriteRuleInProgress>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RewriteRuleInProgress {
+    conditions: Vec<RewriteComponent>,
+    actions: Vec<RewriteComponent>,
 }

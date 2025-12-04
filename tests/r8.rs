@@ -360,3 +360,39 @@ Caused by: java.lang.IllegalStateException: Secondary issue
     let actual = mapper.remap_stacktrace(input).unwrap();
     assert_eq!(actual, expected);
 }
+
+#[test]
+fn rewrite_frame_complex_stacktrace_cache() {
+    let mut cache_bytes = Vec::new();
+    ProguardCache::write(
+        &ProguardMapping::new(MAPPING_REWRITE_COMPLEX.as_bytes()),
+        &mut cache_bytes,
+    )
+    .unwrap();
+    let cache = ProguardCache::parse(&cache_bytes).unwrap();
+    cache.test();
+
+    let input = "\
+java.lang.NullPointerException: Primary issue
+    at a.start(SourceFile:10)
+    at b.dispatch(SourceFile:5)
+    at c.draw(SourceFile:20)
+Caused by: java.lang.IllegalStateException: Secondary issue
+    at b.dispatch(SourceFile:5)
+    at c.draw(SourceFile:20)
+";
+
+    let expected = "\
+java.lang.NullPointerException: Primary issue
+    at com.example.flow.Initializer.start(SourceFile:42)
+    at com.example.flow.StreamRouter$Inline.internalDispatch(<unknown>:30)
+    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
+    at com.example.flow.UiBridge.render(SourceFile:200)
+Caused by: java.lang.IllegalStateException: Secondary issue
+    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
+    at com.example.flow.UiBridge.render(SourceFile:200)
+";
+
+    let actual = cache.remap_stacktrace(input).unwrap();
+    assert_eq!(actual, expected);
+}

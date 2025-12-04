@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
+use std::mem;
 
 use crate::builder::{
     Member, MethodReceiver, ParsedProguardMapping, RewriteAction, RewriteCondition, RewriteRule,
@@ -466,21 +467,26 @@ impl<'s> ProguardMapper<'s> {
         self.classes.get(class).map(|class| class.original)
     }
 
-    fn collect_remapped_frames(&'s self, frame: &StackFrame<'s>) -> Option<CollectedFrames<'s>> {
-        let class = self.classes.get(frame.class)?;
-        let members = class.members.get(frame.method)?;
+    fn collect_remapped_frames(&'s self, frame: &StackFrame<'s>) -> CollectedFrames<'s> {
+        let mut collected = CollectedFrames::default();
+        let Some(class) = self.classes.get(frame.class) else {
+            return collected;
+        };
+        let Some(members) = class.members.get(frame.method) else {
+            return collected;
+        };
 
         let mut frame = frame.clone();
         frame.class = class.original;
 
         let mapping_entries: &[MemberMapping<'s>] = if let Some(parameters) = frame.parameters {
-            let typed_members = members.mappings_by_params.get(parameters)?;
+            let Some(typed_members) = members.mappings_by_params.get(parameters) else {
+                return collected;
+            };
             typed_members.as_slice()
         } else {
             members.all_mappings.as_slice()
         };
-
-        let mut collected = CollectedFrames::default();
 
         if frame.parameters.is_none() {
             for member in mapping_entries {
@@ -497,11 +503,7 @@ impl<'s> ProguardMapper<'s> {
             }
         }
 
-        if collected.frames.is_empty() {
-            None
-        } else {
-            Some(collected)
-        }
+        collected
     }
 
     /// returns a tuple where the first element is the list of the function
@@ -615,7 +617,8 @@ impl<'s> ProguardMapper<'s> {
                 let effective_frame =
                     self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
 
-                if let Some(mut collected) = self.collect_remapped_frames(&effective_frame) {
+                let mut collected = self.collect_remapped_frames(&effective_frame);
+                if !collected.frames.is_empty() {
                     if next_frame_can_rewrite {
                         apply_rewrite_rules(
                             &mut collected,
@@ -630,7 +633,8 @@ impl<'s> ProguardMapper<'s> {
                         continue;
                     }
 
-                    format_frames(&mut stacktrace, line, collected.frames.into_iter())?;
+                    let drained = collected.frames.drain(..);
+                    format_frames(&mut stacktrace, line, drained)?;
                     continue;
                 }
 
@@ -686,7 +690,8 @@ impl<'s> ProguardMapper<'s> {
             }
 
             let effective = self.prepare_frame_for_mapping(f, &mut carried_outline_pos);
-            if let Some(mut collected) = self.collect_remapped_frames(&effective) {
+            let mut collected = self.collect_remapped_frames(&effective);
+            if !collected.frames.is_empty() {
                 if next_frame_can_rewrite {
                     apply_rewrite_rules(&mut collected, exception_descriptor.as_deref());
                 }
@@ -696,7 +701,7 @@ impl<'s> ProguardMapper<'s> {
                     continue;
                 }
 
-                frames_out.extend(collected.frames);
+                frames_out.append(&mut collected.frames);
                 continue;
             }
 
@@ -970,5 +975,25 @@ java.lang.IllegalStateException: Boom
     at some.Class.outer(SourceFile:7)
 ";
         assert_eq!(mapper.remap_stacktrace(input_ise).unwrap(), expected_ise);
+    }
+
+    #[test]
+    fn remap_frame_without_mapping_keeps_original_line() {
+        let mapping = "\
+some.Class -> a:
+    1:1:void some.Class.existing():10:10 -> a
+";
+        let mapper = ProguardMapper::from(mapping);
+
+        let input = "\
+java.lang.RuntimeException: boom
+    at a.missing(SourceFile:42)
+";
+        let expected = "\
+java.lang.RuntimeException: boom
+    at a.missing(SourceFile:42)
+";
+
+        assert_eq!(mapper.remap_stacktrace(input).unwrap(), expected);
     }
 }

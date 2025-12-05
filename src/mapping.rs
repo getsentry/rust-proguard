@@ -626,14 +626,12 @@ fn parse_proguard_field_or_method(
             let original_class = split_class.next();
 
             let line_mapping = match (startline, endline) {
-                (Some(startline), Some(endline)) if startline > 0 && endline > 0 => {
-                    Some(LineMapping {
-                        startline,
-                        endline,
-                        original_startline,
-                        original_endline,
-                    })
-                }
+                (Some(startline), Some(endline)) => Some(LineMapping {
+                    startline,
+                    endline,
+                    original_startline,
+                    original_endline,
+                }),
                 _ => None,
             };
 

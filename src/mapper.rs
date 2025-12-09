@@ -197,6 +197,9 @@ fn map_member_without_lines<'a>(
 }
 
 fn apply_rewrite_rules<'s>(collected: &mut CollectedFrames<'s>, thrown_descriptor: Option<&str>) {
+    if collected.frames.is_empty() {
+        return;
+    }
     for rule in &collected.rewrite_rules {
         let matches = rule.conditions.iter().all(|condition| match condition {
             RewriteCondition::Throws(descriptor) => Some(*descriptor) == thrown_descriptor,
@@ -617,29 +620,14 @@ impl<'s> ProguardMapper<'s> {
                     self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
 
                 let mut collected = self.collect_remapped_frames(&effective_frame);
-                if !collected.frames.is_empty() {
-                    if next_frame_can_rewrite {
-                        apply_rewrite_rules(
-                            &mut collected,
-                            current_exception_descriptor.as_deref(),
-                        );
-                    }
-
-                    next_frame_can_rewrite = false;
-                    current_exception_descriptor = None;
-
-                    if collected.frames.is_empty() {
-                        continue;
-                    }
-
-                    let drained = collected.frames.drain(..);
-                    format_frames(&mut stacktrace, line, drained)?;
-                    continue;
+                if next_frame_can_rewrite {
+                    apply_rewrite_rules(&mut collected, current_exception_descriptor.as_deref());
                 }
 
                 next_frame_can_rewrite = false;
                 current_exception_descriptor = None;
-                format_frames(&mut stacktrace, line, std::iter::empty())?;
+
+                format_frames(&mut stacktrace, line, collected.frames.into_iter())?;
                 continue;
             }
 
@@ -690,22 +678,16 @@ impl<'s> ProguardMapper<'s> {
 
             let effective = self.prepare_frame_for_mapping(f, &mut carried_outline_pos);
             let mut collected = self.collect_remapped_frames(&effective);
-            if !collected.frames.is_empty() {
-                if next_frame_can_rewrite {
-                    apply_rewrite_rules(&mut collected, exception_descriptor.as_deref());
-                }
-                next_frame_can_rewrite = false;
-
-                if collected.frames.is_empty() {
-                    continue;
-                }
-
-                frames_out.append(&mut collected.frames);
-                continue;
+            if next_frame_can_rewrite {
+                apply_rewrite_rules(&mut collected, exception_descriptor.as_deref());
             }
-
             next_frame_can_rewrite = false;
-            frames_out.push(f.clone());
+
+            if collected.frames.is_empty() {
+                frames_out.push(f.clone());
+            } else {
+                frames_out.append(&mut collected.frames);
+            }
         }
 
         let cause = trace

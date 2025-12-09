@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame};
+use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame, StackTrace, Throwable};
 
 #[cfg(feature = "uuid")]
 use uuid::uuid;
@@ -359,4 +359,63 @@ Caused by: java.lang.IllegalStateException: Secondary issue
 
     let actual = mapper.remap_stacktrace(input).unwrap();
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn rewrite_frame_complex_stacktrace_typed() {
+    let mapper = ProguardMapper::from(MAPPING_REWRITE_COMPLEX);
+
+    let trace = StackTrace::with_cause(
+        Some(Throwable::with_message(
+            "java.lang.NullPointerException",
+            "Primary issue",
+        )),
+        vec![
+            StackFrame::with_file("a", "start", 10, "SourceFile"),
+            StackFrame::with_file("b", "dispatch", 5, "SourceFile"),
+            StackFrame::with_file("c", "draw", 20, "SourceFile"),
+        ],
+        StackTrace::new(
+            Some(Throwable::with_message(
+                "java.lang.IllegalStateException",
+                "Secondary issue",
+            )),
+            vec![
+                StackFrame::with_file("b", "dispatch", 5, "SourceFile"),
+                StackFrame::with_file("c", "draw", 20, "SourceFile"),
+            ],
+        ),
+    );
+
+    let remapped = mapper.remap_stacktrace_typed(&trace);
+
+    // After rewrite rule removes 2 inner frames for NullPointerException
+    let frames = remapped.frames();
+    assert_eq!(frames.len(), 4);
+    assert_eq!(frames[0].class(), "com.example.flow.Initializer");
+    assert_eq!(frames[0].method(), "start");
+    assert_eq!(frames[0].line(), 42);
+    assert_eq!(frames[1].class(), "com.example.flow.StreamRouter$Inline");
+    assert_eq!(frames[1].method(), "internalDispatch");
+    assert_eq!(frames[1].line(), 30);
+    assert_eq!(frames[2].class(), "com.example.flow.StreamRouter");
+    assert_eq!(frames[2].method(), "dispatch");
+    assert_eq!(frames[2].line(), 12);
+    assert_eq!(frames[3].class(), "com.example.flow.UiBridge");
+    assert_eq!(frames[3].method(), "render");
+    assert_eq!(frames[3].line(), 200);
+
+    // Caused by exception (also not in mapping)
+    let cause = remapped.cause().unwrap();
+    assert!(cause.exception().is_none());
+
+    // After rewrite rule removes 1 inner frame for IllegalStateException
+    let cause_frames = cause.frames();
+    assert_eq!(cause_frames.len(), 2);
+    assert_eq!(cause_frames[0].class(), "com.example.flow.StreamRouter");
+    assert_eq!(cause_frames[0].method(), "dispatch");
+    assert_eq!(cause_frames[0].line(), 12);
+    assert_eq!(cause_frames[1].class(), "com.example.flow.UiBridge");
+    assert_eq!(cause_frames[1].method(), "render");
+    assert_eq!(cause_frames[1].line(), 200);
 }

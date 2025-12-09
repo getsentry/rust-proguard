@@ -440,3 +440,36 @@ fn test_method_with_zero_zero_and_line_specific_mappings() {
     assert_eq!(frame.line(), 70);
     assert_eq!(mapped.next(), None);
 }
+
+#[test]
+fn test_method_with_zero_zero_and_line_specific_mappings_cache() {
+    // Test case where a method has both 0:0: mappings and line-specific mappings.
+    // The AndroidShadowContext class has method 'b' (obfuscated) with:
+    // - 0:0: mapping pointing to line 68
+    // - 1:4: mapping pointing to line 70
+    // - 5:7: mapping pointing to line 71
+    // etc.
+    // When remapping a frame with line 3, it should match the 1:4: mapping (line 70),
+    // NOT the 0:0: mapping (line 68), because we skip 0:0: mappings when line-specific
+    // mappings exist.
+    let mapping = ProguardMapping::new(MAPPING_ZERO_LINE_INFO);
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
+
+    // Remap frame with method 'b' at line 3
+    // This should match the 1:4: mapping (line 3 is in range 1-4) -> original line 70
+    let frame = StackFrame::new("h2.a", "b", 3);
+    let mut mapped = cache.remap_frame(&frame);
+
+    let remapped_frame = mapped.next().unwrap();
+    assert_eq!(
+        remapped_frame.class(),
+        "androidx.compose.ui.graphics.shadow.AndroidShadowContext"
+    );
+    assert_eq!(remapped_frame.method(), "obtainDropShadowRenderer-eZhPAX0");
+    // Should map to line 70 (from the 1:4: mapping), not line 68 (from the 0:0: mapping)
+    assert_eq!(remapped_frame.line(), 70);
+    assert_eq!(mapped.next(), None);
+}

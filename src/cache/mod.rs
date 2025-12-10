@@ -949,6 +949,9 @@ pub fn apply_rewrite_rules<'s>(
     collected: &mut CollectedFrames<'s>,
     thrown_descriptor: Option<&str>,
 ) {
+    if collected.frames.is_empty() {
+        return;
+    }
     for rule in &collected.rewrite_rules {
         let matches = rule.conditions.iter().all(|condition| match condition {
             RewriteCondition::Throws(descriptor) => Some(*descriptor) == thrown_descriptor,

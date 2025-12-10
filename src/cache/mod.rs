@@ -6,11 +6,13 @@
 //!   - the format version,
 //!   - the number of class, member, and member-by-params entries,
 //!   - the number of outline mapping pairs,
+//!   - the number of rewrite rule entries and components,
 //!   - and the length of the string section;
 //! * A [list](ProguardCache::classes) of [`Class`](raw::Class) entries;
 //! * A [list](ProguardCache::members) of [`Member`](raw::Member) entries;
-//! * Another [list](Proguard_cache::members_by_params) of `Member` entries, sorted by parameter strings;
+//! * Another [list](ProguardCache::members_by_params) of `Member` entries, sorted by parameter strings;
 //! * A [list] of outline mapping pairs shared by all members;
+//! * A [list] of rewrite rule entries and their components;
 //! * A [string section](ProguardCache::string_bytes) in which class names, method names, &c. are collected.
 //!   Whenever a class or member entry references a string, it is by offset into this section.
 //!
@@ -30,8 +32,8 @@
 //! * a params string,
 //! * an `is_synthesized` flag,
 //! * an `is_outline` flag designating outline methods,
-//! * an `outline_pairs_offset` and `outline_pairs_len` which slice into the global outline
-//!   pairs section.
+//! * an `outline_pairs_offset` and `outline_pairs_len` which slice into the global outline pairs section.
+//! * an `rewrite_rules_offset` and `rewrite_rules_len` which slice into the global rewrite rule entries section.
 //!
 //! It may also contain
 //! * an original class name,
@@ -51,6 +53,21 @@
 //! Each [`Member`](raw::Member) that carries outline callsite information references a sub-slice of this
 //! section via its `outline_pairs_offset` and `outline_pairs_len`. This keeps members fixed-size and
 //! enables zero-copy parsing while supporting variable-length metadata.
+//!
+//! ## Rewrite rules section
+//! Rewrite rules are R8's mechanism for post-processing stack frames during deobfuscation.
+//! They are stored in two flat arrays:
+//!
+//! * **Rewrite rule entries**: Each [`RewriteRuleEntry`](raw::RewriteRuleEntry) contains offsets and
+//!   lengths into the components array for its conditions and actions.
+//! * **Rewrite rule components**: A flat array of [`RewriteComponent`](raw::RewriteComponent) entries,
+//!   each representing either a condition (e.g., `throws(Ljava/lang/NullPointerException;)`) or an
+//!   action (e.g., `removeInnerFrames(1)`).
+//!
+//! Each [`Member`](raw::Member) references its rewrite rules via `rewrite_rules_offset` and
+//! `rewrite_rules_len`, which slice into the entries array. This two-level indirection keeps
+//! members fixed-size while supporting variable numbers of rules with variable numbers of
+//! conditions and actions.
 
 mod debug;
 mod raw;

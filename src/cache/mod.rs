@@ -226,12 +226,11 @@ impl<'data> ProguardCache<'data> {
         let mut rules = Vec::new();
         let start = member.rewrite_rules_offset as usize;
         let len = member.rewrite_rules_len as usize;
-        let entries = match self
+        let Some(entries) = self
             .rewrite_rule_entries
             .get(start..start.saturating_add(len))
-        {
-            Some(entries) => entries,
-            None => return rules,
+        else {
+            return rules;
         };
 
         for entry in entries {

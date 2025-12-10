@@ -419,6 +419,9 @@ fn rewrite_frame_complex_stacktrace_typed() {
     assert_eq!(cause_frames[1].class(), "com.example.flow.UiBridge");
     assert_eq!(cause_frames[1].method(), "render");
     assert_eq!(cause_frames[1].line(), 200);
+}
+
+#[test]
 fn test_remap_zero_line_info() {
     let mapping = ProguardMapping::new(MAPPING_ZERO_LINE_INFO);
 

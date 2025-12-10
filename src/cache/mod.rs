@@ -277,10 +277,17 @@ impl<'data> ProguardCache<'data> {
                 }
             }
 
-            rules.push(RewriteRule {
-                conditions,
-                actions,
-            });
+            // Only add rules with at least one condition and one action,
+            // matching the validation in parse_rewrite_rule.
+            // This guards against corrupt cache data where read_string fails,
+            // which would otherwise result in empty conditions that match
+            // any exception due to vacuous truth in iter().all().
+            if !conditions.is_empty() && !actions.is_empty() {
+                rules.push(RewriteRule {
+                    conditions,
+                    actions,
+                });
+            }
         }
 
         rules

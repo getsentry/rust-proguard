@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame};
+use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame, StackTrace, Throwable};
 
 #[cfg(feature = "uuid")]
 use uuid::uuid;
@@ -10,6 +10,7 @@ static MAPPING_R8_SYMBOLICATED_FILE_NAMES: &[u8] =
     include_bytes!("res/mapping-r8-symbolicated_file_names.txt");
 static MAPPING_OUTLINE: &[u8] = include_bytes!("res/mapping-outline.txt");
 static MAPPING_OUTLINE_COMPLEX: &[u8] = include_bytes!("res/mapping-outline-complex.txt");
+static MAPPING_REWRITE_COMPLEX: &str = include_str!("res/mapping-rewrite-complex.txt");
 static MAPPING_ZERO_LINE_INFO: &[u8] = include_bytes!("res/mapping-zero-line-info.txt");
 
 static MAPPING_WIN_R8: LazyLock<Vec<u8>> = LazyLock::new(|| {
@@ -330,6 +331,94 @@ fn test_outline_frame_retracing() {
         StackFrame::new("some.Class", "outlineCaller", 0)
     );
     assert_eq!(mapped.next(), None);
+}
+
+#[test]
+fn rewrite_frame_complex_stacktrace() {
+    let mapper = ProguardMapper::from(MAPPING_REWRITE_COMPLEX);
+
+    let input = "\
+java.lang.NullPointerException: Primary issue
+    at a.start(SourceFile:10)
+    at b.dispatch(SourceFile:5)
+    at c.draw(SourceFile:20)
+Caused by: java.lang.IllegalStateException: Secondary issue
+    at b.dispatch(SourceFile:5)
+    at c.draw(SourceFile:20)
+";
+
+    let expected = "\
+java.lang.NullPointerException: Primary issue
+    at com.example.flow.Initializer.start(SourceFile:42)
+    at com.example.flow.StreamRouter$Inline.internalDispatch(<unknown>:30)
+    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
+    at com.example.flow.UiBridge.render(SourceFile:200)
+Caused by: java.lang.IllegalStateException: Secondary issue
+    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
+    at com.example.flow.UiBridge.render(SourceFile:200)
+";
+
+    let actual = mapper.remap_stacktrace(input).unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn rewrite_frame_complex_stacktrace_typed() {
+    let mapper = ProguardMapper::from(MAPPING_REWRITE_COMPLEX);
+
+    let trace = StackTrace::with_cause(
+        Some(Throwable::with_message(
+            "java.lang.NullPointerException",
+            "Primary issue",
+        )),
+        vec![
+            StackFrame::with_file("a", "start", 10, "SourceFile"),
+            StackFrame::with_file("b", "dispatch", 5, "SourceFile"),
+            StackFrame::with_file("c", "draw", 20, "SourceFile"),
+        ],
+        StackTrace::new(
+            Some(Throwable::with_message(
+                "java.lang.IllegalStateException",
+                "Secondary issue",
+            )),
+            vec![
+                StackFrame::with_file("b", "dispatch", 5, "SourceFile"),
+                StackFrame::with_file("c", "draw", 20, "SourceFile"),
+            ],
+        ),
+    );
+
+    let remapped = mapper.remap_stacktrace_typed(&trace);
+
+    // After rewrite rule removes 2 inner frames for NullPointerException
+    let frames = remapped.frames();
+    assert_eq!(frames.len(), 4);
+    assert_eq!(frames[0].class(), "com.example.flow.Initializer");
+    assert_eq!(frames[0].method(), "start");
+    assert_eq!(frames[0].line(), 42);
+    assert_eq!(frames[1].class(), "com.example.flow.StreamRouter$Inline");
+    assert_eq!(frames[1].method(), "internalDispatch");
+    assert_eq!(frames[1].line(), 30);
+    assert_eq!(frames[2].class(), "com.example.flow.StreamRouter");
+    assert_eq!(frames[2].method(), "dispatch");
+    assert_eq!(frames[2].line(), 12);
+    assert_eq!(frames[3].class(), "com.example.flow.UiBridge");
+    assert_eq!(frames[3].method(), "render");
+    assert_eq!(frames[3].line(), 200);
+
+    // Caused by exception (also not in mapping)
+    let cause = remapped.cause().unwrap();
+    assert!(cause.exception().is_none());
+
+    // After rewrite rule removes 1 inner frame for IllegalStateException
+    let cause_frames = cause.frames();
+    assert_eq!(cause_frames.len(), 2);
+    assert_eq!(cause_frames[0].class(), "com.example.flow.StreamRouter");
+    assert_eq!(cause_frames[0].method(), "dispatch");
+    assert_eq!(cause_frames[0].line(), 12);
+    assert_eq!(cause_frames[1].class(), "com.example.flow.UiBridge");
+    assert_eq!(cause_frames[1].method(), "render");
+    assert_eq!(cause_frames[1].line(), 200);
 }
 
 #[test]

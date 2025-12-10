@@ -197,6 +197,9 @@ fn map_member_without_lines<'a>(
 }
 
 fn apply_rewrite_rules<'s>(collected: &mut CollectedFrames<'s>, thrown_descriptor: Option<&str>) {
+    if collected.frames.is_empty() {
+        return;
+    }
     for rule in &collected.rewrite_rules {
         let matches = rule.conditions.iter().all(|condition| match condition {
             RewriteCondition::Throws(descriptor) => Some(*descriptor) == thrown_descriptor,
@@ -322,7 +325,12 @@ impl<'s> ProguardMapper<'s> {
                 .entry(obfuscated_method.as_str())
                 .or_default();
 
+            let has_line_info = members.all.iter().any(|m| m.endline > 0);
             for member in members.all.iter() {
+                // Skip members without line information if there are members with line information
+                if has_line_info && member.startline == 0 && member.endline == 0 {
+                    continue;
+                }
                 method_mappings
                     .all_mappings
                     .push(Self::resolve_mapping(&parsed, member));
@@ -617,29 +625,20 @@ impl<'s> ProguardMapper<'s> {
                     self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
 
                 let mut collected = self.collect_remapped_frames(&effective_frame);
-                if !collected.frames.is_empty() {
-                    if next_frame_can_rewrite {
-                        apply_rewrite_rules(
-                            &mut collected,
-                            current_exception_descriptor.as_deref(),
-                        );
-                    }
-
-                    next_frame_can_rewrite = false;
-                    current_exception_descriptor = None;
-
-                    if collected.frames.is_empty() {
-                        continue;
-                    }
-
-                    let drained = collected.frames.drain(..);
-                    format_frames(&mut stacktrace, line, drained)?;
-                    continue;
+                let had_frames = !collected.frames.is_empty();
+                if next_frame_can_rewrite {
+                    apply_rewrite_rules(&mut collected, current_exception_descriptor.as_deref());
                 }
 
                 next_frame_can_rewrite = false;
                 current_exception_descriptor = None;
-                format_frames(&mut stacktrace, line, std::iter::empty())?;
+
+                // If rewrite rules cleared all frames, skip entirely
+                if had_frames && collected.frames.is_empty() {
+                    continue;
+                }
+
+                format_frames(&mut stacktrace, line, collected.frames.into_iter())?;
                 continue;
             }
 
@@ -690,22 +689,22 @@ impl<'s> ProguardMapper<'s> {
 
             let effective = self.prepare_frame_for_mapping(f, &mut carried_outline_pos);
             let mut collected = self.collect_remapped_frames(&effective);
-            if !collected.frames.is_empty() {
-                if next_frame_can_rewrite {
-                    apply_rewrite_rules(&mut collected, exception_descriptor.as_deref());
-                }
-                next_frame_can_rewrite = false;
+            let had_frames = !collected.frames.is_empty();
+            if next_frame_can_rewrite {
+                apply_rewrite_rules(&mut collected, exception_descriptor.as_deref());
+            }
+            next_frame_can_rewrite = false;
 
-                if collected.frames.is_empty() {
-                    continue;
-                }
-
-                frames_out.append(&mut collected.frames);
+            // If rewrite rules cleared all frames, skip entirely
+            if had_frames && collected.frames.is_empty() {
                 continue;
             }
 
-            next_frame_can_rewrite = false;
-            frames_out.push(f.clone());
+            if collected.frames.is_empty() {
+                frames_out.push(f.clone());
+            } else {
+                frames_out.append(&mut collected.frames);
+            }
         }
 
         let cause = trace
@@ -994,5 +993,86 @@ java.lang.RuntimeException: boom
 ";
 
         assert_eq!(mapper.remap_stacktrace(input).unwrap(), expected);
+    }
+
+    #[test]
+    fn rewrite_frame_removes_all_frames_skips_line() {
+        // When rewrite rules remove ALL frames, the line should be skipped entirely
+        // (not fall back to original obfuscated frame)
+        let mapping = "\
+some.Class -> a:
+    4:4:void inlined():10:10 -> call
+    4:4:void outer():20 -> call
+    # {\"id\":\"com.android.tools.r8.rewriteFrame\",\"conditions\":[\"throws(Ljava/lang/NullPointerException;)\"],\"actions\":[\"removeInnerFrames(2)\"]}
+some.Other -> b:
+    5:5:void method():30 -> run
+";
+        let mapper = ProguardMapper::from(mapping);
+
+        let input = "\
+java.lang.NullPointerException: Boom
+    at a.call(SourceFile:4)
+    at b.run(SourceFile:5)
+";
+
+        // The first frame (a.call) should be completely removed by rewrite rules,
+        // not replaced with the original "at a.call(SourceFile:4)"
+        let expected = "\
+java.lang.NullPointerException: Boom
+    at some.Other.method(SourceFile:30)
+";
+
+        let actual = mapper.remap_stacktrace(input).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn rewrite_frame_removes_all_frames_skips_line_typed() {
+        // When rewrite rules remove ALL frames, the frame should be skipped entirely
+        // (not fall back to original obfuscated frame)
+        let mapping = "\
+some.Class -> a:
+    4:4:void inlined():10:10 -> call
+    4:4:void outer():20 -> call
+    # {\"id\":\"com.android.tools.r8.rewriteFrame\",\"conditions\":[\"throws(Ljava/lang/NullPointerException;)\"],\"actions\":[\"removeInnerFrames(2)\"]}
+some.Other -> b:
+    5:5:void method():30 -> run
+";
+        let mapper = ProguardMapper::from(mapping);
+
+        let trace = StackTrace {
+            exception: Some(Throwable {
+                class: "java.lang.NullPointerException",
+                message: Some("Boom"),
+            }),
+            frames: vec![
+                StackFrame {
+                    class: "a",
+                    method: "call",
+                    line: 4,
+                    file: Some("SourceFile"),
+                    parameters: None,
+                    method_synthesized: false,
+                },
+                StackFrame {
+                    class: "b",
+                    method: "run",
+                    line: 5,
+                    file: Some("SourceFile"),
+                    parameters: None,
+                    method_synthesized: false,
+                },
+            ],
+            cause: None,
+        };
+
+        let remapped = mapper.remap_stacktrace_typed(&trace);
+
+        // The first frame should be completely removed by rewrite rules,
+        // leaving only the second frame
+        assert_eq!(remapped.frames.len(), 1);
+        assert_eq!(remapped.frames[0].class, "some.Other");
+        assert_eq!(remapped.frames[0].method, "method");
+        assert_eq!(remapped.frames[0].line, 30);
     }
 }

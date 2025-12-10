@@ -292,7 +292,12 @@ impl<'data> ProguardCache<'data> {
                 .entry(obfuscated_method.as_str())
                 .or_default();
 
+            let has_line_info = members.all.iter().any(|m| m.endline > 0);
             for member in members.all.iter() {
+                // Skip members without line information if there are members with line information
+                if has_line_info && member.startline == 0 && member.endline == 0 {
+                    continue;
+                }
                 method_mappings.push(Self::resolve_mapping(
                     &mut string_table,
                     &parsed,

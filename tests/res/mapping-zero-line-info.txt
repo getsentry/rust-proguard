@@ -1,0 +1,440 @@
+com.example.maps.projection.MapProjectionViewController -> id2.b:
+# {"id":"sourceFile","fileName":"MapProjectionViewController.kt"}
+    com.example.maps.core.IMapView mapView -> a
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lqb2/g;"}
+    com.example.maps.core.events.IMapEvents mapEvents -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lvb2/b;"}
+    com.example.maps.projection.markers.ProjectionMarkerRepository projectionMarkersRepository -> c
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Ljd2/a;"}
+    com.example.maps.projection.polyline.ProjectionPolylineRepository projectionPolylinesRepository -> d
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lld2/a;"}
+    com.example.maps.core.projection.MapProjectionFrameLayout projectionView -> e
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lbc2/c;"}
+    com.example.maps.core.projection.IVisibleRegion lastVisibleRegion -> f
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lbc2/b;"}
+    me.example.android.rx.RxUIBinder binder -> g
+    20:22:void <init>(com.example.maps.core.IMapView,com.example.maps.core.events.IMapEvents,com.example.maps.projection.markers.ProjectionMarkerRepository,com.example.maps.projection.polyline.ProjectionPolylineRepository):24:24 -> <init>
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lqb2/g;Lvb2/b;Ljd2/a;Lld2/a;)V"}
+    23:24:void <init>(com.example.maps.core.IMapView,com.example.maps.core.events.IMapEvents,com.example.maps.projection.markers.ProjectionMarkerRepository,com.example.maps.projection.polyline.ProjectionPolylineRepository):25:25 -> <init>
+    25:26:void <init>(com.example.maps.core.IMapView,com.example.maps.core.events.IMapEvents,com.example.maps.projection.markers.ProjectionMarkerRepository,com.example.maps.projection.polyline.ProjectionPolylineRepository):26:26 -> <init>
+    27:28:void <init>(com.example.maps.core.IMapView,com.example.maps.core.events.IMapEvents,com.example.maps.projection.markers.ProjectionMarkerRepository,com.example.maps.projection.polyline.ProjectionPolylineRepository):27:27 -> <init>
+    29:30:void <init>(com.example.maps.core.IMapView,com.example.maps.core.events.IMapEvents,com.example.maps.projection.markers.ProjectionMarkerRepository,com.example.maps.projection.polyline.ProjectionPolylineRepository):28:28 -> <init>
+    31:40:void <init>(com.example.maps.core.IMapView,com.example.maps.core.events.IMapEvents,com.example.maps.projection.markers.ProjectionMarkerRepository,com.example.maps.projection.polyline.ProjectionPolylineRepository):34:34 -> <init>
+    0:2:com.example.maps.projection.markers.ProjectionMarkerRepository access$getProjectionMarkersRepository$p(com.example.maps.projection.MapProjectionViewController):24:24 -> a
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lid2/b;)Ljd2/a;"}
+    0:3:void access$updateProjections(com.example.maps.projection.MapProjectionViewController):24:24 -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lid2/b;)V"}
+    5:7:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):37:37 -> c
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lbc2/c;)V"}
+    8:10:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):38:38 -> c
+    11:15:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):39:39 -> c
+    16:23:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):42:42 -> c
+    24:29:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):48:48 -> c
+    30:40:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):49:49 -> c
+    41:46:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):50:50 -> c
+    47:52:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):51:51 -> c
+    53:58:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):52:52 -> c
+    59:77:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):54:54 -> c
+    78:113:void attach(com.example.maps.core.projection.MapProjectionFrameLayout):56:56 -> c
+    5:27:com.example.maps.core.projection.marker.IProjectionMarker createProjectionMarker(com.example.maps.core.projection.marker.IProjectionMarkerOptions):79:79 -> d
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lcc2/d;)Lcc2/c;"}
+    0:16:com.example.maps.core.projection.marker.IProjectionMarker createProjectionMarkerInternal(com.example.maps.core.projection.marker.IProjectionMarkerOptions,com.example.maps.core.projection.IProjection,float,com.example.maps.core.latlng.IBoundsFactory):133:133 -> e
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lcc2/d;Lbc2/a;FLxb2/b;)Lcc2/c;"}
+    0:5:void detach():72:72 -> f
+    6:7:void detach():73:73 -> f
+    8:12:void detach():74:74 -> f
+    13:18:void detach():75:75 -> f
+    0:11:java.lang.Object onProjectionView(kotlin.jvm.functions.Function1):158:158 -> g
+    12:25:java.lang.Object onProjectionView(kotlin.jvm.functions.Function1):160:160 -> g
+    5:15:void removeProjectionMarker(com.example.maps.core.projection.marker.IProjectionMarker):100:100 -> h
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lcc2/c;)V"}
+    16:21:void removeProjectionMarker(com.example.maps.core.projection.marker.IProjectionMarker):101:101 -> h
+    0:5:void updateProjections():62:62 -> i
+    6:9:void updateProjections():63:63 -> i
+    10:17:void updateProjections():64:64 -> i
+    18:19:void updateProjections():65:65 -> i
+    20:27:void updateProjections():66:66 -> i
+    28:43:void updateProjections():166:166 -> i
+    44:47:void updateProjections():66:66 -> i
+    48:55:void updateProjections():67:67 -> i
+    56:71:void updateProjections():168:168 -> i
+    72:82:void updateProjections():67:67 -> i
+com.example.maps.MapAnnotations -> jb2.e:
+# {"id":"sourceFile","fileName":"MapAnnotations.kt"}
+    com.example.maps.core.IMapView mapView -> a
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lqb2/g;"}
+    com.example.maps.core.projection.overlay.IMapOverlayViewController mapOverlayViewController -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Ldc2/c;"}
+    com.example.maps.projection.MapProjectionViewController mapProjectionViewController -> c
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lid2/b;"}
+    com.example.maps.core.polygon.PolygonManager polygonManager -> d
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lzb2/h;"}
+    com.example.experiments.dynamic.IKillSwitchProvider killSwitchProvider -> e
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lxx1/b;"}
+    me.example.android.rx.RxUIBinder binder -> f
+    android.content.Context mapContext -> g
+    25:27:void <init>(com.example.maps.core.IMapView,com.example.maps.core.projection.overlay.IMapOverlayViewController,com.example.maps.projection.MapProjectionViewController,com.example.maps.core.polygon.PolygonManager,com.example.experiments.dynamic.IKillSwitchProvider):36:36 -> <init>
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lqb2/g;Ldc2/c;Lid2/b;Lzb2/h;Lxx1/b;)V"}
+    28:29:void <init>(com.example.maps.core.IMapView,com.example.maps.core.projection.overlay.IMapOverlayViewController,com.example.maps.projection.MapProjectionViewController,com.example.maps.core.polygon.PolygonManager,com.example.experiments.dynamic.IKillSwitchProvider):37:37 -> <init>
+    30:31:void <init>(com.example.maps.core.IMapView,com.example.maps.core.projection.overlay.IMapOverlayViewController,com.example.maps.projection.MapProjectionViewController,com.example.maps.core.polygon.PolygonManager,com.example.experiments.dynamic.IKillSwitchProvider):38:38 -> <init>
+    32:33:void <init>(com.example.maps.core.IMapView,com.example.maps.core.projection.overlay.IMapOverlayViewController,com.example.maps.projection.MapProjectionViewController,com.example.maps.core.polygon.PolygonManager,com.example.experiments.dynamic.IKillSwitchProvider):39:39 -> <init>
+    34:35:void <init>(com.example.maps.core.IMapView,com.example.maps.core.projection.overlay.IMapOverlayViewController,com.example.maps.projection.MapProjectionViewController,com.example.maps.core.polygon.PolygonManager,com.example.experiments.dynamic.IKillSwitchProvider):40:40 -> <init>
+    36:37:void <init>(com.example.maps.core.IMapView,com.example.maps.core.projection.overlay.IMapOverlayViewController,com.example.maps.projection.MapProjectionViewController,com.example.maps.core.polygon.PolygonManager,com.example.experiments.dynamic.IKillSwitchProvider):41:41 -> <init>
+    38:46:void <init>(com.example.maps.core.IMapView,com.example.maps.core.projection.overlay.IMapOverlayViewController,com.example.maps.projection.MapProjectionViewController,com.example.maps.core.polygon.PolygonManager,com.example.experiments.dynamic.IKillSwitchProvider):44:44 -> <init>
+    47:53:void <init>(com.example.maps.core.IMapView,com.example.maps.core.projection.overlay.IMapOverlayViewController,com.example.maps.projection.MapProjectionViewController,com.example.maps.core.polygon.PolygonManager,com.example.experiments.dynamic.IKillSwitchProvider):46:46 -> <init>
+    5:10:void removeOverlay(com.example.maps.core.projection.overlay.IMapOverlay):91:91 -> a
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Ldc2/a;)V"}
+    5:11:com.example.maps.core.projection.overlay.IMapOverlay createOverlay(com.example.maps.core.projection.overlay.IMapOverlayOptions):79:79 -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Ldc2/b;)Ldc2/a;"}
+    5:10:void removeProjectionMarker(com.example.maps.core.projection.marker.IProjectionMarker):83:83 -> c
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lcc2/c;)V"}
+    5:11:com.example.maps.core.projection.marker.IProjectionMarker createProjectionMarker(com.example.maps.core.projection.marker.IProjectionMarkerOptions):63:63 -> d
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lcc2/d;)Lcc2/c;"}
+    5:11:com.example.maps.core.groundoverlay.IGroundOverlay createGroundOverlay(com.example.maps.core.groundoverlay.IGroundOverlayOptions):116:116 -> e
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lwb2/c;)Lwb2/b;"}
+    5:11:com.example.maps.core.polyline.IPolyline createPolyline(com.example.maps.core.polyline.PolylineOptions):95:95 -> f
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lac2/f;)Lac2/b;"}
+    5:11:com.example.maps.core.circle.ICircle createCircle(com.example.maps.core.circle.ICircleOptions):112:112 -> g
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lsb2/c;)Lsb2/b;"}
+    0:2:android.content.Context getMapContext():46:46 -> getMapContext
+    5:11:com.example.maps.core.rasterimage.IRasterImage createRasterImage(com.example.maps.core.rasterimage.RasterImageOptions):120:120 -> h
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lfc2/e;)Lfc2/a;"}
+    0:15:void showMapAttribution(boolean):124:124 -> i
+    16:21:void showMapAttribution(boolean):125:125 -> i
+    5:11:com.example.maps.core.polygon.IClickablePolygon createPolygon(com.example.maps.core.polygon.IPolygonOptions):103:103 -> j
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lzb2/d;)Lzb2/b;"}
+    10:14:void attach(com.example.maps.core.projection.MapProjectionFrameLayout,android.widget.FrameLayout):49:49 -> k
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lbc2/c;Landroid/widget/FrameLayout;)V"}
+    15:19:void attach(com.example.maps.core.projection.MapProjectionFrameLayout,android.widget.FrameLayout):50:50 -> k
+    20:24:void attach(com.example.maps.core.projection.MapProjectionFrameLayout,android.widget.FrameLayout):51:51 -> k
+    25:30:void attach(com.example.maps.core.projection.MapProjectionFrameLayout,android.widget.FrameLayout):52:52 -> k
+    0:4:void detach():56:56 -> l
+    5:9:void detach():57:57 -> l
+    10:14:void detach():58:58 -> l
+    15:20:void detach():59:59 -> l
+com.example.design.mapcomponents.marker.currentlocation.DotRendererDelegate -> u20.c:
+# {"id":"sourceFile","fileName":"DotRendererDelegate.kt"}
+    com.example.maps.core.IMapAnnotations mapAnnotations -> a
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lqb2/a;"}
+    boolean isShowingDirection -> b
+    com.example.maps.core.projection.marker.ViewProjectionMarker locationMarker -> c
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lcc2/h;"}
+    com.example.maps.core.circle.ICircle accuracyCircle -> d
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lsb2/b;"}
+    android.widget.ImageView locationDirectionView -> e
+    android.widget.ImageView locationDotView -> f
+    0:0:void <clinit>() -> <clinit>
+    6:11:void <init>(com.example.maps.core.IMapAnnotations):23:23 -> <init>
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lqb2/a;)V"}
+    1:2:void render():33:33 -> a
+    3:8:void render():34:34 -> a
+    9:22:void render():35:35 -> a
+    23:25:void render():36:36 -> a
+    26:27:void render():35:35 -> a
+    28:41:void render():38:38 -> a
+    42:49:void render():39:39 -> a
+    50:52:void render():34:34 -> a
+    0:5:com.example.maps.core.circle.ICircle createAccuracyCircle():111:111 -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"()Lsb2/b;"}
+    6:13:com.example.maps.core.circle.ICircle createAccuracyCircle():113:113 -> b
+    14:17:com.example.maps.core.circle.ICircle createAccuracyCircle():114:114 -> b
+    18:21:com.example.maps.core.circle.ICircle createAccuracyCircle():112:112 -> b
+    22:23:com.example.maps.core.circle.ICircle createAccuracyCircle():116:116 -> b
+    24:33:com.example.maps.core.circle.ICircle createAccuracyCircle():117:117 -> b
+    34:38:com.example.maps.core.circle.ICircle createAccuracyCircle():116:116 -> b
+    0:1:com.example.maps.core.projection.marker.ViewProjectionMarker createCurrentLocationProjectionMarker():101:101 -> c
+      # {"id":"com.android.tools.r8.residualsignature","signature":"()Lcc2/h;"}
+    2:3:com.example.maps.core.projection.marker.ViewProjectionMarker createCurrentLocationProjectionMarker():102:102 -> c
+    4:5:com.example.maps.core.projection.marker.ViewProjectionMarker createCurrentLocationProjectionMarker():103:103 -> c
+    6:13:com.example.maps.core.projection.marker.ViewProjectionMarker createCurrentLocationProjectionMarker():105:105 -> c
+    14:16:com.example.maps.core.projection.marker.ViewProjectionMarker createCurrentLocationProjectionMarker():102:102 -> c
+    17:23:com.example.maps.core.projection.marker.ViewProjectionMarker createCurrentLocationProjectionMarker():101:101 -> c
+    6:12:void setLocation(com.example.common.geo.LatitudeLongitude):48:48 -> d
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lgx/c;)V"}
+    13:20:void setLocation(com.example.common.geo.LatitudeLongitude):49:49 -> d
+    2:5:void setDirection(java.lang.Float):82:82 -> e
+    6:22:void setDirection(java.lang.Float):84:84 -> e
+    23:26:void setDirection(java.lang.Float):85:85 -> e
+    0:1:boolean shouldAnimateLocationUpdates():98:98 -> f
+    0:6:void setIsStale(boolean):53:53 -> g
+    7:22:void setIsStale(boolean):56:56 -> g
+    23:37:void setIsStale(boolean):58:58 -> g
+    38:45:void setIsStale(boolean):62:62 -> g
+    46:47:void setIsStale(boolean):63:63 -> g
+    48:51:void setIsStale(boolean):64:64 -> g
+    52:55:void setIsStale(boolean):61:61 -> g
+    56:62:void setIsStale(boolean):66:66 -> g
+    63:70:void setIsStale(boolean):69:69 -> g
+    71:72:void setIsStale(boolean):70:70 -> g
+    73:76:void setIsStale(boolean):71:71 -> g
+    77:80:void setIsStale(boolean):68:68 -> g
+    81:88:void setIsStale(boolean):73:73 -> g
+    0:0:void setHaloColor(int):45:45 -> h
+    0:7:void setAccuracyMeters(double):77:77 -> i
+    0:4:void hideDirectionView():148:148 -> j
+    5:13:void hideDirectionView():164:164 -> j
+    14:19:void hideDirectionView():149:149 -> j
+    20:21:void hideDirectionView():151:151 -> j
+    22:32:void hideDirectionView():152:152 -> j
+    0:4:void showDirectionView():128:128 -> k
+    5:10:void showDirectionView():129:129 -> k
+    11:13:void showDirectionView():131:131 -> k
+    14:17:void showDirectionView():132:132 -> k
+    18:20:void showDirectionView():133:133 -> k
+    21:23:void showDirectionView():134:134 -> k
+    24:26:void showDirectionView():135:135 -> k
+    27:37:void showDirectionView():136:136 -> k
+    0:6:void remove():90:90 -> remove
+    7:10:void remove():91:91 -> remove
+    11:16:void remove():92:92 -> remove
+    17:18:void remove():94:94 -> remove
+    19:21:void remove():95:95 -> remove
+com.example.design.mapcomponents.marker.currentlocation.CurrentLocationRenderer -> u20.b:
+# {"id":"sourceFile","fileName":"CurrentLocationRenderer.kt"}
+    me.example.android.locationproviders.ILocationService locationServices -> a
+    com.example.foregrounddetector.AppForegroundDetector appForegroundDetector -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lh02/a;"}
+    com.example.navigation.core.api.IAnimatedLocationProvider animatedLocationProvider -> c
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lte2/d;"}
+    com.example.navigation.core.feature.puck.IPuckStateProvider puckStateProvider -> d
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lqg2/a;"}
+    com.example.design.mapcomponents.marker.currentlocation.ICurrentLocationRendererDelegate currentLocationRendererDelegate -> e
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lu20/e;"}
+    me.example.android.rx.RxUIBinder binder -> f
+    0:0:void <clinit>() -> <clinit>
+    27:29:void <init>(me.example.android.locationproviders.ILocationService,com.example.foregrounddetector.AppForegroundDetector,com.example.navigation.core.api.IAnimatedLocationProvider,com.example.navigation.core.feature.puck.IPuckStateProvider,com.example.design.mapcomponents.marker.currentlocation.ICurrentLocationRendererDelegate):18:18 -> <init>
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lme/example/android/locationproviders/ILocationService;Lh02/a;Lte2/d;Lqg2/a;Lu20/e;)V"}
+    30:31:void <init>(me.example.android.locationproviders.ILocationService,com.example.foregrounddetector.AppForegroundDetector,com.example.navigation.core.api.IAnimatedLocationProvider,com.example.navigation.core.feature.puck.IPuckStateProvider,com.example.design.mapcomponents.marker.currentlocation.ICurrentLocationRendererDelegate):20:20 -> <init>
+    32:33:void <init>(me.example.android.locationproviders.ILocationService,com.example.foregrounddetector.AppForegroundDetector,com.example.navigation.core.api.IAnimatedLocationProvider,com.example.navigation.core.feature.puck.IPuckStateProvider,com.example.design.mapcomponents.marker.currentlocation.ICurrentLocationRendererDelegate):21:21 -> <init>
+    34:35:void <init>(me.example.android.locationproviders.ILocationService,com.example.foregrounddetector.AppForegroundDetector,com.example.navigation.core.api.IAnimatedLocationProvider,com.example.navigation.core.feature.puck.IPuckStateProvider,com.example.design.mapcomponents.marker.currentlocation.ICurrentLocationRendererDelegate):22:22 -> <init>
+    36:37:void <init>(me.example.android.locationproviders.ILocationService,com.example.foregrounddetector.AppForegroundDetector,com.example.navigation.core.api.IAnimatedLocationProvider,com.example.navigation.core.feature.puck.IPuckStateProvider,com.example.design.mapcomponents.marker.currentlocation.ICurrentLocationRendererDelegate):23:23 -> <init>
+    38:39:void <init>(me.example.android.locationproviders.ILocationService,com.example.foregrounddetector.AppForegroundDetector,com.example.navigation.core.api.IAnimatedLocationProvider,com.example.navigation.core.feature.puck.IPuckStateProvider,com.example.design.mapcomponents.marker.currentlocation.ICurrentLocationRendererDelegate):24:24 -> <init>
+    40:49:void <init>(me.example.android.locationproviders.ILocationService,com.example.foregrounddetector.AppForegroundDetector,com.example.navigation.core.api.IAnimatedLocationProvider,com.example.navigation.core.feature.puck.IPuckStateProvider,com.example.design.mapcomponents.marker.currentlocation.ICurrentLocationRendererDelegate):26:26 -> <init>
+    0:8:void render():33:33 -> a
+    9:13:void render():37:37 -> a
+    14:18:void render():39:39 -> a
+    19:26:void render():40:40 -> a
+    27:34:void render():105:105 -> a
+    35:42:void render():44:44 -> a
+    43:46:void render():45:45 -> a
+    47:50:void render():47:47 -> a
+    0:2:com.example.design.mapcomponents.marker.currentlocation.ICurrentLocationRendererDelegate access$getCurrentLocationRendererDelegate$p(com.example.design.mapcomponents.marker.currentlocation.CurrentLocationRenderer):18:18 -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lu20/b;)Lu20/e;"}
+    0:5:void bindLocationStream():73:73 -> c
+    6:9:void bindLocationStream():74:74 -> c
+    10:15:void bindLocationStream():75:75 -> c
+    16:17:void bindLocationStream():78:78 -> c
+    18:25:void bindLocationStream():107:107 -> c
+    26:31:void bindLocationStream():97:97 -> c
+    32:40:void bindLocationStream():98:98 -> c
+    41:42:void bindLocationStream():99:99 -> c
+    43:51:void bindLocationStream():108:108 -> c
+    0:4:void clear():55:55 -> clear
+    5:10:void clear():56:56 -> clear
+com.example.design.mapcomponents.marker.currentlocation.CurrentLocationMarkerMapController$onMapAttach$$inlined$bindStream$1 -> u20.a$a:
+# {"id":"sourceFile","fileName":"RxExt.kt"}
+    com.example.design.mapcomponents.marker.currentlocation.CurrentLocationMarkerMapController this$0 -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lu20/a;"}
+    0:5:void <init>(com.example.design.mapcomponents.marker.currentlocation.CurrentLocationMarkerMapController):0:0 -> <init>
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lu20/a;)V"}
+    0:10:void accept(java.lang.Object):32:32 -> accept
+    11:20:void accept(java.lang.Object):221:221 -> accept
+    21:30:void accept(java.lang.Object):223:223 -> accept
+io.reactivex.internal.observers.LambdaObserver -> ee3.l:
+# {"id":"sourceFile","fileName":"LambdaObserver.java"}
+    io.reactivex.functions.Consumer onError -> B0
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lae3/f;"}
+    io.reactivex.functions.Action onComplete -> C0
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lae3/a;"}
+    io.reactivex.functions.Consumer onSubscribe -> D0
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lae3/f;"}
+    io.reactivex.functions.Consumer onNext -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lae3/f;"}
+    0:2:void <init>(io.reactivex.functions.Consumer,io.reactivex.functions.Consumer,io.reactivex.functions.Action,io.reactivex.functions.Consumer):39:39 -> <init>
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lae3/f;Lae3/f;Lae3/a;Lae3/f;)V"}
+    3:4:void <init>(io.reactivex.functions.Consumer,io.reactivex.functions.Consumer,io.reactivex.functions.Action,io.reactivex.functions.Consumer):40:40 -> <init>
+    5:6:void <init>(io.reactivex.functions.Consumer,io.reactivex.functions.Consumer,io.reactivex.functions.Action,io.reactivex.functions.Consumer):41:41 -> <init>
+    7:8:void <init>(io.reactivex.functions.Consumer,io.reactivex.functions.Consumer,io.reactivex.functions.Action,io.reactivex.functions.Consumer):42:42 -> <init>
+    9:11:void <init>(io.reactivex.functions.Consumer,io.reactivex.functions.Consumer,io.reactivex.functions.Action,io.reactivex.functions.Consumer):43:43 -> <init>
+    0:3:void dispose():102:102 -> dispose
+    0:11:boolean isDisposed():107:107 -> isDisposed
+    0:5:void onComplete():89:89 -> onComplete
+    6:10:void onComplete():90:90 -> onComplete
+    11:17:void onComplete():92:92 -> onComplete
+    18:20:void onComplete():94:94 -> onComplete
+    21:24:void onComplete():95:95 -> onComplete
+    0:5:void onError(java.lang.Throwable):74:74 -> onError
+    6:10:void onError(java.lang.Throwable):75:75 -> onError
+    11:17:void onError(java.lang.Throwable):77:77 -> onError
+    18:20:void onError(java.lang.Throwable):79:79 -> onError
+    21:33:void onError(java.lang.Throwable):80:80 -> onError
+    34:37:void onError(java.lang.Throwable):83:83 -> onError
+    0:5:void onNext(java.lang.Object):61:61 -> onNext
+    6:12:void onNext(java.lang.Object):63:63 -> onNext
+    13:15:void onNext(java.lang.Object):65:65 -> onNext
+    16:24:void onNext(java.lang.Object):66:66 -> onNext
+    25:28:void onNext(java.lang.Object):67:67 -> onNext
+    0:5:void onSubscribe(io.reactivex.disposables.Disposable):48:48 -> onSubscribe
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lxd3/c;)V"}
+    6:12:void onSubscribe(io.reactivex.disposables.Disposable):50:50 -> onSubscribe
+    13:15:void onSubscribe(io.reactivex.disposables.Disposable):52:52 -> onSubscribe
+    16:18:void onSubscribe(io.reactivex.disposables.Disposable):53:53 -> onSubscribe
+    19:22:void onSubscribe(io.reactivex.disposables.Disposable):54:54 -> onSubscribe
+io.reactivex.internal.operators.observable.ObservableObserveOn$ObserveOnObserver -> je3.e1$a:
+# {"id":"sourceFile","fileName":"ObservableObserveOn.java"}
+    io.reactivex.Scheduler$Worker worker -> B0
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lio/reactivex/f0$c;"}
+    boolean delayError -> C0
+    int bufferSize -> D0
+    io.reactivex.internal.fuseable.SimpleQueue queue -> E0
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lde3/j;"}
+    io.reactivex.disposables.Disposable upstream -> F0
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lxd3/c;"}
+    java.lang.Throwable error -> G0
+    boolean done -> H0
+    boolean disposed -> I0
+    int sourceMode -> J0
+    boolean outputFused -> K0
+    io.reactivex.Observer downstream -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lio/reactivex/e0;"}
+    0:2:void <init>(io.reactivex.Observer,io.reactivex.Scheduler$Worker,boolean,int):71:71 -> <init>
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lio/reactivex/e0;Lio/reactivex/f0$c;ZI)V"}
+    3:4:void <init>(io.reactivex.Observer,io.reactivex.Scheduler$Worker,boolean,int):72:72 -> <init>
+    5:6:void <init>(io.reactivex.Observer,io.reactivex.Scheduler$Worker,boolean,int):73:73 -> <init>
+    7:8:void <init>(io.reactivex.Observer,io.reactivex.Scheduler$Worker,boolean,int):74:74 -> <init>
+    9:11:void <init>(io.reactivex.Observer,io.reactivex.Scheduler$Worker,boolean,int):75:75 -> <init>
+    0:4:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):260:260 -> a
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(ZZLio/reactivex/e0;)Z"}
+    5:12:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):261:261 -> a
+    13:14:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):265:265 -> a
+    15:20:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):266:266 -> a
+    21:24:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):268:268 -> a
+    25:28:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):270:270 -> a
+    29:31:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):272:272 -> a
+    32:39:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):274:274 -> a
+    40:41:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):279:279 -> a
+    42:46:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):280:280 -> a
+    47:49:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):281:281 -> a
+    50:57:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):282:282 -> a
+    58:59:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):286:286 -> a
+    60:62:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):287:287 -> a
+    63:70:boolean checkTerminated(boolean,boolean,io.reactivex.Observer):288:288 -> a
+    0:5:void clear():313:313 -> clear
+    0:4:void dispose():144:144 -> dispose
+    5:6:void dispose():145:145 -> dispose
+    7:11:void dispose():146:146 -> dispose
+    12:16:void dispose():147:147 -> dispose
+    17:26:void dispose():148:148 -> dispose
+    27:32:void dispose():149:149 -> dispose
+    2:6:void drainFused():215:215 -> f
+    7:8:void drainFused():219:219 -> f
+    9:10:void drainFused():220:220 -> f
+    11:18:void drainFused():222:222 -> f
+    19:20:void drainFused():223:223 -> f
+    21:27:void drainFused():224:224 -> f
+    28:33:void drainFused():225:225 -> f
+    34:41:void drainFused():229:229 -> f
+    42:43:void drainFused():232:232 -> f
+    44:47:void drainFused():233:233 -> f
+    48:53:void drainFused():235:235 -> f
+    54:58:void drainFused():237:237 -> f
+    59:65:void drainFused():239:239 -> f
+    66:72:void drainFused():243:243 -> f
+    0:1:void drainNormal():168:168 -> i
+    2:5:void drainNormal():169:169 -> i
+    6:18:void drainNormal():172:172 -> i
+    19:20:void drainNormal():177:177 -> i
+    21:29:void drainNormal():181:181 -> i
+    30:39:void drainNormal():193:193 -> i
+    40:46:void drainNormal():204:204 -> i
+    47:51:void drainNormal():201:201 -> i
+    52:54:void drainNormal():183:183 -> i
+    55:56:void drainNormal():184:184 -> i
+    57:61:void drainNormal():185:185 -> i
+    62:64:void drainNormal():186:186 -> i
+    65:67:void drainNormal():187:187 -> i
+    68:73:void drainNormal():188:188 -> i
+    0:2:boolean isDisposed():156:156 -> isDisposed
+    0:6:boolean isEmpty():318:318 -> isEmpty
+    5:9:int requestFusion(int):299:299 -> j
+    0:5:void schedule():160:160 -> k
+    6:11:void schedule():161:161 -> k
+    0:5:void onComplete():135:135 -> onComplete
+    6:7:void onComplete():138:138 -> onComplete
+    8:11:void onComplete():139:139 -> onComplete
+    0:3:void onError(java.lang.Throwable):124:124 -> onError
+    4:7:void onError(java.lang.Throwable):125:125 -> onError
+    8:10:void onError(java.lang.Throwable):128:128 -> onError
+    11:12:void onError(java.lang.Throwable):129:129 -> onError
+    13:16:void onError(java.lang.Throwable):130:130 -> onError
+    0:4:void onNext(java.lang.Object):112:112 -> onNext
+    5:9:void onNext(java.lang.Object):116:116 -> onNext
+    10:14:void onNext(java.lang.Object):117:117 -> onNext
+    15:18:void onNext(java.lang.Object):119:119 -> onNext
+    0:7:void onSubscribe(io.reactivex.disposables.Disposable):80:80 -> onSubscribe
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lxd3/c;)V"}
+    8:9:void onSubscribe(io.reactivex.disposables.Disposable):81:81 -> onSubscribe
+    10:13:void onSubscribe(io.reactivex.disposables.Disposable):82:82 -> onSubscribe
+    14:16:void onSubscribe(io.reactivex.disposables.Disposable):84:84 -> onSubscribe
+    17:23:void onSubscribe(io.reactivex.disposables.Disposable):86:86 -> onSubscribe
+    24:25:void onSubscribe(io.reactivex.disposables.Disposable):89:89 -> onSubscribe
+    26:27:void onSubscribe(io.reactivex.disposables.Disposable):90:90 -> onSubscribe
+    28:29:void onSubscribe(io.reactivex.disposables.Disposable):91:91 -> onSubscribe
+    30:34:void onSubscribe(io.reactivex.disposables.Disposable):92:92 -> onSubscribe
+    35:41:void onSubscribe(io.reactivex.disposables.Disposable):93:93 -> onSubscribe
+    42:43:void onSubscribe(io.reactivex.disposables.Disposable):97:97 -> onSubscribe
+    44:45:void onSubscribe(io.reactivex.disposables.Disposable):98:98 -> onSubscribe
+    46:51:void onSubscribe(io.reactivex.disposables.Disposable):99:99 -> onSubscribe
+    52:60:void onSubscribe(io.reactivex.disposables.Disposable):104:104 -> onSubscribe
+    61:66:void onSubscribe(io.reactivex.disposables.Disposable):106:106 -> onSubscribe
+    0:6:java.lang.Object poll():308:308 -> poll
+    0:3:void run():252:252 -> run
+    4:7:void run():253:253 -> run
+    8:11:void run():255:255 -> run
+io.reactivex.android.schedulers.HandlerScheduler$ScheduledRunnable -> wd3.b$b:
+# {"id":"sourceFile","fileName":"HandlerScheduler.java"}
+    java.lang.Runnable delegate -> B0
+    boolean disposed -> C0
+    android.os.Handler handler -> b
+    0:2:void <init>(android.os.Handler,java.lang.Runnable):116:116 -> <init>
+    3:4:void <init>(android.os.Handler,java.lang.Runnable):117:117 -> <init>
+    5:7:void <init>(android.os.Handler,java.lang.Runnable):118:118 -> <init>
+    0:5:void dispose():132:132 -> dispose
+    6:8:void dispose():133:133 -> dispose
+    0:2:boolean isDisposed():138:138 -> isDisposed
+    0:6:void run():124:124 -> run
+    7:10:void run():126:126 -> run
+androidx.compose.ui.graphics.shadow.AndroidShadowContext -> h2.a:
+# {"id":"sourceFile","fileName":"AndroidShadowContext.android.kt"}
+    androidx.collection.MutableScatterMap dropShadowCache -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Landroidx/collection/o0;"}
+    androidx.collection.MutableScatterMap innerShadowCache -> c
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Landroidx/collection/o0;"}
+    androidx.compose.ui.graphics.shadow.AndroidShadowContext$ShadowKey shadowKey -> d
+      # {"id":"com.android.tools.r8.residualsignature","signature":"Lh2/a$a;"}
+    0:3:void <init>():35:35 -> <init>
+    0:1:void clearCache():121:122 -> a
+    2:10:void clearCache():122:122 -> a
+    11:18:void clearCache():123:123 -> a
+    19:20:void clearCache():124:124 -> a
+    21:22:void clearCache():125:125 -> a
+    23:26:void clearCache():121:121 -> a
+    0:0:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):68:68 -> b
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lc2/i3;JLt3/t;Lt3/d;Lh2/f;)Lh2/e;"}
+    1:4:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):70:70 -> b
+    5:7:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):71:71 -> b
+    8:10:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):72:72 -> b
+    11:13:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):73:73 -> b
+    14:20:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):74:74 -> b
+    21:27:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):76:76 -> b
+    28:39:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):78:78 -> b
+    40:43:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):80:80 -> b
+    44:48:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):81:81 -> b
+    49:73:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):82:82 -> b
+    74:77:androidx.compose.ui.graphics.shadow.DropShadowRenderer obtainDropShadowRenderer-eZhPAX0(androidx.compose.ui.graphics.Shape,long,androidx.compose.ui.unit.LayoutDirection,androidx.compose.ui.unit.Density,androidx.compose.ui.graphics.shadow.Shadow):84:84 -> b
+    0:5:androidx.compose.ui.graphics.shadow.DropShadowPainter createDropShadowPainter(androidx.compose.ui.graphics.Shape,androidx.compose.ui.graphics.shadow.Shadow):115:115 -> c
+      # {"id":"com.android.tools.r8.residualsignature","signature":"(Lc2/i3;Lh2/f;)Landroidx/compose/ui/graphics/shadow/DropShadowPainter;"}
+    0:14:androidx.collection.MutableScatterMap obtainDropShadowCache():43:43 -> d
+      # {"id":"com.android.tools.r8.residualsignature","signature":"()Landroidx/collection/o0;"}
+    0:21:androidx.compose.ui.graphics.shadow.AndroidShadowContext$ShadowKey obtainShadowKey():48:48 -> e
+      # {"id":"com.android.tools.r8.residualsignature","signature":"()Lh2/a$a;"}

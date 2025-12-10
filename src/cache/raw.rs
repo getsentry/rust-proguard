@@ -186,10 +186,10 @@ pub(crate) struct RewriteComponent {
 unsafe impl Pod for RewriteComponent {}
 
 pub(crate) const REWRITE_CONDITION_THROWS: u32 = 0;
-pub(crate) const REWRITE_CONDITION_UNKNOWN: u32 = 1;
+pub(crate) const REWRITE_CONDITION_UNKNOWN: u32 = u32::MAX;
 
 pub(crate) const REWRITE_ACTION_REMOVE_INNER_FRAMES: u32 = 0;
-pub(crate) const REWRITE_ACTION_UNKNOWN: u32 = 1;
+pub(crate) const REWRITE_ACTION_UNKNOWN: u32 = u32::MAX;
 
 /// The serialized `ProguardCache` binary format.
 #[derive(Clone, PartialEq, Eq)]

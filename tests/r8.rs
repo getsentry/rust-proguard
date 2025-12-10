@@ -10,6 +10,7 @@ static MAPPING_R8_SYMBOLICATED_FILE_NAMES: &[u8] =
     include_bytes!("res/mapping-r8-symbolicated_file_names.txt");
 static MAPPING_OUTLINE: &[u8] = include_bytes!("res/mapping-outline.txt");
 static MAPPING_OUTLINE_COMPLEX: &[u8] = include_bytes!("res/mapping-outline-complex.txt");
+static MAPPING_ZERO_LINE_INFO: &[u8] = include_bytes!("res/mapping-zero-line-info.txt");
 
 static MAPPING_WIN_R8: LazyLock<Vec<u8>> = LazyLock::new(|| {
     MAPPING_R8
@@ -328,5 +329,147 @@ fn test_outline_frame_retracing() {
         mapped.next().unwrap(),
         StackFrame::new("some.Class", "outlineCaller", 0)
     );
+    assert_eq!(mapped.next(), None);
+}
+
+#[test]
+fn test_remap_zero_line_info() {
+    let mapping = ProguardMapping::new(MAPPING_ZERO_LINE_INFO);
+
+    let mapper = ProguardMapper::new(mapping);
+
+    let test = mapper.remap_stacktrace(
+        r#"
+    java.lang.IllegalStateException: Oops!
+    at id2.b.g(:18)
+    at id2.b.e(:10)
+    at id2.b.d(:23)
+    at jb2.e.d(:7)
+    at u20.c.c(:17)
+    at u20.c.a(:3)
+    at u20.b.a(:16)
+    at u20.a$a.accept(:17)
+    at ee3.l.onNext(:8)
+    at je3.e1$a.i(:47)
+    at je3.e1$a.run(:8)
+    at wd3.b$b.run(:2)"#,
+    );
+
+    assert_eq!(r#"
+    java.lang.IllegalStateException: Oops!
+    at com.example.maps.projection.MapProjectionViewController.onProjectionView(MapProjectionViewController.kt:160)
+    at com.example.maps.projection.MapProjectionViewController.createProjectionMarkerInternal(MapProjectionViewController.kt:133)
+    at com.example.maps.projection.MapProjectionViewController.createProjectionMarker(MapProjectionViewController.kt:79)
+    at com.example.maps.MapAnnotations.createProjectionMarker(MapAnnotations.kt:63)
+    at com.example.design.mapcomponents.marker.currentlocation.DotRendererDelegate.createCurrentLocationProjectionMarker(DotRendererDelegate.kt:101)
+    at com.example.design.mapcomponents.marker.currentlocation.DotRendererDelegate.render(DotRendererDelegate.kt:34)
+    at com.example.design.mapcomponents.marker.currentlocation.CurrentLocationRenderer.render(CurrentLocationRenderer.kt:39)
+    at com.example.design.mapcomponents.marker.currentlocation.CurrentLocationMarkerMapController$onMapAttach$$inlined$bindStream$1.accept(RxExt.kt:221)
+    at io.reactivex.internal.observers.LambdaObserver.onNext(LambdaObserver.java:63)
+    at io.reactivex.internal.operators.observable.ObservableObserveOn$ObserveOnObserver.drainNormal(ObservableObserveOn.java:201)
+    at io.reactivex.internal.operators.observable.ObservableObserveOn$ObserveOnObserver.run(ObservableObserveOn.java:255)
+    at io.reactivex.android.schedulers.HandlerScheduler$ScheduledRunnable.run(HandlerScheduler.java:124)"#.trim(), test.unwrap().trim());
+}
+
+#[test]
+fn test_remap_zero_line_info_cache() {
+    let mapping = ProguardMapping::new(MAPPING_ZERO_LINE_INFO);
+
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
+
+    let test = cache.remap_stacktrace(
+        r#"
+    java.lang.IllegalStateException: Oops!
+    at id2.b.g(:18)
+    at id2.b.e(:10)
+    at id2.b.d(:23)
+    at jb2.e.d(:7)
+    at u20.c.c(:17)
+    at u20.c.a(:3)
+    at u20.b.a(:16)
+    at u20.a$a.accept(:17)
+    at ee3.l.onNext(:8)
+    at je3.e1$a.i(:47)
+    at je3.e1$a.run(:8)
+    at wd3.b$b.run(:2)"#,
+    );
+
+    assert_eq!(r#"
+    java.lang.IllegalStateException: Oops!
+    at com.example.maps.projection.MapProjectionViewController.onProjectionView(MapProjectionViewController.kt:160)
+    at com.example.maps.projection.MapProjectionViewController.createProjectionMarkerInternal(MapProjectionViewController.kt:133)
+    at com.example.maps.projection.MapProjectionViewController.createProjectionMarker(MapProjectionViewController.kt:79)
+    at com.example.maps.MapAnnotations.createProjectionMarker(MapAnnotations.kt:63)
+    at com.example.design.mapcomponents.marker.currentlocation.DotRendererDelegate.createCurrentLocationProjectionMarker(DotRendererDelegate.kt:101)
+    at com.example.design.mapcomponents.marker.currentlocation.DotRendererDelegate.render(DotRendererDelegate.kt:34)
+    at com.example.design.mapcomponents.marker.currentlocation.CurrentLocationRenderer.render(CurrentLocationRenderer.kt:39)
+    at com.example.design.mapcomponents.marker.currentlocation.CurrentLocationMarkerMapController$onMapAttach$$inlined$bindStream$1.accept(RxExt.kt:221)
+    at io.reactivex.internal.observers.LambdaObserver.onNext(LambdaObserver.java:63)
+    at io.reactivex.internal.operators.observable.ObservableObserveOn$ObserveOnObserver.drainNormal(ObservableObserveOn.java:201)
+    at io.reactivex.internal.operators.observable.ObservableObserveOn$ObserveOnObserver.run(ObservableObserveOn.java:255)
+    at io.reactivex.android.schedulers.HandlerScheduler$ScheduledRunnable.run(HandlerScheduler.java:124)"#.trim(), test.unwrap().trim());
+}
+
+#[test]
+fn test_method_with_zero_zero_and_line_specific_mappings() {
+    // Test case where a method has both 0:0: mappings and line-specific mappings.
+    // The AndroidShadowContext class has method 'b' (obfuscated) with:
+    // - 0:0: mapping pointing to line 68
+    // - 1:4: mapping pointing to line 70
+    // - 5:7: mapping pointing to line 71
+    // etc.
+    // When remapping a frame with line 3, it should match the 1:4: mapping (line 70),
+    // NOT the 0:0: mapping (line 68), because we skip 0:0: mappings when line-specific
+    // mappings exist.
+    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_ZERO_LINE_INFO));
+
+    // Remap frame with method 'b' at line 3
+    // This should match the 1:4: mapping (line 3 is in range 1-4) -> original line 70
+    let mut mapped = mapper.remap_frame(&StackFrame::new("h2.a", "b", 3));
+
+    let frame = mapped.next().unwrap();
+    assert_eq!(
+        frame.class(),
+        "androidx.compose.ui.graphics.shadow.AndroidShadowContext"
+    );
+    assert_eq!(frame.method(), "obtainDropShadowRenderer-eZhPAX0");
+    // Should map to line 70 (from the 1:4: mapping), not line 68 (from the 0:0: mapping)
+    assert_eq!(frame.line(), 70);
+    assert_eq!(mapped.next(), None);
+}
+
+#[test]
+fn test_method_with_zero_zero_and_line_specific_mappings_cache() {
+    // Test case where a method has both 0:0: mappings and line-specific mappings.
+    // The AndroidShadowContext class has method 'b' (obfuscated) with:
+    // - 0:0: mapping pointing to line 68
+    // - 1:4: mapping pointing to line 70
+    // - 5:7: mapping pointing to line 71
+    // etc.
+    // When remapping a frame with line 3, it should match the 1:4: mapping (line 70),
+    // NOT the 0:0: mapping (line 68), because we skip 0:0: mappings when line-specific
+    // mappings exist.
+    let mapping = ProguardMapping::new(MAPPING_ZERO_LINE_INFO);
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
+
+    // Remap frame with method 'b' at line 3
+    // This should match the 1:4: mapping (line 3 is in range 1-4) -> original line 70
+    let frame = StackFrame::new("h2.a", "b", 3);
+    let mut mapped = cache.remap_frame(&frame);
+
+    let remapped_frame = mapped.next().unwrap();
+    assert_eq!(
+        remapped_frame.class(),
+        "androidx.compose.ui.graphics.shadow.AndroidShadowContext"
+    );
+    assert_eq!(remapped_frame.method(), "obtainDropShadowRenderer-eZhPAX0");
+    // Should map to line 70 (from the 1:4: mapping), not line 68 (from the 0:0: mapping)
+    assert_eq!(remapped_frame.line(), 70);
     assert_eq!(mapped.next(), None);
 }

@@ -400,13 +400,13 @@ impl<'data> ProguardCache<'data> {
             c.class.members_by_params_offset = members_by_params.len() as u32;
 
             // Serialize members without params
-            for (_method, ms) in c.members.into_iter() {
-                for mut mp in ms.into_iter() {
+            for (_method, ms) in c.members {
+                for mut mp in ms {
                     let start = outline_pairs.len() as u32;
                     if !mp.outline_pairs.is_empty() {
                         mp.member.outline_pairs_offset = start;
                         mp.member.outline_pairs_len = mp.outline_pairs.len() as u32;
-                        outline_pairs.extend(mp.outline_pairs.into_iter());
+                        outline_pairs.extend(mp.outline_pairs);
                     } else {
                         mp.member.outline_pairs_offset = start;
                         mp.member.outline_pairs_len = 0;
@@ -414,12 +414,12 @@ impl<'data> ProguardCache<'data> {
 
                     let rule_start = rewrite_rule_entries.len() as u32;
                     let mut rule_count = 0;
-                    for rule in mp.rewrite_rules.into_iter() {
+                    for rule in mp.rewrite_rules {
                         let cond_start = rewrite_rule_components.len() as u32;
-                        rewrite_rule_components.extend(rule.conditions.into_iter());
+                        rewrite_rule_components.extend(rule.conditions);
                         let cond_len = rewrite_rule_components.len() as u32 - cond_start;
                         let action_start = rewrite_rule_components.len() as u32;
-                        rewrite_rule_components.extend(rule.actions.into_iter());
+                        rewrite_rule_components.extend(rule.actions);
                         let action_len = rewrite_rule_components.len() as u32 - action_start;
                         rewrite_rule_entries.push(RewriteRuleEntry {
                             conditions_offset: cond_start,
@@ -437,13 +437,13 @@ impl<'data> ProguardCache<'data> {
             }
 
             // Serialize members by params
-            for (_key, ms) in c.members_by_params.into_iter() {
-                for mut mp in ms.into_iter() {
+            for (_key, ms) in c.members_by_params {
+                for mut mp in ms {
                     let start = outline_pairs.len() as u32;
                     if !mp.outline_pairs.is_empty() {
                         mp.member.outline_pairs_offset = start;
                         mp.member.outline_pairs_len = mp.outline_pairs.len() as u32;
-                        outline_pairs.extend(mp.outline_pairs.into_iter());
+                        outline_pairs.extend(mp.outline_pairs);
                     } else {
                         mp.member.outline_pairs_offset = start;
                         mp.member.outline_pairs_len = 0;
@@ -451,12 +451,12 @@ impl<'data> ProguardCache<'data> {
 
                     let rule_start = rewrite_rule_entries.len() as u32;
                     let mut rule_count = 0;
-                    for rule in mp.rewrite_rules.into_iter() {
+                    for rule in mp.rewrite_rules {
                         let cond_start = rewrite_rule_components.len() as u32;
-                        rewrite_rule_components.extend(rule.conditions.into_iter());
+                        rewrite_rule_components.extend(rule.conditions);
                         let cond_len = rewrite_rule_components.len() as u32 - cond_start;
                         let action_start = rewrite_rule_components.len() as u32;
-                        rewrite_rule_components.extend(rule.actions.into_iter());
+                        rewrite_rule_components.extend(rule.actions);
                         let action_len = rewrite_rule_components.len() as u32 - action_start;
                         rewrite_rule_entries.push(RewriteRuleEntry {
                             conditions_offset: cond_start,

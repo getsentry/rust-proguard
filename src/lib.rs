@@ -42,7 +42,9 @@ mod mapper;
 mod mapping;
 mod stacktrace;
 
-pub use cache::{CacheError, CacheErrorKind, ProguardCache, PRGCACHE_VERSION};
+pub use cache::{
+    class_name_to_descriptor, CacheError, CacheErrorKind, ProguardCache, PRGCACHE_VERSION,
+};
 pub use mapper::{DeobfuscatedSignature, ProguardMapper, RemappedFrameIter};
 pub use mapping::{
     LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord,

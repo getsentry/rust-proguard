@@ -1,5 +1,17 @@
 use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame};
 
+/// Test helper: simple remap_frame without rewrite rules or outline handling.
+fn remap_frame_simple<'a>(
+    cache: &'a ProguardCache<'a>,
+    frame: &StackFrame<'a>,
+) -> impl Iterator<Item = StackFrame<'a>> {
+    let mut carried = None;
+    cache
+        .remap_frame(frame, None, false, &mut carried)
+        .into_iter()
+        .flatten()
+}
+
 static MAPPING_CALLBACK: &[u8] = include_bytes!("res/mapping-callback.txt");
 static MAPPING_CALLBACK_EXTRA_CLASS: &[u8] = include_bytes!("res/mapping-callback-extra-class.txt");
 static MAPPING_CALLBACK_INNER_CLASS: &[u8] = include_bytes!("res/mapping-callback-inner-class.txt");
@@ -48,11 +60,14 @@ fn test_method_matches_callback_cache() {
 
     cache.test();
 
-    let mut mapped = cache.remap_frame(&StackFrame::new(
-        "io.sentry.samples.instrumentation.ui.g",
-        "onMenuItemClick",
-        28,
-    ));
+    let mut mapped = remap_frame_simple(
+        &cache,
+        &StackFrame::new(
+            "io.sentry.samples.instrumentation.ui.g",
+            "onMenuItemClick",
+            28,
+        ),
+    );
 
     assert_eq!(
         mapped.next().unwrap(),
@@ -136,11 +151,14 @@ fn test_method_matches_callback_extra_class_cache() {
 
     cache.test();
 
-    let mut mapped = cache.remap_frame(&StackFrame::new(
-        "io.sentry.samples.instrumentation.ui.g",
-        "onMenuItemClick",
-        28,
-    ));
+    let mut mapped = remap_frame_simple(
+        &cache,
+        &StackFrame::new(
+            "io.sentry.samples.instrumentation.ui.g",
+            "onMenuItemClick",
+            28,
+        ),
+    );
 
     assert_eq!(
         mapped.next().unwrap(),
@@ -231,11 +249,14 @@ fn test_method_matches_callback_inner_class_cache() {
 
     cache.test();
 
-    let mut mapped = cache.remap_frame(&StackFrame::new(
-        "io.sentry.samples.instrumentation.ui.g",
-        "onMenuItemClick",
-        28,
-    ));
+    let mut mapped = remap_frame_simple(
+        &cache,
+        &StackFrame::new(
+            "io.sentry.samples.instrumentation.ui.g",
+            "onMenuItemClick",
+            28,
+        ),
+    );
 
     assert_eq!(
         mapped.next().unwrap(),

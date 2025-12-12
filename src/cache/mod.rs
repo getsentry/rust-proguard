@@ -310,25 +310,29 @@ impl<'data> ProguardCache<'data> {
         rules
     }
 
-    fn collect_remapped_frames(&'data self, frame: &StackFrame<'data>) -> CollectedFrames<'data> {
-        let mut collected = CollectedFrames::default();
-
-        let Some(class) = self.get_class(frame.class) else {
-            return collected;
-        };
+    /// Finds member entries for a frame and collects rewrite rules without building frames.
+    /// Returns (member_slice, prepared_frame, rewrite_rules, had_mappings).
+    fn find_members_and_rules(
+        &'data self,
+        frame: &StackFrame<'data>,
+    ) -> Option<(
+        &'data [raw::Member],
+        StackFrame<'data>,
+        Vec<RewriteRule<'data>>,
+        bool,
+    )> {
+        let class = self.get_class(frame.class)?;
         let original_class = self
             .read_string(class.original_name_offset)
             .unwrap_or(frame.class);
 
-        let mut frame = frame.clone();
-        frame.class = original_class;
+        let mut prepared_frame = frame.clone();
+        prepared_frame.class = original_class;
 
-        let method_name = frame.method;
-        let mapping_entries: &[raw::Member] = if let Some(parameters) = frame.parameters {
-            let Some(members) = self.get_class_members_by_params(class) else {
-                return collected;
-            };
-            let Some(entries) = Self::find_range_by_binary_search(members, |m| {
+        let method_name = prepared_frame.method;
+        let mapping_entries: &[raw::Member] = if let Some(parameters) = prepared_frame.parameters {
+            let members = self.get_class_members_by_params(class)?;
+            Self::find_range_by_binary_search(members, |m| {
                 let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
                     return Ordering::Greater;
                 };
@@ -338,190 +342,97 @@ impl<'data> ProguardCache<'data> {
                     ""
                 };
                 (obfuscated_name, params).cmp(&(method_name, parameters))
-            }) else {
-                return collected;
-            };
-            entries
+            })?
         } else {
-            let Some(members) = self.get_class_members(class) else {
-                return collected;
-            };
-            let Some(entries) = Self::find_range_by_binary_search(members, |m| {
+            let members = self.get_class_members(class)?;
+            Self::find_range_by_binary_search(members, |m| {
                 let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
                     return Ordering::Greater;
                 };
                 obfuscated_name.cmp(method_name)
-            }) else {
-                return collected;
-            };
-            entries
+            })?
         };
 
-        if frame.parameters.is_none() {
+        // Collect rewrite rules and check had_mappings by iterating members
+        let mut rewrite_rules = Vec::new();
+        let mut had_mappings = false;
+
+        if prepared_frame.parameters.is_none() {
             for member in mapping_entries {
-                if let Some(mapped) = self.map_member_with_lines(&frame, member) {
-                    collected.frames.push(mapped);
-                    collected
-                        .rewrite_rules
-                        .extend(self.decode_rewrite_rules(member));
+                // Check if this member would produce a frame (line matching)
+                if member.endline == 0
+                    || (prepared_frame.line >= member.startline as usize
+                        && prepared_frame.line <= member.endline as usize)
+                {
+                    had_mappings = true;
+                    rewrite_rules.extend(self.decode_rewrite_rules(member));
                 }
             }
         } else {
+            // With parameters, all members match
+            had_mappings = !mapping_entries.is_empty();
             for member in mapping_entries {
-                let mapped = self.map_member_without_lines(&frame, member);
-                collected.frames.push(mapped);
-                collected
-                    .rewrite_rules
-                    .extend(self.decode_rewrite_rules(member));
+                rewrite_rules.extend(self.decode_rewrite_rules(member));
             }
         }
 
-        collected
+        Some((mapping_entries, prepared_frame, rewrite_rules, had_mappings))
     }
 
-    fn map_member_with_lines(
-        &'data self,
-        frame: &StackFrame<'data>,
-        member: &raw::Member,
-    ) -> Option<StackFrame<'data>> {
-        if member.endline > 0
-            && (frame.line < member.startline as usize || frame.line > member.endline as usize)
-        {
-            return None;
-        }
-
-        let line = if member.original_endline == u32::MAX
-            || member.original_endline == member.original_startline
-        {
-            member.original_startline as usize
-        } else {
-            member.original_startline as usize + frame.line - member.startline as usize
-        };
-
-        let class = if member.original_class_offset != u32::MAX {
-            self.read_string(member.original_class_offset).ok()
-        } else {
-            None
-        };
-        let class = class.unwrap_or(frame.class);
-
-        let file = if member.original_file_offset != u32::MAX {
-            let Ok(file_name) = self.read_string(member.original_file_offset) else {
-                return None;
-            };
-
-            if file_name == "R8$$SyntheticClass" {
-                extract_class_name(class)
-            } else {
-                Some(file_name)
-            }
-        } else if member.original_class_offset != u32::MAX {
-            None
-        } else {
-            frame.file
-        };
-
-        let Ok(method) = self.read_string(member.original_name_offset) else {
-            return None;
-        };
-
-        Some(StackFrame {
-            class,
-            method,
-            file,
-            line,
-            parameters: frame.parameters,
-            method_synthesized: member.is_synthesized(),
-        })
-    }
-
-    fn map_member_without_lines(
-        &'data self,
-        frame: &StackFrame<'data>,
-        member: &raw::Member,
-    ) -> StackFrame<'data> {
-        let class = if member.original_class_offset != u32::MAX {
-            self.read_string(member.original_class_offset)
-                .unwrap_or(frame.class)
-        } else {
-            frame.class
-        };
-
-        let method = self
-            .read_string(member.original_name_offset)
-            .unwrap_or(frame.method);
-
-        StackFrame {
-            class,
-            method,
-            file: None,
-            line: 0,
-            parameters: frame.parameters,
-            method_synthesized: member.is_synthesized(),
-        }
-    }
-
-    /// Remaps a single Stackframe.
+    /// Remaps a single stack frame through the complete processing pipeline.
     ///
-    /// Returns zero or more [`StackFrame`]s, based on the information in
-    /// the proguard mapping. This can return more than one frame in the case
-    /// of inlined functions. In that case, frames are sorted top to bottom.
-    pub fn remap_frame<'r: 'data>(
+    /// This method combines:
+    /// - Outline frame detection via [`is_outline_frame`](Self::is_outline_frame)
+    /// - Frame preparation via [`prepare_frame_for_mapping`](Self::prepare_frame_for_mapping)
+    /// - Lazy frame remapping with rewrite rules applied via skip_count
+    ///
+    /// # Arguments
+    /// * `frame` - The frame to remap
+    /// * `exception_descriptor` - Optional exception descriptor for rewrite rules (e.g., `Ljava/lang/NullPointerException;`)
+    /// * `apply_rewrite` - Whether to apply rewrite rules (typically true only for the first frame after an exception)
+    /// * `carried_outline_pos` - Mutable reference to track outline position across frames
+    ///
+    /// # Returns
+    /// - `None` if this is an outline frame (caller should skip, `carried_outline_pos` is updated internally)
+    /// - `Some(iterator)` with remapped frames. Use [`RemappedFrameIter::had_mappings`] after collecting
+    ///   to detect if rewrite rules cleared all frames (skip if `had_mappings() && collected.is_empty()`)
+    pub fn remap_frame<'r>(
         &'r self,
         frame: &StackFrame<'data>,
-    ) -> RemappedFrameIter<'r, 'data> {
-        let Some(class) = self.get_class(frame.class) else {
-            return RemappedFrameIter::empty();
-        };
-
-        let mut frame = frame.clone();
-        let Ok(original_class) = self.read_string(class.original_name_offset) else {
-            return RemappedFrameIter::empty();
-        };
-
-        frame.class = original_class;
-
-        // The following if and else cases are very similar. The only difference
-        // is that if the frame contains parameter information, we use it in
-        // our comparisons (in addition to the method name).
-        if let Some(frame_params) = frame.parameters {
-            let Some(members) = self.get_class_members_by_params(class) else {
-                return RemappedFrameIter::empty();
-            };
-
-            // Find the range of members that have the same method name and params
-            // as the frame.
-            let Some(members) = Self::find_range_by_binary_search(members, |m| {
-                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                    return Ordering::Greater;
-                };
-
-                let params = self.read_string(m.params_offset).unwrap_or_default();
-
-                (obfuscated_name, params).cmp(&(frame.method, frame_params))
-            }) else {
-                return RemappedFrameIter::empty();
-            };
-            RemappedFrameIter::members(self, frame, members.iter())
-        } else {
-            let Some(members) = self.get_class_members(class) else {
-                return RemappedFrameIter::empty();
-            };
-
-            // Find the range of members that have the same method name
-            // as the frame.
-            let Some(members) = Self::find_range_by_binary_search(members, |m| {
-                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                    return Ordering::Greater;
-                };
-
-                obfuscated_name.cmp(frame.method)
-            }) else {
-                return RemappedFrameIter::empty();
-            };
-
-            RemappedFrameIter::members(self, frame, members.iter())
+        exception_descriptor: Option<&str>,
+        apply_rewrite: bool,
+        carried_outline_pos: &mut Option<usize>,
+    ) -> Option<RemappedFrameIter<'r, 'data>>
+    where
+        'r: 'data,
+    {
+        if self.is_outline_frame(frame.class, frame.method) {
+            *carried_outline_pos = Some(frame.line);
+            return None;
         }
+
+        let effective = self.prepare_frame_for_mapping(frame, carried_outline_pos);
+
+        let Some((members, prepared_frame, rewrite_rules, had_mappings)) =
+            self.find_members_and_rules(&effective)
+        else {
+            return Some(RemappedFrameIter::empty());
+        };
+
+        // Compute skip_count from rewrite rules
+        let skip_count = if apply_rewrite {
+            compute_skip_count(&rewrite_rules, exception_descriptor)
+        } else {
+            0
+        };
+
+        Some(RemappedFrameIter::new(
+            self,
+            prepared_frame,
+            members.iter(),
+            skip_count,
+            had_mappings,
+        ))
     }
 
     /// Finds the range of elements of `members` for which `f(m) == Ordering::Equal`.
@@ -708,29 +619,30 @@ impl<'data> ProguardCache<'data> {
             }
 
             if let Some(frame) = stacktrace::parse_frame(line) {
-                if self.is_outline_frame(frame.class, frame.method) {
-                    carried_outline_pos = Some(frame.line);
+                let Some(iter) = self.remap_frame(
+                    &frame,
+                    current_exception_descriptor.as_deref(),
+                    next_frame_can_rewrite,
+                    &mut carried_outline_pos,
+                ) else {
+                    // Outline frame, skip
+                    next_frame_can_rewrite = false;
+                    current_exception_descriptor = None;
                     continue;
-                }
-
-                let effective_frame =
-                    self.prepare_frame_for_mapping(&frame, &mut carried_outline_pos);
-
-                let mut collected = self.collect_remapped_frames(&effective_frame);
-                let had_frames = !collected.frames.is_empty();
-                if next_frame_can_rewrite {
-                    apply_rewrite_rules(&mut collected, current_exception_descriptor.as_deref());
-                }
+                };
 
                 next_frame_can_rewrite = false;
                 current_exception_descriptor = None;
 
-                // If rewrite rules cleared all frames, skip entirely
-                if had_frames && collected.frames.is_empty() {
+                let had_mappings = iter.had_mappings();
+                let frames: Vec<_> = iter.collect();
+
+                if had_mappings && frames.is_empty() {
+                    // Rewrite rules cleared all frames, skip
                     continue;
                 }
 
-                format_frames(&mut stacktrace, line, collected.frames.into_iter())?;
+                format_frames(&mut stacktrace, line, frames.into_iter())?;
                 continue;
             }
 
@@ -774,28 +686,30 @@ impl<'data> ProguardCache<'data> {
         let mut frames = Vec::with_capacity(trace.frames.len());
         let mut next_frame_can_rewrite = exception_descriptor.is_some();
         for f in trace.frames.iter() {
-            if self.is_outline_frame(f.class, f.method) {
-                carried_outline_pos = Some(f.line);
+            let Some(iter) = self.remap_frame(
+                f,
+                exception_descriptor.as_deref(),
+                next_frame_can_rewrite,
+                &mut carried_outline_pos,
+            ) else {
+                // Outline frame, skip
+                next_frame_can_rewrite = false;
                 continue;
-            }
-
-            let effective = self.prepare_frame_for_mapping(f, &mut carried_outline_pos);
-            let mut collected = self.collect_remapped_frames(&effective);
-            let had_frames = !collected.frames.is_empty();
-            if next_frame_can_rewrite {
-                apply_rewrite_rules(&mut collected, exception_descriptor.as_deref());
-            }
+            };
             next_frame_can_rewrite = false;
 
-            // If rewrite rules cleared all frames, skip entirely
-            if had_frames && collected.frames.is_empty() {
+            let had_mappings = iter.had_mappings();
+            let mut remapped: Vec<_> = iter.collect();
+
+            if had_mappings && remapped.is_empty() {
+                // Rewrite rules cleared all frames, skip
                 continue;
             }
 
-            if collected.frames.is_empty() {
+            if remapped.is_empty() {
                 frames.push(f.clone());
             } else {
-                frames.append(&mut collected.frames);
+                frames.append(&mut remapped);
             }
         }
 
@@ -828,20 +742,49 @@ pub struct RemappedFrameIter<'r, 'data> {
         StackFrame<'data>,
         std::slice::Iter<'data, raw::Member>,
     )>,
+    /// Number of frames to skip from rewrite rules.
+    skip_count: usize,
+    /// Whether there were mapping entries (for should_skip determination).
+    had_mappings: bool,
 }
 
-impl<'data> RemappedFrameIter<'_, 'data> {
+impl<'r, 'data> RemappedFrameIter<'r, 'data> {
     fn empty() -> Self {
-        Self { inner: None }
+        Self {
+            inner: None,
+            skip_count: 0,
+            had_mappings: false,
+        }
     }
 
-    fn members(
-        cache: &'data ProguardCache<'data>,
+    fn new(
+        cache: &'r ProguardCache<'data>,
         frame: StackFrame<'data>,
         members: std::slice::Iter<'data, raw::Member>,
+        skip_count: usize,
+        had_mappings: bool,
     ) -> Self {
         Self {
             inner: Some((cache, frame, members)),
+            skip_count,
+            had_mappings,
+        }
+    }
+
+    /// Returns whether there were mapping entries before rewrite rules were applied.
+    ///
+    /// After collecting frames, if `had_mappings()` is true but the result is empty,
+    /// it means rewrite rules cleared all frames and the caller should skip this frame.
+    pub fn had_mappings(&self) -> bool {
+        self.had_mappings
+    }
+
+    fn next_inner(&mut self) -> Option<StackFrame<'data>> {
+        let (cache, frame, members) = self.inner.as_mut()?;
+        if frame.parameters.is_none() {
+            iterate_with_lines(cache, frame, members)
+        } else {
+            iterate_without_lines(cache, frame, members)
         }
     }
 }
@@ -850,12 +793,12 @@ impl<'data> Iterator for RemappedFrameIter<'_, 'data> {
     type Item = StackFrame<'data>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (cache, frame, members) = self.inner.as_mut()?;
-        if frame.parameters.is_none() {
-            iterate_with_lines(cache, frame, members)
-        } else {
-            iterate_without_lines(cache, frame, members)
+        // Lazily skip rewrite-removed frames
+        while self.skip_count > 0 {
+            self.skip_count -= 1;
+            self.next_inner()?;
         }
+        self.next_inner()
     }
 }
 
@@ -948,6 +891,9 @@ fn extract_class_name(full_path: &str) -> Option<&str> {
     after_last_period.split('$').next()
 }
 
+/// Converts a Java class name to its JVM descriptor format.
+///
+/// For example, `java.lang.NullPointerException` becomes `Ljava/lang/NullPointerException;`.
 pub fn class_name_to_descriptor(class: &str) -> String {
     let mut descriptor = String::with_capacity(class.len() + 2);
     descriptor.push('L');
@@ -956,20 +902,12 @@ pub fn class_name_to_descriptor(class: &str) -> String {
     descriptor
 }
 
-#[derive(Default)]
-pub struct CollectedFrames<'s> {
-    frames: Vec<StackFrame<'s>>,
-    rewrite_rules: Vec<RewriteRule<'s>>,
-}
+/// Computes the number of frames to skip based on rewrite rules.
+/// Returns the total skip count from all matching RemoveInnerFrames actions.
+fn compute_skip_count(rewrite_rules: &[RewriteRule<'_>], thrown_descriptor: Option<&str>) -> usize {
+    let mut skip_count = 0;
 
-pub fn apply_rewrite_rules<'s>(
-    collected: &mut CollectedFrames<'s>,
-    thrown_descriptor: Option<&str>,
-) {
-    if collected.frames.is_empty() {
-        return;
-    }
-    for rule in &collected.rewrite_rules {
+    for rule in rewrite_rules {
         let matches = rule.conditions.iter().all(|condition| match condition {
             RewriteCondition::Throws(descriptor) => Some(*descriptor) == thrown_descriptor,
             RewriteCondition::Unknown(_) => false,
@@ -980,21 +918,13 @@ pub fn apply_rewrite_rules<'s>(
         }
 
         for action in &rule.actions {
-            match action {
-                RewriteAction::RemoveInnerFrames(count) => {
-                    if *count >= collected.frames.len() {
-                        collected.frames.clear();
-                    } else {
-                        collected.frames.drain(0..*count);
-                    }
-                }
-                RewriteAction::Unknown(_) => {}
+            if let RewriteAction::RemoveInnerFrames(count) = action {
+                skip_count += count;
             }
         }
-        if collected.frames.is_empty() {
-            break;
-        }
     }
+
+    skip_count
 }
 
 #[cfg(test)]

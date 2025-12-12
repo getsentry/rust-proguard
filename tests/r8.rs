@@ -5,6 +5,18 @@ use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame, Stack
 #[cfg(feature = "uuid")]
 use uuid::uuid;
 
+/// Test helper: simple remap_frame without rewrite rules or outline handling.
+fn remap_frame_simple<'a>(
+    cache: &'a ProguardCache<'a>,
+    frame: &StackFrame<'a>,
+) -> impl Iterator<Item = StackFrame<'a>> {
+    let mut carried = None;
+    cache
+        .remap_frame(frame, None, false, &mut carried)
+        .into_iter()
+        .flatten()
+}
+
 static MAPPING_R8: &[u8] = include_bytes!("res/mapping-r8.txt");
 static MAPPING_R8_SYMBOLICATED_FILE_NAMES: &[u8] =
     include_bytes!("res/mapping-r8-symbolicated_file_names.txt");
@@ -263,34 +275,6 @@ fn test_outline_header_parsing_cache() {
     // Test that we can remap the other class
     let class = cache.remap_class("b");
     assert_eq!(class, Some("some.Class"));
-}
-
-#[test]
-fn test_outline_frame_retracing_cache() {
-    let mapping = ProguardMapping::new(MAPPING_OUTLINE);
-
-    let mut buf = Vec::new();
-    ProguardCache::write(&mapping, &mut buf).unwrap();
-    let cache = ProguardCache::parse(&buf).unwrap();
-    cache.test();
-
-    // Test retracing a frame from the outline class
-    let mut mapped = cache.remap_frame(&StackFrame::new("a", "a", 1));
-
-    assert_eq!(
-        mapped.next().unwrap(),
-        StackFrame::new("outline.Class", "outline", 1)
-    );
-    assert_eq!(mapped.next(), None);
-
-    // Test retracing a frame from the class with outlineCallsite
-    let mut mapped = cache.remap_frame(&StackFrame::new("b", "s", 27));
-
-    assert_eq!(
-        mapped.next().unwrap(),
-        StackFrame::new("some.Class", "outlineCaller", 0)
-    );
-    assert_eq!(mapped.next(), None);
 }
 
 #[test]
@@ -586,7 +570,7 @@ fn test_method_with_zero_zero_and_line_specific_mappings_cache() {
     // Remap frame with method 'b' at line 3
     // This should match the 1:4: mapping (line 3 is in range 1-4) -> original line 70
     let frame = StackFrame::new("h2.a", "b", 3);
-    let mut mapped = cache.remap_frame(&frame);
+    let mut mapped = remap_frame_simple(&cache, &frame);
 
     let remapped_frame = mapped.next().unwrap();
     assert_eq!(

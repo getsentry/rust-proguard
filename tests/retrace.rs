@@ -96,7 +96,7 @@ fn test_remap_kotlin() {
 
     assert_eq!(
         mapped.trim(),
-        r#"at io.sentry.sample.KotlinSampleKt.fun3(KotlinSampleKt.java:16)
+        r#"at io.sentry.sample.KotlinSampleKt.fun3(KotlinSample.kt:16)
     at io.sentry.sample.KotlinSample.fun2(KotlinSample.java:11)
     at io.sentry.sample.KotlinSample.fun1(KotlinSample.java:7)
     at io.sentry.sample.MainActivity.bar(MainActivity.java:56)

@@ -25,10 +25,11 @@
 //!     mapper
 //!         .remap_frame(&proguard::StackFrame::new("a.a.a.b.c", "a", 13))
 //!         .collect::<Vec<_>>(),
-//!     vec![proguard::StackFrame::new(
+//!     vec![proguard::StackFrame::with_file(
 //!         "android.arch.core.internal.SafeIterableMap",
 //!         "eldest",
-//!         168
+//!         168,
+//!         "SafeIterableMap.java"
 //!     )],
 //! );
 //! ```

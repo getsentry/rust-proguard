@@ -379,6 +379,69 @@ impl<'data> ProguardCache<'data> {
         Some((mapping_entries, prepared_frame, rewrite_rules, had_mappings))
     }
 
+    /// Remaps a single Stackframe.
+    ///
+    /// Returns zero or more [`StackFrame`]s, based on the information in
+    /// the proguard mapping. This can return more than one frame in the case
+    /// of inlined functions. In that case, frames are sorted top to bottom.
+    pub fn remap_frame<'r: 'data>(
+        &'r self,
+        frame: &StackFrame<'data>,
+    ) -> RemappedFrameIter<'r, 'data> {
+        let Some(class) = self.get_class(frame.class) else {
+            return RemappedFrameIter::empty();
+        };
+
+        let mut frame = frame.clone();
+        let Ok(original_class) = self.read_string(class.original_name_offset) else {
+            return RemappedFrameIter::empty();
+        };
+
+        frame.class = original_class;
+
+        // The following if and else cases are very similar. The only difference
+        // is that if the frame contains parameter information, we use it in
+        // our comparisons (in addition to the method name).
+        if let Some(frame_params) = frame.parameters {
+            let Some(members) = self.get_class_members_by_params(class) else {
+                return RemappedFrameIter::empty();
+            };
+
+            // Find the range of members that have the same method name and params
+            // as the frame.
+            let Some(members) = Self::find_range_by_binary_search(members, |m| {
+                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
+                    return Ordering::Greater;
+                };
+
+                let params = self.read_string(m.params_offset).unwrap_or_default();
+
+                (obfuscated_name, params).cmp(&(frame.method, frame_params))
+            }) else {
+                return RemappedFrameIter::empty();
+            };
+            RemappedFrameIter::members(self, frame, members.iter())
+        } else {
+            let Some(members) = self.get_class_members(class) else {
+                return RemappedFrameIter::empty();
+            };
+
+            // Find the range of members that have the same method name
+            // as the frame.
+            let Some(members) = Self::find_range_by_binary_search(members, |m| {
+                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
+                    return Ordering::Greater;
+                };
+
+                obfuscated_name.cmp(frame.method)
+            }) else {
+                return RemappedFrameIter::empty();
+            };
+
+            RemappedFrameIter::members(self, frame, members.iter())
+        }
+    }
+
     /// Remaps a single stack frame through the complete processing pipeline.
     ///
     /// This method combines:
@@ -396,7 +459,7 @@ impl<'data> ProguardCache<'data> {
     /// - `None` if this is an outline frame (caller should skip, `carried_outline_pos` is updated internally)
     /// - `Some(iterator)` with remapped frames. Use [`RemappedFrameIter::had_mappings`] after collecting
     ///   to detect if rewrite rules cleared all frames (skip if `had_mappings() && collected.is_empty()`)
-    pub fn remap_frame<'r>(
+    pub fn remap_frame_with_context<'r>(
         &'r self,
         frame: &StackFrame<'data>,
         exception_descriptor: Option<&str>,
@@ -619,7 +682,7 @@ impl<'data> ProguardCache<'data> {
             }
 
             if let Some(frame) = stacktrace::parse_frame(line) {
-                let Some(iter) = self.remap_frame(
+                let Some(iter) = self.remap_frame_with_context(
                     &frame,
                     current_exception_descriptor.as_deref(),
                     next_frame_can_rewrite,
@@ -684,7 +747,7 @@ impl<'data> ProguardCache<'data> {
         let mut frames = Vec::with_capacity(trace.frames.len());
         let mut next_frame_can_rewrite = exception_descriptor.is_some();
         for f in trace.frames.iter() {
-            let Some(iter) = self.remap_frame(
+            let Some(iter) = self.remap_frame_with_context(
                 f,
                 exception_descriptor.as_deref(),
                 next_frame_can_rewrite,
@@ -749,6 +812,18 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
     fn empty() -> Self {
         Self {
             inner: None,
+            skip_count: 0,
+            had_mappings: false,
+        }
+    }
+
+    fn members(
+        cache: &'r ProguardCache<'data>,
+        frame: StackFrame<'data>,
+        members: std::slice::Iter<'data, raw::Member>,
+    ) -> Self {
+        Self {
+            inner: Some((cache, frame, members)),
             skip_count: 0,
             had_mappings: false,
         }

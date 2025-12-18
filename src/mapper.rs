@@ -142,23 +142,25 @@ fn class_name_to_descriptor(class: &str) -> String {
 }
 
 /// Synthesizes a full source file name from a class name and a reference source file.
-/// The extension is derived from the reference file, defaulting to ".java".
 /// For Kotlin top-level classes ending in "Kt", the suffix is stripped and ".kt" is used.
+/// Otherwise, the extension is derived from the reference file, defaulting to ".java".
+/// For example: ("com.example.MainKt", Some("Other.java")) -> "Main.kt" (Kt suffix takes precedence)
 /// For example: ("com.example.Main", Some("Other.kt")) -> "Main.kt"
 /// For example: ("com.example.MainKt", None) -> "Main.kt"
 /// For inner classes: ("com.example.Main$Inner", None) -> "Main.java"
 fn synthesize_source_file(class_name: &str, reference_file: Option<&str>) -> Option<String> {
     let base = extract_class_name(class_name)?;
 
-    // If we have a reference file, derive extension from it
-    if let Some(ext) = reference_file.and_then(|f| f.rfind('.').map(|pos| &f[pos..])) {
-        return Some(format!("{}{}", base, ext));
-    }
-
-    // For Kotlin top-level classes (ending in "Kt"), use .kt extension and strip suffix
+    // For Kotlin top-level classes (ending in "Kt"), always use .kt extension and strip suffix
+    // This takes precedence over reference_file since Kt suffix is a strong Kotlin indicator
     if base.ends_with("Kt") && base.len() > 2 {
         let kotlin_base = &base[..base.len() - 2];
         return Some(format!("{}.kt", kotlin_base));
+    }
+
+    // If we have a reference file, derive extension from it
+    if let Some(ext) = reference_file.and_then(|f| f.rfind('.').map(|pos| &f[pos..])) {
+        return Some(format!("{}{}", base, ext));
     }
 
     Some(format!("{}.java", base))

@@ -1,5 +1,18 @@
 # Changelog
 
+## 5.9.0
+
+### New Features ✨
+
+#### R8
+
+- feat(r8): Support `rewriteFrames` annotation in ProguardCache by @romtsn in [#67](https://github.com/getsentry/rust-proguard/pull/67)
+- feat(r8): Support `rewriteFrames` annotation in ProguardMapper by @romtsn in [#66](https://github.com/getsentry/rust-proguard/pull/66)
+
+### Bug Fixes 🐛
+
+- fix: Correctly remap entries with 0 line info by @romtsn in [#68](https://github.com/getsentry/rust-proguard/pull/68)
+
 ## 5.8.1
 
 - build: Update dependencies and set MSRV 1.83.0 by @loewenheim in [#65](https://github.com/getsentry/rust-proguard/pull/65)

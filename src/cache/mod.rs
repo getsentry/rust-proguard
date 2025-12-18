@@ -625,9 +625,7 @@ impl<'data> ProguardCache<'data> {
                     next_frame_can_rewrite,
                     &mut carried_outline_pos,
                 ) else {
-                    // Outline frame, skip
-                    next_frame_can_rewrite = false;
-                    current_exception_descriptor = None;
+                    // Outline frame, skip (preserve next_frame_can_rewrite for the next real frame)
                     continue;
                 };
 
@@ -692,8 +690,7 @@ impl<'data> ProguardCache<'data> {
                 next_frame_can_rewrite,
                 &mut carried_outline_pos,
             ) else {
-                // Outline frame, skip
-                next_frame_can_rewrite = false;
+                // Outline frame, skip (preserve next_frame_can_rewrite for the next real frame)
                 continue;
             };
             next_frame_can_rewrite = false;

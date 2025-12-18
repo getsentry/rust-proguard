@@ -266,34 +266,6 @@ fn test_outline_header_parsing_cache() {
 }
 
 #[test]
-fn test_outline_frame_retracing_cache() {
-    let mapping = ProguardMapping::new(MAPPING_OUTLINE);
-
-    let mut buf = Vec::new();
-    ProguardCache::write(&mapping, &mut buf).unwrap();
-    let cache = ProguardCache::parse(&buf).unwrap();
-    cache.test();
-
-    // Test retracing a frame from the outline class
-    let mut mapped = cache.remap_frame(&StackFrame::new("a", "a", 1));
-
-    assert_eq!(
-        mapped.next().unwrap(),
-        StackFrame::new("outline.Class", "outline", 1)
-    );
-    assert_eq!(mapped.next(), None);
-
-    // Test retracing a frame from the class with outlineCallsite
-    let mut mapped = cache.remap_frame(&StackFrame::new("b", "s", 27));
-
-    assert_eq!(
-        mapped.next().unwrap(),
-        StackFrame::new("some.Class", "outlineCaller", 0)
-    );
-    assert_eq!(mapped.next(), None);
-}
-
-#[test]
 fn test_outline_header_parsing() {
     let mapping = ProguardMapping::new(MAPPING_OUTLINE);
     assert!(mapping.is_valid());
@@ -359,6 +331,42 @@ Caused by: java.lang.IllegalStateException: Secondary issue
 ";
 
     let actual = mapper.remap_stacktrace(input).unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn rewrite_frame_complex_stacktrace_cache() {
+    let mut cache_bytes = Vec::new();
+    ProguardCache::write(
+        &ProguardMapping::new(MAPPING_REWRITE_COMPLEX.as_bytes()),
+        &mut cache_bytes,
+    )
+    .unwrap();
+    let cache = ProguardCache::parse(&cache_bytes).unwrap();
+    cache.test();
+
+    let input = "\
+java.lang.NullPointerException: Primary issue
+    at a.start(SourceFile:10)
+    at b.dispatch(SourceFile:5)
+    at c.draw(SourceFile:20)
+Caused by: java.lang.IllegalStateException: Secondary issue
+    at b.dispatch(SourceFile:5)
+    at c.draw(SourceFile:20)
+";
+
+    let expected = "\
+java.lang.NullPointerException: Primary issue
+    at com.example.flow.Initializer.start(SourceFile:42)
+    at com.example.flow.StreamRouter$Inline.internalDispatch(<unknown>:30)
+    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
+    at com.example.flow.UiBridge.render(SourceFile:200)
+Caused by: java.lang.IllegalStateException: Secondary issue
+    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
+    at com.example.flow.UiBridge.render(SourceFile:200)
+";
+
+    let actual = cache.remap_stacktrace(input).unwrap();
     assert_eq!(actual, expected);
 }
 

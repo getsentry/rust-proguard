@@ -14,10 +14,10 @@ fn test_remap() {
     let mapped = mapper.remap_stacktrace(stacktrace).unwrap();
     assert_eq!(
         mapped,
-        "    at some.Class.method3(Foo.java:79)
-    at some.Class.method2(Foo.java:87)
-    at some.Class.method1(Foo.java:95)
-    at some.Class.main(Foo.java:101)\n"
+        "    at some.Class.method3(Class.java:79)
+    at some.Class.method2(Class.java:87)
+    at some.Class.method1(Class.java:95)
+    at some.Class.main(Class.java:101)\n"
     );
 
     // https://github.com/getsentry/rust-proguard/issues/6#issuecomment-605610326
@@ -35,7 +35,7 @@ fn test_remap() {
     let mapped = mapper.remap_stacktrace(stacktrace).unwrap();
     assert_eq!(
         mapped,
-        "    at com.example1.domain.MyBean.doWork(<unknown>:16)
+        "    at com.example1.domain.MyBean.doWork(MyBean.java:16)
     at com.exmaple.app.MainActivity.buttonClicked(MainActivity.java:29)\n"
     );
 
@@ -53,7 +53,7 @@ fn test_remap() {
     let mapped = mapper.remap_stacktrace(stacktrace).unwrap();
     assert_eq!(
         mapped,
-        "    at com.example1.domain.MyBean.doWork(<unknown>:16)
+        "    at com.example1.domain.MyBean.doWork(MyBean.java:16)
     at com.exmaple.app.MainActivity.buttonClicked(MainActivity.java:29)\n"
     );
 }
@@ -71,7 +71,7 @@ fn test_remap_no_lines() {
     let mut mapped = mapper.remap_frame(&StackFrame::new("a", "b", 10));
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new("original.class.name", "originalMethodName", 0)
+        StackFrame::with_file("original.class.name", "originalMethodName", 0, "name.java")
     );
     assert_eq!(mapped.next(), None);
 }
@@ -96,13 +96,13 @@ fn test_remap_kotlin() {
 
     assert_eq!(
         mapped.trim(),
-        r#"    at io.sentry.sample.KotlinSampleKt.fun3(<unknown>:16)
-    at io.sentry.sample.KotlinSample.fun2(<unknown>:11)
-    at io.sentry.sample.KotlinSample.fun1(<unknown>:7)
-    at io.sentry.sample.MainActivity.bar(<unknown>:56)
-    at io.sentry.sample.MainActivity.foo(<unknown>:44)
-    at io.sentry.sample.MainActivity.onClickHandler(<unknown>:40)
-    at io.sentry.sample.-$$Lambda$r3Avcbztes2hicEObh02jjhQqd4.onClick(lambda:0)"#
+        r#"at io.sentry.sample.KotlinSampleKt.fun3(KotlinSample.kt:16)
+    at io.sentry.sample.KotlinSample.fun2(KotlinSample.java:11)
+    at io.sentry.sample.KotlinSample.fun1(KotlinSample.java:7)
+    at io.sentry.sample.MainActivity.bar(MainActivity.java:56)
+    at io.sentry.sample.MainActivity.foo(MainActivity.java:44)
+    at io.sentry.sample.MainActivity.onClickHandler(MainActivity.java:40)
+    at io.sentry.sample.-$$Lambda$r3Avcbztes2hicEObh02jjhQqd4.onClick(-.java:0)"#
             .trim()
     );
 }

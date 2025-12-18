@@ -104,10 +104,11 @@ fn test_method_matches() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "android.support.constraint.solver.ArrayLinkedVariables",
             "remove",
-            320
+            320,
+            "ArrayLinkedVariables.java"
         )
     );
     assert_eq!(mapped.next(), None);
@@ -117,10 +118,11 @@ fn test_method_matches() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "android.support.constraint.solver.ArrayLinkedVariables",
             "put",
-            200
+            200,
+            "ArrayLinkedVariables.java"
         )
     );
     assert_eq!(mapped.next(), None);
@@ -141,10 +143,11 @@ fn test_method_matches_cache() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "android.support.constraint.solver.ArrayLinkedVariables",
             "remove",
-            320
+            320,
+            "ArrayLinkedVariables.java"
         )
     );
     assert_eq!(mapped.next(), None);
@@ -156,10 +159,11 @@ fn test_method_matches_cache() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "android.support.constraint.solver.ArrayLinkedVariables",
             "put",
-            200
+            200,
+            "ArrayLinkedVariables.java"
         )
     );
     assert_eq!(mapped.next(), None);
@@ -174,10 +178,11 @@ fn test_method_matches_win() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "android.support.constraint.solver.ArrayLinkedVariables",
             "remove",
-            320
+            320,
+            "ArrayLinkedVariables.java"
         )
     );
     assert_eq!(mapped.next(), None);
@@ -187,10 +192,11 @@ fn test_method_matches_win() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "android.support.constraint.solver.ArrayLinkedVariables",
             "put",
-            200
+            200,
+            "ArrayLinkedVariables.java"
         )
     );
     assert_eq!(mapped.next(), None);
@@ -211,10 +217,11 @@ fn test_method_matches_win_cache() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "android.support.constraint.solver.ArrayLinkedVariables",
             "remove",
-            320
+            320,
+            "ArrayLinkedVariables.java"
         )
     );
     assert_eq!(mapped.next(), None);
@@ -226,10 +233,11 @@ fn test_method_matches_win_cache() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "android.support.constraint.solver.ArrayLinkedVariables",
             "put",
-            200
+            200,
+            "ArrayLinkedVariables.java"
         )
     );
     assert_eq!(mapped.next(), None);

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Error as FmtError, Write};
@@ -66,6 +67,9 @@ struct MemberMapping<'s> {
     is_outline: bool,
     outline_callsite_positions: Option<HashMap<usize, usize>>,
     rewrite_rules: Vec<RewriteRule<'s>>,
+    /// The source file of the outer class, used for synthesizing file names when
+    /// the inlined method's class doesn't have its own sourceFile metadata.
+    outer_source_file: Option<&'s str>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -137,6 +141,31 @@ fn class_name_to_descriptor(class: &str) -> String {
     descriptor
 }
 
+/// Synthesizes a full source file name from a class name and a reference source file.
+/// For Kotlin top-level classes ending in "Kt", the suffix is stripped and ".kt" is used.
+/// Otherwise, the extension is derived from the reference file, defaulting to ".java".
+/// For example: ("com.example.MainKt", Some("Other.java")) -> "Main.kt" (Kt suffix takes precedence)
+/// For example: ("com.example.Main", Some("Other.kt")) -> "Main.kt"
+/// For example: ("com.example.MainKt", None) -> "Main.kt"
+/// For inner classes: ("com.example.Main$Inner", None) -> "Main.java"
+fn synthesize_source_file(class_name: &str, reference_file: Option<&str>) -> Option<String> {
+    let base = extract_class_name(class_name)?;
+
+    // For Kotlin top-level classes (ending in "Kt"), always use .kt extension and strip suffix
+    // This takes precedence over reference_file since Kt suffix is a strong Kotlin indicator
+    if base.ends_with("Kt") && base.len() > 2 {
+        let kotlin_base = &base[..base.len() - 2];
+        return Some(format!("{}.kt", kotlin_base));
+    }
+
+    // If we have a reference file, derive extension from it
+    if let Some(ext) = reference_file.and_then(|f| f.rfind('.').map(|pos| &f[pos..])) {
+        return Some(format!("{}{}", base, ext));
+    }
+
+    Some(format!("{}.java", base))
+}
+
 fn map_member_with_lines<'a>(
     frame: &StackFrame<'a>,
     member: &MemberMapping<'a>,
@@ -145,7 +174,7 @@ fn map_member_with_lines<'a>(
         return None;
     }
 
-    // parents of inlined frames don’t have an `endline`, and
+    // parents of inlined frames don't have an `endline`, and
     // the top inlined frame need to be correctly offset.
     let line = if member.original_endline.is_none()
         || member.original_endline == Some(member.original_startline)
@@ -155,21 +184,19 @@ fn map_member_with_lines<'a>(
         member.original_startline + frame.line - member.startline
     };
 
-    let file = if let Some(file_name) = member.original_file {
-        if file_name == "R8$$SyntheticClass" {
-            extract_class_name(member.original_class.unwrap_or(frame.class))
-        } else {
-            member.original_file
-        }
-    } else if member.original_class.is_some() {
-        // when an inlined function is from a foreign class, we
-        // don’t know the file it is defined in.
-        None
-    } else {
-        frame.file
-    };
-
     let class = member.original_class.unwrap_or(frame.class);
+
+    let file: Option<Cow<'a, str>> = if let Some(file_name) = member.original_file {
+        if file_name == "R8$$SyntheticClass" {
+            // Synthesize from class name for synthetic classes
+            extract_class_name(class).map(Cow::Borrowed)
+        } else {
+            Some(Cow::Borrowed(file_name))
+        }
+    } else {
+        // Synthesize from class name (input filename is not reliable)
+        synthesize_source_file(class, member.outer_source_file).map(Cow::Owned)
+    };
 
     Some(StackFrame {
         class,
@@ -186,10 +213,12 @@ fn map_member_without_lines<'a>(
     member: &MemberMapping<'a>,
 ) -> StackFrame<'a> {
     let class = member.original_class.unwrap_or(frame.class);
+    // Synthesize from class name (input filename is not reliable)
+    let file = synthesize_source_file(class, member.outer_source_file).map(Cow::Owned);
     StackFrame {
         class,
         method: member.original,
-        file: None,
+        file,
         line: 0,
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized,
@@ -320,6 +349,13 @@ impl<'s> ProguardMapper<'s> {
         for ((obfuscated_class, obfuscated_method), members) in &parsed.members {
             let class_mapping = class_mappings.entry(obfuscated_class.as_str()).or_default();
 
+            // Get the outer class's sourceFile for use in synthesizing file names
+            let outer_source_file = parsed
+                .class_names
+                .get(obfuscated_class)
+                .and_then(|original| parsed.class_infos.get(original))
+                .and_then(|ci| ci.source_file);
+
             let method_mappings = class_mapping
                 .members
                 .entry(obfuscated_method.as_str())
@@ -331,16 +367,18 @@ impl<'s> ProguardMapper<'s> {
                 if has_line_info && member.startline == 0 && member.endline == 0 {
                     continue;
                 }
-                method_mappings
-                    .all_mappings
-                    .push(Self::resolve_mapping(&parsed, member));
+                method_mappings.all_mappings.push(Self::resolve_mapping(
+                    &parsed,
+                    member,
+                    outer_source_file,
+                ));
             }
 
             for (args, param_members) in members.by_params.iter() {
                 let param_mappings = method_mappings.mappings_by_params.entry(args).or_default();
 
                 for member in param_members.iter() {
-                    param_mappings.push(Self::resolve_mapping(&parsed, member));
+                    param_mappings.push(Self::resolve_mapping(&parsed, member, outer_source_file));
                 }
             }
         }
@@ -353,6 +391,7 @@ impl<'s> ProguardMapper<'s> {
     fn resolve_mapping(
         parsed: &ParsedProguardMapping<'s>,
         member: &Member<'s>,
+        outer_source_file: Option<&'s str>,
     ) -> MemberMapping<'s> {
         let original_file = parsed
             .class_infos
@@ -387,6 +426,7 @@ impl<'s> ProguardMapper<'s> {
             is_outline,
             outline_callsite_positions,
             rewrite_rules: member.rewrite_rules.clone(),
+            outer_source_file,
         }
     }
 
@@ -787,7 +827,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     class: "com.example.MainFragment$g",
                     method: "onClick",
                     line: 2,
-                    file: Some("SourceFile"),
+                    file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
                 },
@@ -795,7 +835,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     class: "android.view.View",
                     method: "performClick",
                     line: 7393,
-                    file: Some("View.java"),
+                    file: Some(Cow::Borrowed("View.java")),
                     parameters: None,
                     method_synthesized: false,
                 },
@@ -809,7 +849,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     class: "com.example.MainFragment$g",
                     method: "onClick",
                     line: 1,
-                    file: Some("SourceFile"),
+                    file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
                 }],
@@ -818,13 +858,13 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
         };
         let expect = "\
 com.example.MainFragment$RocketException: Crash!
-    at com.example.MainFragment$Rocket.fly(<unknown>:85)
-    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    at com.example.MainFragment$Rocket.fly(MainFragment.java:85)
+    at com.example.MainFragment$onActivityCreated$4.onClick(MainFragment.java:65)
     at android.view.View.performClick(View.java:7393)
 Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
-    at com.example.MainFragment$Rocket.startEngines(<unknown>:90)
-    at com.example.MainFragment$Rocket.fly(<unknown>:83)
-    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)\n";
+    at com.example.MainFragment$Rocket.startEngines(MainFragment.java:90)
+    at com.example.MainFragment$Rocket.fly(MainFragment.java:83)
+    at com.example.MainFragment$onActivityCreated$4.onClick(MainFragment.java:65)\n";
 
         let mapper = ProguardMapper::from(mapping);
 
@@ -855,13 +895,13 @@ Caused by: com.example.MainFragment$d: Engines overheating
     ... 13 more";
         let expect = "\
 com.example.MainFragment$RocketException: Crash!
-    at com.example.MainFragment$Rocket.fly(<unknown>:85)
-    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    at com.example.MainFragment$Rocket.fly(MainFragment.java:85)
+    at com.example.MainFragment$onActivityCreated$4.onClick(MainFragment.java:65)
     at android.view.View.performClick(View.java:7393)
 Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
-    at com.example.MainFragment$Rocket.startEngines(<unknown>:90)
-    at com.example.MainFragment$Rocket.fly(<unknown>:83)
-    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    at com.example.MainFragment$Rocket.startEngines(MainFragment.java:90)
+    at com.example.MainFragment$Rocket.fly(MainFragment.java:83)
+    at com.example.MainFragment$onActivityCreated$4.onClick(MainFragment.java:65)
     ... 13 more\n";
 
         let mapper = ProguardMapper::from(mapping);
@@ -882,7 +922,7 @@ java.lang.NullPointerException: Boom
     at a.a(SourceFile:4)";
         let expect = "\
 java.lang.NullPointerException: Boom
-    at some.Class.caller(SourceFile:7)
+    at some.Class.caller(Class.java:7)
 ";
 
         let mapper = ProguardMapper::from(mapping);
@@ -903,8 +943,8 @@ java.lang.IllegalStateException: Boom
     at a.a(SourceFile:4)";
         let expect = "\
 java.lang.IllegalStateException: Boom
-    at other.Class.inlinee(<unknown>:23)
-    at some.Class.caller(SourceFile:7)
+    at other.Class.inlinee(Class.java:23)
+    at some.Class.caller(Class.java:7)
 ";
 
         let mapper = ProguardMapper::from(mapping);
@@ -929,7 +969,7 @@ some.Class -> a:
                 class: "a",
                 method: "a",
                 line: 4,
-                file: Some("SourceFile"),
+                file: Some(Cow::Borrowed("SourceFile")),
                 parameters: None,
                 method_synthesized: false,
             }],
@@ -961,7 +1001,7 @@ java.lang.NullPointerException: Boom
     at a.call(SourceFile:4)";
         let expected_npe = "\
 java.lang.NullPointerException: Boom
-    at some.Class.outer(SourceFile:7)
+    at some.Class.outer(Class.java:7)
 ";
         assert_eq!(mapper.remap_stacktrace(input_npe).unwrap(), expected_npe);
 
@@ -970,7 +1010,7 @@ java.lang.IllegalStateException: Boom
     at a.call(SourceFile:4)";
         let expected_ise = "\
 java.lang.IllegalStateException: Boom
-    at some.Class.outer(SourceFile:7)
+    at some.Class.outer(Class.java:7)
 ";
         assert_eq!(mapper.remap_stacktrace(input_ise).unwrap(), expected_ise);
     }
@@ -1019,7 +1059,7 @@ java.lang.NullPointerException: Boom
         // not replaced with the original "at a.call(SourceFile:4)"
         let expected = "\
 java.lang.NullPointerException: Boom
-    at some.Other.method(SourceFile:30)
+    at some.Other.method(Other.java:30)
 ";
 
         let actual = mapper.remap_stacktrace(input).unwrap();
@@ -1050,7 +1090,7 @@ some.Other -> b:
                     class: "a",
                     method: "call",
                     line: 4,
-                    file: Some("SourceFile"),
+                    file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
                 },
@@ -1058,7 +1098,7 @@ some.Other -> b:
                     class: "b",
                     method: "run",
                     line: 5,
-                    file: Some("SourceFile"),
+                    file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
                 },

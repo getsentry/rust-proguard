@@ -72,6 +72,7 @@
 mod debug;
 mod raw;
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt::Write;
 
@@ -82,6 +83,16 @@ use crate::mapper::{format_cause, format_frames, format_throwable};
 use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Throwable};
 
 pub use raw::{ProguardCache, PRGCACHE_VERSION};
+
+/// Result of looking up member mappings for a frame.
+/// Contains: (members, prepared_frame, rewrite_rules, had_mappings, outer_source_file)
+type MemberLookupResult<'data> = (
+    &'data [raw::Member],
+    StackFrame<'data>,
+    Vec<RewriteRule<'data>>,
+    bool,
+    Option<&'data str>,
+);
 
 /// Errors returned while loading/parsing a serialized [`ProguardCache`].
 ///
@@ -311,20 +322,17 @@ impl<'data> ProguardCache<'data> {
     }
 
     /// Finds member entries for a frame and collects rewrite rules without building frames.
-    /// Returns (member_slice, prepared_frame, rewrite_rules, had_mappings).
     fn find_members_and_rules(
         &'data self,
         frame: &StackFrame<'data>,
-    ) -> Option<(
-        &'data [raw::Member],
-        StackFrame<'data>,
-        Vec<RewriteRule<'data>>,
-        bool,
-    )> {
+    ) -> Option<MemberLookupResult<'data>> {
         let class = self.get_class(frame.class)?;
         let original_class = self
             .read_string(class.original_name_offset)
             .unwrap_or(frame.class);
+
+        // Get the outer source file for synthesis
+        let outer_source_file = self.read_string(class.file_name_offset).ok();
 
         let mut prepared_frame = frame.clone();
         prepared_frame.class = original_class;
@@ -376,7 +384,13 @@ impl<'data> ProguardCache<'data> {
             }
         }
 
-        Some((mapping_entries, prepared_frame, rewrite_rules, had_mappings))
+        Some((
+            mapping_entries,
+            prepared_frame,
+            rewrite_rules,
+            had_mappings,
+            outer_source_file,
+        ))
     }
 
     /// Remaps a single stack frame through the complete processing pipeline.
@@ -413,7 +427,7 @@ impl<'data> ProguardCache<'data> {
 
         let effective = self.prepare_frame_for_mapping(frame, carried_outline_pos);
 
-        let Some((members, prepared_frame, rewrite_rules, had_mappings)) =
+        let Some((members, prepared_frame, rewrite_rules, had_mappings, outer_source_file)) =
             self.find_members_and_rules(&effective)
         else {
             return Some(RemappedFrameIter::empty());
@@ -432,6 +446,7 @@ impl<'data> ProguardCache<'data> {
             members.iter(),
             skip_count,
             had_mappings,
+            outer_source_file,
         ))
     }
 
@@ -746,6 +761,8 @@ pub struct RemappedFrameIter<'r, 'data> {
     skip_count: usize,
     /// Whether there were mapping entries (for should_skip determination).
     had_mappings: bool,
+    /// The source file of the outer class for synthesis.
+    outer_source_file: Option<&'data str>,
 }
 
 impl<'r, 'data> RemappedFrameIter<'r, 'data> {
@@ -754,6 +771,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             inner: None,
             skip_count: 0,
             had_mappings: false,
+            outer_source_file: None,
         }
     }
 
@@ -763,11 +781,13 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
         members: std::slice::Iter<'data, raw::Member>,
         skip_count: usize,
         had_mappings: bool,
+        outer_source_file: Option<&'data str>,
     ) -> Self {
         Self {
             inner: Some((cache, frame, members)),
             skip_count,
             had_mappings,
+            outer_source_file,
         }
     }
 
@@ -782,9 +802,9 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
     fn next_inner(&mut self) -> Option<StackFrame<'data>> {
         let (cache, frame, members) = self.inner.as_mut()?;
         if frame.parameters.is_none() {
-            iterate_with_lines(cache, frame, members)
+            iterate_with_lines(cache, frame, members, self.outer_source_file)
         } else {
-            iterate_without_lines(cache, frame, members)
+            iterate_without_lines(cache, frame, members, self.outer_source_file)
         }
     }
 }
@@ -806,6 +826,7 @@ fn iterate_with_lines<'a>(
     cache: &ProguardCache<'a>,
     frame: &mut StackFrame<'a>,
     members: &mut std::slice::Iter<'_, raw::Member>,
+    outer_source_file: Option<&str>,
 ) -> Option<StackFrame<'a>> {
     for member in members {
         // skip any members which do not match our frames line
@@ -814,7 +835,7 @@ fn iterate_with_lines<'a>(
         {
             continue;
         }
-        // parents of inlined frames don’t have an `endline`, and
+        // parents of inlined frames don't have an `endline`, and
         // the top inlined frame need to be correctly offset.
         let line = if member.original_endline == u32::MAX
             || member.original_endline == member.original_startline
@@ -828,22 +849,19 @@ fn iterate_with_lines<'a>(
             .read_string(member.original_class_offset)
             .unwrap_or(frame.class);
 
-        let file = if member.original_file_offset != u32::MAX {
+        let file: Option<Cow<'_, str>> = if member.original_file_offset != u32::MAX {
             let Ok(file_name) = cache.read_string(member.original_file_offset) else {
                 continue;
             };
 
             if file_name == "R8$$SyntheticClass" {
-                extract_class_name(class)
+                extract_class_name(class).map(Cow::Borrowed)
             } else {
-                Some(file_name)
+                Some(Cow::Borrowed(file_name))
             }
-        } else if member.original_class_offset != u32::MAX {
-            // when an inlined function is from a foreign class, we
-            // don’t know the file it is defined in.
-            None
         } else {
-            frame.file
+            // Synthesize from class name (input filename is not reliable)
+            synthesize_source_file(class, outer_source_file).map(Cow::Owned)
         };
 
         let Ok(method) = cache.read_string(member.original_name_offset) else {
@@ -866,6 +884,7 @@ fn iterate_without_lines<'a>(
     cache: &ProguardCache<'a>,
     frame: &mut StackFrame<'a>,
     members: &mut std::slice::Iter<'_, raw::Member>,
+    outer_source_file: Option<&str>,
 ) -> Option<StackFrame<'a>> {
     let member = members.next()?;
 
@@ -875,10 +894,13 @@ fn iterate_without_lines<'a>(
 
     let method = cache.read_string(member.original_name_offset).ok()?;
 
+    // Synthesize from class name (input filename is not reliable)
+    let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
+
     Some(StackFrame {
         class,
         method,
-        file: None,
+        file,
         line: 0,
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
@@ -889,6 +911,31 @@ fn extract_class_name(full_path: &str) -> Option<&str> {
     let after_last_period = full_path.split('.').next_back()?;
     // If the class is an inner class, we need to extract the outer class name
     after_last_period.split('$').next()
+}
+
+/// Synthesizes a source file name from a class name.
+/// For Kotlin top-level classes ending in "Kt", the suffix is stripped and ".kt" is used.
+/// Otherwise, the extension is derived from the reference file, defaulting to ".java".
+/// For example: ("com.example.MainKt", Some("Other.java")) -> "Main.kt" (Kt suffix takes precedence)
+/// For example: ("com.example.Main", Some("Other.kt")) -> "Main.kt"
+/// For example: ("com.example.MainKt", None) -> "Main.kt"
+/// For inner classes: ("com.example.Main$Inner", None) -> "Main.java"
+fn synthesize_source_file(class_name: &str, reference_file: Option<&str>) -> Option<String> {
+    let base = extract_class_name(class_name)?;
+
+    // For Kotlin top-level classes (ending in "Kt"), always use .kt extension and strip suffix
+    // This takes precedence over reference_file since Kt suffix is a strong Kotlin indicator
+    if base.ends_with("Kt") && base.len() > 2 {
+        let kotlin_base = &base[..base.len() - 2];
+        return Some(format!("{}.kt", kotlin_base));
+    }
+
+    // If we have a reference file, derive extension from it
+    if let Some(ext) = reference_file.and_then(|f| f.rfind('.').map(|pos| &f[pos..])) {
+        return Some(format!("{}{}", base, ext));
+    }
+
+    Some(format!("{}.java", base))
 }
 
 /// Converts a Java class name to its JVM descriptor format.
@@ -929,6 +976,8 @@ fn compute_skip_count(rewrite_rules: &[RewriteRule<'_>], thrown_descriptor: Opti
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use crate::{ProguardMapping, StackFrame, StackTrace, Throwable};
 
     use super::raw::ProguardCache;
@@ -955,7 +1004,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     class: "com.example.MainFragment$g",
                     method: "onClick",
                     line: 2,
-                    file: Some("SourceFile"),
+                    file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
                 },
@@ -963,7 +1012,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     class: "android.view.View",
                     method: "performClick",
                     line: 7393,
-                    file: Some("View.java"),
+                    file: Some(Cow::Borrowed("View.java")),
                     parameters: None,
                     method_synthesized: false,
                 },
@@ -977,7 +1026,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                     class: "com.example.MainFragment$g",
                     method: "onClick",
                     line: 1,
-                    file: Some("SourceFile"),
+                    file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
                 }],
@@ -986,13 +1035,13 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
         };
         let expect = "\
 com.example.MainFragment$RocketException: Crash!
-    at com.example.MainFragment$Rocket.fly(<unknown>:85)
-    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    at com.example.MainFragment$Rocket.fly(MainFragment.java:85)
+    at com.example.MainFragment$onActivityCreated$4.onClick(MainFragment.java:65)
     at android.view.View.performClick(View.java:7393)
 Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
-    at com.example.MainFragment$Rocket.startEngines(<unknown>:90)
-    at com.example.MainFragment$Rocket.fly(<unknown>:83)
-    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)\n";
+    at com.example.MainFragment$Rocket.startEngines(MainFragment.java:90)
+    at com.example.MainFragment$Rocket.fly(MainFragment.java:83)
+    at com.example.MainFragment$onActivityCreated$4.onClick(MainFragment.java:65)\n";
 
         let mapping = ProguardMapping::new(mapping.as_bytes());
         let mut cache = Vec::new();
@@ -1031,13 +1080,13 @@ Caused by: com.example.MainFragment$d: Engines overheating
 
         let expect = "\
 com.example.MainFragment$RocketException: Crash!
-    at com.example.MainFragment$Rocket.fly(<unknown>:85)
-    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    at com.example.MainFragment$Rocket.fly(MainFragment.java:85)
+    at com.example.MainFragment$onActivityCreated$4.onClick(MainFragment.java:65)
     at android.view.View.performClick(View.java:7393)
 Caused by: com.example.MainFragment$EngineFailureException: Engines overheating
-    at com.example.MainFragment$Rocket.startEngines(<unknown>:90)
-    at com.example.MainFragment$Rocket.fly(<unknown>:83)
-    at com.example.MainFragment$onActivityCreated$4.onClick(SourceFile:65)
+    at com.example.MainFragment$Rocket.startEngines(MainFragment.java:90)
+    at com.example.MainFragment$Rocket.fly(MainFragment.java:83)
+    at com.example.MainFragment$onActivityCreated$4.onClick(MainFragment.java:65)
     ... 13 more\n";
 
         let mapping = ProguardMapping::new(mapping.as_bytes());
@@ -1069,7 +1118,7 @@ java.lang.NullPointerException: Boom
     at a.a(SourceFile:4)";
         let expect = "\
 java.lang.NullPointerException: Boom
-    at some.Class.caller(SourceFile:7)
+    at some.Class.caller(Class.java:7)
 ";
 
         assert_eq!(cache.remap_stacktrace(input).unwrap(), expect);
@@ -1094,7 +1143,7 @@ java.lang.NullPointerException: Boom
     at a.call(SourceFile:4)";
         let expected_npe = "\
 java.lang.NullPointerException: Boom
-    at some.Class.outer(SourceFile:7)
+    at some.Class.outer(Class.java:7)
 ";
         assert_eq!(cache.remap_stacktrace(input_npe).unwrap(), expected_npe);
 
@@ -1103,7 +1152,7 @@ java.lang.IllegalStateException: Boom
     at a.call(SourceFile:4)";
         let expected_ise = "\
 java.lang.IllegalStateException: Boom
-    at some.Class.outer(SourceFile:7)
+    at some.Class.outer(Class.java:7)
 ";
         assert_eq!(cache.remap_stacktrace(input_ise).unwrap(), expected_ise);
     }
@@ -1135,7 +1184,7 @@ java.lang.NullPointerException: Boom
         // not replaced with the original "at a.call(SourceFile:4)"
         let expected = "\
 java.lang.NullPointerException: Boom
-    at some.Other.method(SourceFile:30)
+    at some.Other.method(Other.java:30)
 ";
 
         let actual = cache.remap_stacktrace(input).unwrap();
@@ -1169,7 +1218,7 @@ some.Other -> b:
                     class: "a",
                     method: "call",
                     line: 4,
-                    file: Some("SourceFile"),
+                    file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
                 },
@@ -1177,7 +1226,7 @@ some.Other -> b:
                     class: "b",
                     method: "run",
                     line: 5,
-                    file: Some("SourceFile"),
+                    file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
                 },

@@ -84,6 +84,16 @@ use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Thr
 
 pub use raw::{ProguardCache, PRGCACHE_VERSION};
 
+/// Result of looking up member mappings for a frame.
+/// Contains: (members, prepared_frame, rewrite_rules, had_mappings, outer_source_file)
+type MemberLookupResult<'data> = (
+    &'data [raw::Member],
+    StackFrame<'data>,
+    Vec<RewriteRule<'data>>,
+    bool,
+    Option<&'data str>,
+);
+
 /// Errors returned while loading/parsing a serialized [`ProguardCache`].
 ///
 /// After a `ProguardCache` was successfully parsed via [`ProguardCache::parse`], an Error that occurs during
@@ -312,18 +322,10 @@ impl<'data> ProguardCache<'data> {
     }
 
     /// Finds member entries for a frame and collects rewrite rules without building frames.
-    /// Returns (member_slice, prepared_frame, rewrite_rules, had_mappings, outer_source_file).
-    #[allow(clippy::type_complexity)]
     fn find_members_and_rules(
         &'data self,
         frame: &StackFrame<'data>,
-    ) -> Option<(
-        &'data [raw::Member],
-        StackFrame<'data>,
-        Vec<RewriteRule<'data>>,
-        bool,
-        Option<&'data str>,
-    )> {
+    ) -> Option<MemberLookupResult<'data>> {
         let class = self.get_class(frame.class)?;
         let original_class = self
             .read_string(class.original_name_offset)

@@ -5,18 +5,6 @@ use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame, Stack
 #[cfg(feature = "uuid")]
 use uuid::uuid;
 
-/// Test helper: simple remap_frame without rewrite rules or outline handling.
-fn remap_frame_simple<'a>(
-    cache: &'a ProguardCache<'a>,
-    frame: &StackFrame<'a>,
-) -> impl Iterator<Item = StackFrame<'a>> {
-    let mut carried = None;
-    cache
-        .remap_frame(frame, None, false, &mut carried)
-        .into_iter()
-        .flatten()
-}
-
 static MAPPING_R8: &[u8] = include_bytes!("res/mapping-r8.txt");
 static MAPPING_R8_SYMBOLICATED_FILE_NAMES: &[u8] =
     include_bytes!("res/mapping-r8-symbolicated_file_names.txt");
@@ -577,7 +565,7 @@ fn test_method_with_zero_zero_and_line_specific_mappings_cache() {
     // Remap frame with method 'b' at line 3
     // This should match the 1:4: mapping (line 3 is in range 1-4) -> original line 70
     let frame = StackFrame::new("h2.a", "b", 3);
-    let mut mapped = remap_frame_simple(&cache, &frame);
+    let mut mapped = cache.remap_frame(&frame);
 
     let remapped_frame = mapped.next().unwrap();
     assert_eq!(

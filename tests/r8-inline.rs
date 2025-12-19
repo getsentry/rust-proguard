@@ -5,18 +5,6 @@
 
 use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame};
 
-/// Test helper: simple remap_frame without rewrite rules or outline handling.
-fn remap_frame_simple<'a>(
-    cache: &'a ProguardCache<'a>,
-    frame: &StackFrame<'a>,
-) -> impl Iterator<Item = StackFrame<'a>> {
-    let mut carried = None;
-    cache
-        .remap_frame(frame, None, false, &mut carried)
-        .into_iter()
-        .flatten()
-}
-
 // =============================================================================
 // InlineWithLineNumbersStackTrace
 // =============================================================================
@@ -640,7 +628,7 @@ fn test_inline_frame_depth_two_cache() {
 
     // Line 2 - two levels of inlining
     let frame = StackFrame::new("a", "a", 2);
-    let frames: Vec<_> = remap_frame_simple(&cache, &frame).collect();
+    let frames: Vec<_> = cache.remap_frame(&frame).collect();
     assert_eq!(frames.len(), 3);
     assert_eq!(frames[0].method(), "baz");
     assert_eq!(frames[0].line(), 30);

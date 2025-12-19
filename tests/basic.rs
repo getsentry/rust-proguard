@@ -4,18 +4,6 @@ use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame};
 #[cfg(feature = "uuid")]
 use uuid::uuid;
 
-/// Test helper: simple remap_frame without rewrite rules or outline handling.
-fn remap_frame_simple<'a>(
-    cache: &'a ProguardCache<'a>,
-    frame: &StackFrame<'a>,
-) -> impl Iterator<Item = StackFrame<'a>> {
-    let mut carried = None;
-    cache
-        .remap_frame(frame, None, false, &mut carried)
-        .into_iter()
-        .flatten()
-}
-
 static MAPPING: &[u8] = include_bytes!("res/mapping.txt");
 
 static MAPPING_WIN: LazyLock<Vec<u8>> = LazyLock::new(|| {
@@ -136,10 +124,8 @@ fn test_method_matches_cache() {
     ProguardCache::write(&mapping, &mut cache).unwrap();
     let cache = ProguardCache::parse(&cache).unwrap();
 
-    let mut mapped = remap_frame_simple(
-        &cache,
-        &StackFrame::new("android.support.constraint.a.a", "a", 320),
-    );
+    let mut mapped =
+        cache.remap_frame(&StackFrame::new("android.support.constraint.a.a", "a", 320));
 
     assert_eq!(
         mapped.next().unwrap(),
@@ -152,10 +138,8 @@ fn test_method_matches_cache() {
     );
     assert_eq!(mapped.next(), None);
 
-    let mut mapped = remap_frame_simple(
-        &cache,
-        &StackFrame::new("android.support.constraint.a.a", "a", 200),
-    );
+    let mut mapped =
+        cache.remap_frame(&StackFrame::new("android.support.constraint.a.a", "a", 200));
 
     assert_eq!(
         mapped.next().unwrap(),
@@ -210,10 +194,8 @@ fn test_method_matches_win_cache() {
     ProguardCache::write(&mapping, &mut cache).unwrap();
     let cache = ProguardCache::parse(&cache).unwrap();
 
-    let mut mapped = remap_frame_simple(
-        &cache,
-        &StackFrame::new("android.support.constraint.a.a", "a", 320),
-    );
+    let mut mapped =
+        cache.remap_frame(&StackFrame::new("android.support.constraint.a.a", "a", 320));
 
     assert_eq!(
         mapped.next().unwrap(),
@@ -226,10 +208,8 @@ fn test_method_matches_win_cache() {
     );
     assert_eq!(mapped.next(), None);
 
-    let mut mapped = remap_frame_simple(
-        &cache,
-        &StackFrame::new("android.support.constraint.a.a", "a", 200),
-    );
+    let mut mapped =
+        cache.remap_frame(&StackFrame::new("android.support.constraint.a.a", "a", 200));
 
     assert_eq!(
         mapped.next().unwrap(),

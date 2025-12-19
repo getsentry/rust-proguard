@@ -402,58 +402,20 @@ impl<'data> ProguardCache<'data> {
         &'r self,
         frame: &StackFrame<'data>,
     ) -> RemappedFrameIter<'r, 'data> {
-        let Some(class) = self.get_class(frame.class) else {
+        let Some((members, prepared_frame, _rewrite_rules, _had_mappings, outer_source_file)) =
+            self.find_members_and_rules(frame)
+        else {
             return RemappedFrameIter::empty();
         };
 
-        let mut frame = frame.clone();
-        let Ok(original_class) = self.read_string(class.original_name_offset) else {
-            return RemappedFrameIter::empty();
-        };
-
-        frame.class = original_class;
-
-        // The following if and else cases are very similar. The only difference
-        // is that if the frame contains parameter information, we use it in
-        // our comparisons (in addition to the method name).
-        if let Some(frame_params) = frame.parameters {
-            let Some(members) = self.get_class_members_by_params(class) else {
-                return RemappedFrameIter::empty();
-            };
-
-            // Find the range of members that have the same method name and params
-            // as the frame.
-            let Some(members) = Self::find_range_by_binary_search(members, |m| {
-                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                    return Ordering::Greater;
-                };
-
-                let params = self.read_string(m.params_offset).unwrap_or_default();
-
-                (obfuscated_name, params).cmp(&(frame.method, frame_params))
-            }) else {
-                return RemappedFrameIter::empty();
-            };
-            RemappedFrameIter::members(self, frame, members.iter())
-        } else {
-            let Some(members) = self.get_class_members(class) else {
-                return RemappedFrameIter::empty();
-            };
-
-            // Find the range of members that have the same method name
-            // as the frame.
-            let Some(members) = Self::find_range_by_binary_search(members, |m| {
-                let Ok(obfuscated_name) = self.read_string(m.obfuscated_name_offset) else {
-                    return Ordering::Greater;
-                };
-
-                obfuscated_name.cmp(frame.method)
-            }) else {
-                return RemappedFrameIter::empty();
-            };
-
-            RemappedFrameIter::members(self, frame, members.iter())
-        }
+        RemappedFrameIter::members(
+            self,
+            prepared_frame,
+            members.iter(),
+            0,
+            false,
+            outer_source_file,
+        )
     }
 
     /// Remaps a single stack frame through the complete processing pipeline.
@@ -503,7 +465,7 @@ impl<'data> ProguardCache<'data> {
             0
         };
 
-        Some(RemappedFrameIter::new(
+        Some(RemappedFrameIter::members(
             self,
             prepared_frame,
             members.iter(),
@@ -836,19 +798,6 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
     }
 
     fn members(
-        cache: &'r ProguardCache<'data>,
-        frame: StackFrame<'data>,
-        members: std::slice::Iter<'data, raw::Member>,
-    ) -> Self {
-        Self {
-            inner: Some((cache, frame, members)),
-            skip_count: 0,
-            had_mappings: false,
-            outer_source_file: None,
-        }
-    }
-
-    fn new(
         cache: &'r ProguardCache<'data>,
         frame: StackFrame<'data>,
         members: std::slice::Iter<'data, raw::Member>,

@@ -313,15 +313,16 @@ impl<'data> ProguardCache<'data> {
             .map(|(obfuscated, original)| {
                 let obfuscated_name_offset = string_table.insert(obfuscated.as_str()) as u32;
                 let original_name_offset = string_table.insert(original.as_str()) as u32;
-                let is_synthesized = parsed
-                    .class_infos
-                    .get(original)
-                    .map(|ci| ci.is_synthesized)
-                    .unwrap_or_default();
+                let class_info = parsed.class_infos.get(original);
+                let is_synthesized = class_info.map(|ci| ci.is_synthesized).unwrap_or_default();
+                let file_name_offset = class_info
+                    .and_then(|ci| ci.source_file)
+                    .map_or(u32::MAX, |s| string_table.insert(s) as u32);
                 let class = ClassInProgress {
                     class: Class {
                         original_name_offset,
                         obfuscated_name_offset,
+                        file_name_offset,
                         is_synthesized: is_synthesized as u8,
                         ..Default::default()
                     },

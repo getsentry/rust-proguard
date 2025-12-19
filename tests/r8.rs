@@ -46,10 +46,11 @@ fn test_extra_methods() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "android.arch.core.internal.SafeIterableMap$AscendingIterator",
             "<init>",
-            270
+            270,
+            "SafeIterableMap.java"
         )
     );
     assert_eq!(mapped.next(), None);
@@ -63,10 +64,11 @@ fn test_method_matches() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new(
+        StackFrame::with_file(
             "android.arch.core.internal.SafeIterableMap",
             "access$100",
-            35
+            35,
+            "SafeIterableMap.java"
         )
     );
     assert_eq!(mapped.next(), None);
@@ -75,7 +77,12 @@ fn test_method_matches() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new("android.arch.core.internal.SafeIterableMap", "eldest", 168)
+        StackFrame::with_file(
+            "android.arch.core.internal.SafeIterableMap",
+            "eldest",
+            168,
+            "SafeIterableMap.java"
+        )
     );
     assert_eq!(mapped.next(), None);
 }
@@ -291,7 +298,7 @@ fn test_outline_frame_retracing() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new("outline.Class", "outline", 1)
+        StackFrame::with_file("outline.Class", "outline", 1, "Class.java")
     );
     assert_eq!(mapped.next(), None);
 
@@ -300,7 +307,7 @@ fn test_outline_frame_retracing() {
 
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::new("some.Class", "outlineCaller", 0)
+        StackFrame::with_file("some.Class", "outlineCaller", 0, "Class.java")
     );
     assert_eq!(mapped.next(), None);
 }
@@ -321,13 +328,13 @@ Caused by: java.lang.IllegalStateException: Secondary issue
 
     let expected = "\
 java.lang.NullPointerException: Primary issue
-    at com.example.flow.Initializer.start(SourceFile:42)
-    at com.example.flow.StreamRouter$Inline.internalDispatch(<unknown>:30)
-    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
-    at com.example.flow.UiBridge.render(SourceFile:200)
+    at com.example.flow.Initializer.start(Initializer.java:42)
+    at com.example.flow.StreamRouter$Inline.internalDispatch(StreamRouter.java:30)
+    at com.example.flow.StreamRouter.dispatch(StreamRouter.java:12)
+    at com.example.flow.UiBridge.render(UiBridge.java:200)
 Caused by: java.lang.IllegalStateException: Secondary issue
-    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
-    at com.example.flow.UiBridge.render(SourceFile:200)
+    at com.example.flow.StreamRouter.dispatch(StreamRouter.java:12)
+    at com.example.flow.UiBridge.render(UiBridge.java:200)
 ";
 
     let actual = mapper.remap_stacktrace(input).unwrap();
@@ -357,13 +364,13 @@ Caused by: java.lang.IllegalStateException: Secondary issue
 
     let expected = "\
 java.lang.NullPointerException: Primary issue
-    at com.example.flow.Initializer.start(SourceFile:42)
-    at com.example.flow.StreamRouter$Inline.internalDispatch(<unknown>:30)
-    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
-    at com.example.flow.UiBridge.render(SourceFile:200)
+    at com.example.flow.Initializer.start(Initializer.java:42)
+    at com.example.flow.StreamRouter$Inline.internalDispatch(StreamRouter.java:30)
+    at com.example.flow.StreamRouter.dispatch(StreamRouter.java:12)
+    at com.example.flow.UiBridge.render(UiBridge.java:200)
 Caused by: java.lang.IllegalStateException: Secondary issue
-    at com.example.flow.StreamRouter.dispatch(SourceFile:12)
-    at com.example.flow.UiBridge.render(SourceFile:200)
+    at com.example.flow.StreamRouter.dispatch(StreamRouter.java:12)
+    at com.example.flow.UiBridge.render(UiBridge.java:200)
 ";
 
     let actual = cache.remap_stacktrace(input).unwrap();

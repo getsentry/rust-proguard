@@ -286,8 +286,10 @@ pub(crate) fn parse_frame(line: &str) -> Option<StackFrame<'_>> {
 
     let (method_split, file_split) = line[3..line.len() - 1].split_once('(')?;
     let (class, method) = method_split.rsplit_once('.')?;
-    let (file, line) = file_split.split_once(':')?;
-    let line = line.parse().ok()?;
+    let (file, line) = match file_split.split_once(':') {
+        Some((file, line)) => (file, line.parse().ok()?),
+        None => (file_split, 0),
+    };
 
     Some(StackFrame {
         class,
@@ -389,6 +391,7 @@ pub(crate) fn parse_throwable(line: &str) -> Option<Throwable<'_>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::borrow::Cow;
 
     #[test]
     fn print_stack_trace() {

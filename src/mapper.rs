@@ -224,7 +224,9 @@ fn map_member_without_lines<'a>(
         class,
         method: member.original,
         file,
-        line: 0,
+        // Preserve input line if present (e.g. "Unknown Source:7") when the mapping itself
+        // has no line information. This matches R8 retrace behavior.
+        line: frame.line,
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized,
     }
@@ -271,6 +273,10 @@ fn iterate_with_lines<'a>(
         // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
         if has_line_info && frame.line > 0 && member.endline == 0 {
             continue;
+        }
+        // If the mapping entry has no line range, preserve the input line number (if any).
+        if member.endline == 0 {
+            return Some(map_member_without_lines(frame, member));
         }
         if let Some(mapped) = map_member_with_lines(frame, member) {
             return Some(mapped);
@@ -596,7 +602,12 @@ impl<'s> ProguardMapper<'s> {
                 if has_line_info && member.endline == 0 {
                     continue;
                 }
-                if let Some(mapped) = map_member_with_lines(&frame, member) {
+                if member.endline == 0 {
+                    collected
+                        .frames
+                        .push(map_member_without_lines(&frame, member));
+                    collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                } else if let Some(mapped) = map_member_with_lines(&frame, member) {
                     collected.frames.push(mapped);
                     collected.rewrite_rules.extend(member.rewrite_rules.iter());
                 }

@@ -909,7 +909,8 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
                             class,
                             method,
                             file,
-                            line: 0,
+                            // Preserve input line if present when the mapping has no line info.
+                            line: frame.line,
                             parameters: frame.parameters,
                             method_synthesized: first_base.is_synthesized(),
                         });
@@ -945,7 +946,8 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
                         class,
                         method,
                         file,
-                        line: 0,
+                        // Preserve input line if present when the mapping has no line info.
+                        line: frame.line,
                         parameters: frame.parameters,
                         method_synthesized: first.is_synthesized(),
                     });
@@ -1004,6 +1006,26 @@ fn iterate_with_lines<'a>(
         // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
         if has_line_info && frame.line > 0 && member.endline == 0 {
             continue;
+        }
+        // If the mapping entry has no line range, preserve the input line number (if any).
+        if member.endline == 0 {
+            let class = cache
+                .read_string(member.original_class_offset)
+                .unwrap_or(frame.class);
+
+            let method = cache.read_string(member.original_name_offset).ok()?;
+
+            // Synthesize from class name (input filename is not reliable)
+            let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
+
+            return Some(StackFrame {
+                class,
+                method,
+                file,
+                line: frame.line,
+                parameters: frame.parameters,
+                method_synthesized: member.is_synthesized(),
+            });
         }
         // skip any members which do not match our frames line
         if member.endline > 0
@@ -1080,7 +1102,8 @@ fn iterate_without_lines_preferring_base<'a>(
             class,
             method,
             file,
-            line: 0,
+            // Preserve input line if present when the mapping has no line info.
+            line: frame.line,
             parameters: frame.parameters,
             method_synthesized: member.is_synthesized(),
         });
@@ -1109,7 +1132,8 @@ fn iterate_without_lines<'a>(
         class,
         method,
         file,
-        line: 0,
+        // Preserve input line if present when the mapping has no line info.
+        line: frame.line,
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
     })

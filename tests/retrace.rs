@@ -71,7 +71,8 @@ fn test_remap_no_lines() {
     let mut mapped = mapper.remap_frame(&StackFrame::new("a", "b", 10));
     assert_eq!(
         mapped.next().unwrap(),
-        StackFrame::with_file("original.class.name", "originalMethodName", 0, "name.java")
+        // Preserve input line number when the mapping has no line information.
+        StackFrame::with_file("original.class.name", "originalMethodName", 10, "name.java")
     );
     assert_eq!(mapped.next(), None);
 }

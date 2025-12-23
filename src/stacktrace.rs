@@ -391,7 +391,6 @@ pub(crate) fn parse_throwable(line: &str) -> Option<Throwable<'_>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::borrow::Cow;
 
     #[test]
     fn print_stack_trace() {

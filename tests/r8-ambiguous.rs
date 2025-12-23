@@ -78,14 +78,14 @@ Caused by: com.android.tools.r8.CompilationException: foo[parens](Source:3)
 
     let expected = "\
 com.android.tools.r8.CompilationException: foo[parens](Source:3)
-    at com.android.tools.r8.R8.foo(R8.java:0)
-    at com.android.tools.r8.R8.bar(R8.java:0)
-    at com.android.tools.r8.R8.foo(R8.java:0)
-    at com.android.tools.r8.R8.bar(R8.java:0)
+    at com.android.tools.r8.R8.foo(R8.java:7)
+    at com.android.tools.r8.R8.bar(R8.java:7)
+    at com.android.tools.r8.R8.foo(R8.java:8)
+    at com.android.tools.r8.R8.bar(R8.java:8)
     at com.android.tools.r8.R8.main(Unknown Source)
 Caused by: com.android.tools.r8.CompilationException: foo[parens](Source:3)
-    at com.android.tools.r8.R8.foo(R8.java:0)
-    at com.android.tools.r8.R8.bar(R8.java:0)
+    at com.android.tools.r8.R8.foo(R8.java:9)
+    at com.android.tools.r8.R8.bar(R8.java:9)
     ... 42 more
 ";
 

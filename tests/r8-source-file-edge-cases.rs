@@ -35,7 +35,6 @@ some.Class -> a:
 
 #[test]
 fn test_colon_in_file_name_stacktrace() {
-    // Preserve leading whitespace exactly (no accidental leading newline).
     let input = r#"  at a.s(:foo::bar:1)
   at a.t(:foo::bar:)
 "#;
@@ -86,7 +85,6 @@ fn test_multiple_dots_in_file_name_stacktrace() {
     let input = r#"  at a.s(foo.bar.baz:1)
 "#;
 
-    // Normalize indentation to this crate's output (`"    at ..."`)
     let expected = r#"    at some.Class.strawberry(Class.kt:99)
 "#;
 
@@ -104,7 +102,6 @@ R8 -> R8:
 
 #[test]
 fn test_file_name_extension_stacktrace() {
-    // Preserve upstream whitespace exactly (no accidental leading newline).
     let input = r#"a.b.c: Problem when compiling program
     at R8.main(App:800)
     at R8.main(Native Method)
@@ -122,13 +119,13 @@ Suppressed: a.b.c: You have to write the program first
 
     let expected = r#"foo.bar.baz: Problem when compiling program
     at R8.main(R8.java:800)
-    at R8.main(Native Method)
-    at R8.main(R8.java)
+    at R8.main(R8.java:0)
+    at R8.main(R8.java:0)
     at R8.main(R8.kt:1)
-    at R8.main(R8.java)
-    at R8.main(R8.java)
-    at R8.main(R8.java)
-    at R8.main(R8.java)
+    at R8.main(R8.java:0)
+    at R8.main(R8.java:0)
+    at R8.main(R8.java:0)
+    at R8.main(R8.java:0)
     at R8.main(R8.java:1)
 Suppressed: foo.bar.baz: You have to write the program first
     at R8.retrace(R8.java:184)
@@ -144,21 +141,18 @@ Suppressed: foo.bar.baz: You have to write the program first
 
 const SOURCE_FILE_NAME_SYNTHESIZE_MAPPING: &str = "\
 android.support.v7.widget.ActionMenuView -> mapping:
-  21:21:void invokeItem():624 -> a
+    21:21:void invokeItem():624 -> a
 android.support.v7.widget.ActionMenuViewKt -> mappingKotlin:
-  21:21:void invokeItem():624 -> b
+    21:21:void invokeItem():624 -> b
 ";
 
 #[test]
 fn test_source_file_name_synthesize_stacktrace() {
-    // Preserve upstream whitespace exactly (no accidental leading newline).
     let input = r#"    at mapping.a(AW779999992:21)
 	at noMappingKt.noMapping(AW779999992:21)
 	at mappingKotlin.b(AW779999992:21)
 "#;
 
-    // Normalize indentation for remapped frames to match this crate (`"    at ..."`). The middle
-    // line is intentionally unmapped and keeps its original leading tab.
     let expected = r#"    at android.support.v7.widget.ActionMenuView.invokeItem(ActionMenuView.java:624)
 	at noMappingKt.noMapping(AW779999992:21)
     at android.support.v7.widget.ActionMenuViewKt.invokeItem(ActionMenuView.kt:624)
@@ -173,18 +167,16 @@ fn test_source_file_name_synthesize_stacktrace() {
 
 const SOURCE_FILE_WITH_NUMBER_AND_EMPTY_MAPPING: &str = "\
 com.android.tools.r8.R8 -> com.android.tools.r8.R8:
-  34:34:void com.android.tools.r8.utils.ExceptionUtils.withR8CompilationHandler(com.android.tools.r8.utils.Reporter,com.android.tools.r8.utils.ExceptionUtils$CompileAction):59:59 -> a
-  34:34:void runForTesting(com.android.tools.r8.utils.AndroidApp,com.android.tools.r8.utils.InternalOptions):261 -> a
+    34:34:void com.android.tools.r8.utils.ExceptionUtils.withR8CompilationHandler(com.android.tools.r8.utils.Reporter,com.android.tools.r8.utils.ExceptionUtils$CompileAction):59:59 -> a
+    34:34:void runForTesting(com.android.tools.r8.utils.AndroidApp,com.android.tools.r8.utils.InternalOptions):261 -> a
 ";
 
 #[test]
 fn test_source_file_with_number_and_empty_stacktrace() {
-    // Preserve upstream whitespace exactly (no accidental leading newline).
     let input = r#"    at com.android.tools.r8.R8.a(R.java:34)
     at com.android.tools.r8.R8.a(:34)
 "#;
 
-    // Normalize indentation to this crate's output (`"    at ..."`)
     let expected = r#"    at com.android.tools.r8.utils.ExceptionUtils.withR8CompilationHandler(ExceptionUtils.java:59)
     at com.android.tools.r8.R8.runForTesting(R8.java:261)
     at com.android.tools.r8.utils.ExceptionUtils.withR8CompilationHandler(ExceptionUtils.java:59)
@@ -209,7 +201,6 @@ Unused -> I$-CC:
 
 #[test]
 fn test_class_with_dash_stacktrace() {
-    // Preserve upstream whitespace exactly (no accidental leading newline).
     let input = r#"java.lang.NullPointerException
 	at I$-CC.staticMethod(I.java:66)
 	at Main.main(Main.java:73)

@@ -204,7 +204,11 @@ fn test_no_obfuscated_line_number_with_override() {
     at com.android.tools.r8.naming.retrace.Main.mainPC(Main.java:42)
 "#;
 
-    assert_remap_stacktrace(NO_OBFUSCATED_LINE_NUMBER_WITH_OVERRIDE_MAPPING, input, expected);
+    assert_remap_stacktrace(
+        NO_OBFUSCATED_LINE_NUMBER_WITH_OVERRIDE_MAPPING,
+        input,
+        expected,
+    );
 }
 
 // =============================================================================
@@ -309,5 +313,3 @@ fn test_invalid_original_range_stacktrace() {
 
     assert_remap_stacktrace(INVALID_ORIGINAL_RANGE_MAPPING, input, expected);
 }
-
-

@@ -1039,6 +1039,12 @@ fn iterate_with_lines<'a>(
     None
 }
 
+/// Selection strategy for line==0 frames.
+///
+/// When line info is missing, we prefer base (no-line) mappings if they exist.
+/// If all candidates resolve to the same original method, we treat it as
+/// unambiguous and return a single mapping. Otherwise we iterate either over
+/// base mappings (when present) or all mappings (when only line-mapped entries exist).
 enum NoLineSelection<'a> {
     Single(&'a raw::Member),
     IterateBase,

@@ -102,15 +102,20 @@ type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
 #[derive(Clone, Debug, Default)]
 pub struct RemappedFrameIter<'m> {
     inner: Option<(StackFrame<'m>, MemberIter<'m>)>,
+    has_line_info: bool,
 }
 
 impl<'m> RemappedFrameIter<'m> {
     fn empty() -> Self {
-        Self { inner: None }
+        Self {
+            inner: None,
+            has_line_info: false,
+        }
     }
-    fn members(frame: StackFrame<'m>, members: MemberIter<'m>) -> Self {
+    fn members(frame: StackFrame<'m>, members: MemberIter<'m>, has_line_info: bool) -> Self {
         Self {
             inner: Some((frame, members)),
+            has_line_info,
         }
     }
 }
@@ -120,7 +125,7 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     fn next(&mut self) -> Option<Self::Item> {
         let (frame, ref mut members) = self.inner.as_mut()?;
         if frame.parameters.is_none() {
-            iterate_with_lines(frame, members)
+            iterate_with_lines(frame, members, self.has_line_info)
         } else {
             iterate_without_lines(frame, members)
         }
@@ -219,10 +224,62 @@ fn map_member_without_lines<'a>(
         class,
         method: member.original,
         file,
-        line: 0,
+        // Preserve input line if present (e.g. "Unknown Source:7") when the mapping itself
+        // has no line information. This matches R8 retrace behavior.
+        line: frame.line,
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized,
     }
+}
+
+fn remap_class_only<'a>(frame: &StackFrame<'a>, reference_file: Option<&str>) -> StackFrame<'a> {
+    let file = synthesize_source_file(frame.class, reference_file).map(Cow::Owned);
+    StackFrame {
+        class: frame.class,
+        method: frame.method,
+        file,
+        line: frame.line,
+        parameters: frame.parameters,
+        method_synthesized: false,
+    }
+}
+
+/// Selection strategy for line==0 frames.
+///
+/// When line info is missing, we prefer base (no-line) mappings if they exist.
+/// If all candidates resolve to the same original method, we treat it as
+/// unambiguous and return a single mapping. Otherwise we iterate either over
+/// base mappings (when present) or all mappings (when only line-mapped entries exist).
+enum NoLineSelection<'a> {
+    Single(&'a MemberMapping<'a>),
+    IterateAll,
+    IterateBase,
+}
+
+fn select_no_line_members<'a>(
+    mapping_entries: &'a [MemberMapping<'a>],
+    has_line_info: bool,
+) -> Option<NoLineSelection<'a>> {
+    let mut base_members = mapping_entries.iter().filter(|m| m.endline == 0);
+    if has_line_info {
+        if let Some(first_base) = base_members.next() {
+            let all_same = base_members.all(|m| m.original == first_base.original);
+            return Some(if all_same {
+                NoLineSelection::Single(first_base)
+            } else {
+                NoLineSelection::IterateBase
+            });
+        }
+    }
+
+    let first = mapping_entries.first()?;
+    let unambiguous = mapping_entries.iter().all(|m| m.original == first.original);
+
+    Some(if unambiguous {
+        NoLineSelection::Single(first)
+    } else {
+        NoLineSelection::IterateAll
+    })
 }
 
 fn apply_rewrite_rules<'s>(collected: &mut CollectedFrames<'s>, thrown_descriptor: Option<&str>) {
@@ -260,8 +317,17 @@ fn apply_rewrite_rules<'s>(collected: &mut CollectedFrames<'s>, thrown_descripto
 fn iterate_with_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
+    has_line_info: bool,
 ) -> Option<StackFrame<'a>> {
     for member in members {
+        // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
+        if has_line_info && frame.line > 0 && member.endline == 0 {
+            continue;
+        }
+        // If the mapping entry has no line range, preserve the input line number (if any).
+        if member.endline == 0 {
+            return Some(map_member_without_lines(frame, member));
+        }
         if let Some(mapped) = map_member_with_lines(frame, member) {
             return Some(mapped);
         }
@@ -361,12 +427,7 @@ impl<'s> ProguardMapper<'s> {
                 .entry(obfuscated_method.as_str())
                 .or_default();
 
-            let has_line_info = members.all.iter().any(|m| m.endline > 0);
             for member in members.all.iter() {
-                // Skip members without line information if there are members with line information
-                if has_line_info && member.startline == 0 && member.endline == 0 {
-                    continue;
-                }
                 method_mappings.all_mappings.push(Self::resolve_mapping(
                     &parsed,
                     member,
@@ -519,12 +580,19 @@ impl<'s> ProguardMapper<'s> {
         let Some(class) = self.classes.get(frame.class) else {
             return collected;
         };
-        let Some(members) = class.members.get(frame.method) else {
-            return collected;
-        };
 
         let mut frame = frame.clone();
         frame.class = class.original;
+
+        // If we don't have any member mappings, we can still remap the class name.
+        // This is especially important for stack frames where the method is not mapped or the
+        // stacktrace does not contain sufficient information to resolve the method.
+        let Some(members) = class.members.get(frame.method) else {
+            collected
+                .frames
+                .push(remap_class_only(&frame, frame.file()));
+            return collected;
+        };
 
         let mapping_entries: &[MemberMapping<'s>] = if let Some(parameters) = frame.parameters {
             let Some(typed_members) = members.mappings_by_params.get(parameters) else {
@@ -536,8 +604,50 @@ impl<'s> ProguardMapper<'s> {
         };
 
         if frame.parameters.is_none() {
+            let has_line_info = mapping_entries.iter().any(|m| m.endline > 0);
+
+            // If the stacktrace has no line number, treat it as unknown and remap without
+            // applying line filters. If there are base (no-line) mappings present, prefer those.
+            if frame.line == 0 {
+                let selection = select_no_line_members(mapping_entries, has_line_info);
+                match selection {
+                    Some(NoLineSelection::Single(member)) => {
+                        collected
+                            .frames
+                            .push(map_member_without_lines(&frame, member));
+                        collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                    }
+                    Some(NoLineSelection::IterateAll) => {
+                        for member in mapping_entries {
+                            collected
+                                .frames
+                                .push(map_member_without_lines(&frame, member));
+                            collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                        }
+                    }
+                    Some(NoLineSelection::IterateBase) => {
+                        for member in mapping_entries.iter().filter(|m| m.endline == 0) {
+                            collected
+                                .frames
+                                .push(map_member_without_lines(&frame, member));
+                            collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                        }
+                    }
+                    None => return collected,
+                }
+                return collected;
+            }
+
             for member in mapping_entries {
-                if let Some(mapped) = map_member_with_lines(&frame, member) {
+                if has_line_info && member.endline == 0 {
+                    continue;
+                }
+                if member.endline == 0 {
+                    collected
+                        .frames
+                        .push(map_member_without_lines(&frame, member));
+                    collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                } else if let Some(mapped) = map_member_with_lines(&frame, member) {
                     collected.frames.push(mapped);
                     collected.rewrite_rules.extend(member.rewrite_rules.iter());
                 }
@@ -606,7 +716,8 @@ impl<'s> ProguardMapper<'s> {
             members.all_mappings.iter()
         };
 
-        RemappedFrameIter::members(frame, mappings)
+        let has_line_info = members.all_mappings.iter().any(|m| m.endline > 0);
+        RemappedFrameIter::members(frame, mappings, has_line_info)
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.
@@ -1016,7 +1127,7 @@ java.lang.IllegalStateException: Boom
     }
 
     #[test]
-    fn remap_frame_without_mapping_keeps_original_line() {
+    fn remap_frame_without_mapping_remaps_class_best_effort() {
         let mapping = "\
 some.Class -> a:
     1:1:void some.Class.existing():10:10 -> a
@@ -1029,7 +1140,7 @@ java.lang.RuntimeException: boom
 ";
         let expected = "\
 java.lang.RuntimeException: boom
-    at a.missing(SourceFile:42)
+    at some.Class.missing(Class.java:42)
 ";
 
         assert_eq!(mapper.remap_stacktrace(input).unwrap(), expected);

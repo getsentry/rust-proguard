@@ -220,13 +220,21 @@ fn map_member_without_lines<'a>(
     let class = member.original_class.unwrap_or(frame.class);
     // Synthesize from class name (input filename is not reliable)
     let file = synthesize_source_file(class, member.outer_source_file).map(Cow::Owned);
+    let line = if frame.line > 0 {
+        frame.line
+    } else if member.startline == 0 && member.endline == 0 && member.original_startline > 0 {
+        // For base (no-line) mappings, use the original line when available.
+        member.original_startline
+    } else {
+        0
+    };
     StackFrame {
         class,
         method: member.original,
         file,
         // Preserve input line if present (e.g. "Unknown Source:7") when the mapping itself
         // has no line information. This matches R8 retrace behavior.
-        line: frame.line,
+        line,
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized,
     }

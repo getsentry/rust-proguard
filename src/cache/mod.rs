@@ -1096,8 +1096,12 @@ fn map_member_without_lines<'a>(
         class,
         method,
         file,
-        // Preserve input line if present when the mapping has no line info.
-        line: frame.line,
+        line: resolve_no_line_output_line(
+            frame.line,
+            member.original_startline,
+            member.startline,
+            member.endline,
+        ),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
     })
@@ -1124,11 +1128,35 @@ fn iterate_without_lines<'a>(
         class,
         method,
         file,
-        // Preserve input line if present when the mapping has no line info.
-        line: frame.line,
+        line: resolve_no_line_output_line(
+            frame.line,
+            member.original_startline,
+            member.startline,
+            member.endline,
+        ),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
     })
+}
+
+// For no-line mappings, prefer the original line if the mapping has no minified range.
+fn resolve_no_line_output_line(
+    frame_line: usize,
+    original_startline: u32,
+    startline: u32,
+    endline: u32,
+) -> usize {
+    if frame_line > 0 {
+        frame_line
+    } else if startline == 0
+        && endline == 0
+        && original_startline > 0
+        && original_startline != u32::MAX
+    {
+        original_startline as usize
+    } else {
+        0
+    }
 }
 
 fn extract_class_name(full_path: &str) -> Option<&str> {

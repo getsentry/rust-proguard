@@ -220,16 +220,74 @@ fn map_member_without_lines<'a>(
     let class = member.original_class.unwrap_or(frame.class);
     // Synthesize from class name (input filename is not reliable)
     let file = synthesize_source_file(class, member.outer_source_file).map(Cow::Owned);
+    let line = if frame.line > 0 {
+        frame.line
+    } else if member.startline == 0 && member.endline == 0 && member.original_startline > 0 {
+        // For base (no-line) mappings, use the original line when available.
+        member.original_startline
+    } else {
+        0
+    };
     StackFrame {
         class,
         method: member.original,
         file,
         // Preserve input line if present (e.g. "Unknown Source:7") when the mapping itself
         // has no line information. This matches R8 retrace behavior.
-        line: frame.line,
+        line,
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized,
     }
+}
+
+fn remap_class_only<'a>(frame: &StackFrame<'a>, reference_file: Option<&str>) -> StackFrame<'a> {
+    let file = synthesize_source_file(frame.class, reference_file).map(Cow::Owned);
+    StackFrame {
+        class: frame.class,
+        method: frame.method,
+        file,
+        line: frame.line,
+        parameters: frame.parameters,
+        method_synthesized: false,
+    }
+}
+
+/// Selection strategy for line==0 frames.
+///
+/// When line info is missing, we prefer base (no-line) mappings if they exist.
+/// If all candidates resolve to the same original method, we treat it as
+/// unambiguous and return a single mapping. Otherwise we iterate either over
+/// base mappings (when present) or all mappings (when only line-mapped entries exist).
+enum NoLineSelection<'a> {
+    Single(&'a MemberMapping<'a>),
+    IterateAll,
+    IterateBase,
+}
+
+fn select_no_line_members<'a>(
+    mapping_entries: &'a [MemberMapping<'a>],
+    has_line_info: bool,
+) -> Option<NoLineSelection<'a>> {
+    let mut base_members = mapping_entries.iter().filter(|m| m.endline == 0);
+    if has_line_info {
+        if let Some(first_base) = base_members.next() {
+            let all_same = base_members.all(|m| m.original == first_base.original);
+            return Some(if all_same {
+                NoLineSelection::Single(first_base)
+            } else {
+                NoLineSelection::IterateBase
+            });
+        }
+    }
+
+    let first = mapping_entries.first()?;
+    let unambiguous = mapping_entries.iter().all(|m| m.original == first.original);
+
+    Some(if unambiguous {
+        NoLineSelection::Single(first)
+    } else {
+        NoLineSelection::IterateAll
+    })
 }
 
 fn apply_rewrite_rules<'s>(collected: &mut CollectedFrames<'s>, thrown_descriptor: Option<&str>) {
@@ -538,15 +596,9 @@ impl<'s> ProguardMapper<'s> {
         // This is especially important for stack frames where the method is not mapped or the
         // stacktrace does not contain sufficient information to resolve the method.
         let Some(members) = class.members.get(frame.method) else {
-            let file = synthesize_source_file(frame.class, frame.file()).map(Cow::Owned);
-            collected.frames.push(StackFrame {
-                class: frame.class,
-                method: frame.method,
-                file,
-                line: frame.line,
-                parameters: frame.parameters,
-                method_synthesized: false,
-            });
+            collected
+                .frames
+                .push(remap_class_only(&frame, frame.file()));
             return collected;
         };
 
@@ -565,35 +617,31 @@ impl<'s> ProguardMapper<'s> {
             // If the stacktrace has no line number, treat it as unknown and remap without
             // applying line filters. If there are base (no-line) mappings present, prefer those.
             if frame.line == 0 {
-                let preferred: Vec<_> = if has_line_info {
-                    let base: Vec<_> = mapping_entries.iter().filter(|m| m.endline == 0).collect();
-                    if base.is_empty() {
-                        mapping_entries.iter().collect()
-                    } else {
-                        base
-                    }
-                } else {
-                    mapping_entries.iter().collect()
-                };
-
-                let mut members_iter = preferred.iter().copied();
-                let Some(first) = members_iter.next() else {
-                    return collected;
-                };
-
-                let unambiguous = members_iter.all(|m| m.original == first.original);
-                if unambiguous {
-                    collected
-                        .frames
-                        .push(map_member_without_lines(&frame, first));
-                    collected.rewrite_rules.extend(first.rewrite_rules.iter());
-                } else {
-                    for member in preferred {
+                let selection = select_no_line_members(mapping_entries, has_line_info);
+                match selection {
+                    Some(NoLineSelection::Single(member)) => {
                         collected
                             .frames
                             .push(map_member_without_lines(&frame, member));
                         collected.rewrite_rules.extend(member.rewrite_rules.iter());
                     }
+                    Some(NoLineSelection::IterateAll) => {
+                        for member in mapping_entries {
+                            collected
+                                .frames
+                                .push(map_member_without_lines(&frame, member));
+                            collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                        }
+                    }
+                    Some(NoLineSelection::IterateBase) => {
+                        for member in mapping_entries.iter().filter(|m| m.endline == 0) {
+                            collected
+                                .frames
+                                .push(map_member_without_lines(&frame, member));
+                            collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                        }
+                    }
+                    None => return collected,
                 }
                 return collected;
             }

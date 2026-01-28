@@ -159,7 +159,7 @@ com.android.tools.r8.Internal -> com.android.tools.r8.Internal:
 fn test_ambiguous_multiple_inline_stacktrace() {
     let input = "\
 java.lang.IndexOutOfBoundsException
-	at com.android.tools.r8.Internal.zza(SourceFile:10)
+    at com.android.tools.r8.Internal.zza(SourceFile:10)
 ";
 
     let expected = "\
@@ -199,9 +199,9 @@ com.android.tools.r8.naming.retrace.Main -> a.a:
 fn test_ambiguous_method_verbose_stacktrace() {
     let input = "\
 Exception in thread \"main\" java.lang.NullPointerException
-	at a.a.c(Foo.java)
-	at a.a.b(Bar.java)
-	at a.a.a(Baz.java)
+    at a.a.c(Foo.java)
+    at a.a.b(Bar.java)
+    at a.a.a(Baz.java)
 ";
 
     let expected = "\
@@ -240,13 +240,13 @@ com.android.tools.r8.Internal -> com.android.tools.r8.Internal:
 fn test_ambiguous_with_multiple_line_mappings_stacktrace() {
     let input = "\
 java.lang.IndexOutOfBoundsException
-	at java.util.ArrayList.get(ArrayList.java:411)
-	at com.android.tools.r8.Internal.zza(Unknown)
+    at java.util.ArrayList.get(ArrayList.java:411)
+    at com.android.tools.r8.Internal.zza(Unknown)
 ";
 
     let expected = "\
 java.lang.IndexOutOfBoundsException
-	at java.util.ArrayList.get(ArrayList.java:411)
+    at java.util.ArrayList.get(ArrayList.java:411)
     at com.android.tools.r8.Internal.foo(Internal.java:0)
 ";
 
@@ -280,13 +280,13 @@ com.android.tools.r8.Internal -> com.android.tools.r8.Internal:
 fn test_ambiguous_with_signature_stacktrace() {
     let input = "\
 java.lang.IndexOutOfBoundsException
-	at java.util.ArrayList.get(ArrayList.java:411)
-	at com.android.tools.r8.Internal.zza(Unknown)
+    at java.util.ArrayList.get(ArrayList.java:411)
+    at com.android.tools.r8.Internal.zza(Unknown)
 ";
 
     let expected = "\
 java.lang.IndexOutOfBoundsException
-	at java.util.ArrayList.get(ArrayList.java:411)
+    at java.util.ArrayList.get(ArrayList.java:411)
     at com.android.tools.r8.Internal.foo(Internal.java:0)
 ";
 
@@ -319,7 +319,7 @@ retrace.Main -> a:
 fn test_inline_no_line_assume_no_inline_ambiguous_stacktrace() {
     let input = "\
 Exception in thread \"main\" java.lang.NullPointerException
-	at a.foo(Unknown Source)
+    at a.foo(Unknown Source)
 ";
 
     // When no line info is available, prefer base (no-line) mappings if present.

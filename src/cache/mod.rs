@@ -74,6 +74,7 @@ mod raw;
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::fmt::Write;
 
 use thiserror::Error;
@@ -971,6 +972,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
                     &frame,
                     members.as_slice(),
                     self.outer_source_file,
+                    frame.file().is_none(),
                 )?;
                 return self.enqueue_frames(frames);
             }
@@ -1026,7 +1028,27 @@ fn collect_no_line_frames<'a>(
     frame: &StackFrame<'a>,
     members: &[raw::Member],
     outer_source_file: Option<&str>,
+    include_line_ranged: bool,
 ) -> Option<Vec<StackFrame<'a>>> {
+    if include_line_ranged {
+        let mut seen = HashSet::new();
+        let mut frames = Vec::new();
+        for member in members {
+            if !seen.insert((member.original_class_offset, member.original_name_offset)) {
+                continue;
+            }
+            let mut mapped = map_member_without_lines(cache, frame, member, outer_source_file)?;
+            mapped.line = 0;
+            frames.push(mapped);
+        }
+
+        return if frames.is_empty() {
+            None
+        } else {
+            Some(frames)
+        };
+    }
+
     let selection = select_no_line_selection(members);
     let (candidates, suppress_line) = match selection {
         NoLineSelection::ExplicitBase(candidates, suppress_line) => (candidates, suppress_line),

@@ -635,11 +635,19 @@ fn parse_proguard_field_or_method(
             })?;
             let original_class = split_class.next();
 
-            let line_mapping = match (startline, endline) {
-                (Some(startline), Some(endline)) => Some(LineMapping {
+            let line_mapping = match (startline, endline, original_startline) {
+                (Some(startline), Some(endline), _) => Some(LineMapping {
                     startline,
                     endline,
                     original_startline,
+                    original_endline,
+                }),
+                // Preserve original line info even when no minified range is present.
+                // This enables this crate to use the original line for no-line mappings.
+                (None, None, Some(original_startline)) => Some(LineMapping {
+                    startline: 0,
+                    endline: 0,
+                    original_startline: Some(original_startline),
                     original_endline,
                 }),
                 _ => None,

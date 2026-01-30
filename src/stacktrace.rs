@@ -286,8 +286,8 @@ pub(crate) fn parse_frame(line: &str) -> Option<StackFrame<'_>> {
 
     let (method_split, file_split) = line[3..line.len() - 1].split_once('(')?;
     let (class, method) = method_split.rsplit_once('.')?;
-    let (file, line) = match file_split.split_once(':') {
-        Some((file, line)) => (file, line.parse().ok()?),
+    let (file, line) = match file_split.rsplit_once(':') {
+        Some((file, line)) => (file, line.parse().unwrap_or(0)),
         None => (file_split, 0),
     };
 

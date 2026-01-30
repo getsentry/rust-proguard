@@ -10,6 +10,10 @@ use crate::builder::{
 use crate::java;
 use crate::mapping::ProguardMapping;
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
+use crate::utils::{
+    class_name_to_descriptor, extract_class_name, resolve_no_line_output_line,
+    synthesize_source_file,
+};
 
 /// A deobfuscated method signature.
 pub struct DeobfuscatedSignature {
@@ -98,6 +102,20 @@ struct CollectedFrames<'s> {
 
 type MemberIter<'m> = std::slice::Iter<'m, MemberMapping<'m>>;
 
+const NO_MINIFIED_RANGE: usize = usize::MAX;
+
+fn is_implicit_no_range(member: &MemberMapping<'_>) -> bool {
+    member.startline == NO_MINIFIED_RANGE && member.endline == NO_MINIFIED_RANGE
+}
+
+fn is_explicit_base(member: &MemberMapping<'_>) -> bool {
+    member.startline == 0 && member.endline == 0
+}
+
+fn has_line_range(member: &MemberMapping<'_>) -> bool {
+    !is_implicit_no_range(member) && member.endline > 0
+}
+
 /// An Iterator over remapped StackFrames.
 #[derive(Clone, Debug, Default)]
 pub struct RemappedFrameIter<'m> {
@@ -132,61 +150,24 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     }
 }
 
-fn extract_class_name(full_path: &str) -> Option<&str> {
-    let after_last_period = full_path.split('.').next_back()?;
-    // If the class is an inner class, we need to extract the outer class name
-    after_last_period.split('$').next()
-}
-
-fn class_name_to_descriptor(class: &str) -> String {
-    let mut descriptor = String::with_capacity(class.len() + 2);
-    descriptor.push('L');
-    descriptor.push_str(&class.replace('.', "/"));
-    descriptor.push(';');
-    descriptor
-}
-
-/// Synthesizes a full source file name from a class name and a reference source file.
-/// For Kotlin top-level classes ending in "Kt", the suffix is stripped and ".kt" is used.
-/// Otherwise, the extension is derived from the reference file, defaulting to ".java".
-/// For example: ("com.example.MainKt", Some("Other.java")) -> "Main.kt" (Kt suffix takes precedence)
-/// For example: ("com.example.Main", Some("Other.kt")) -> "Main.kt"
-/// For example: ("com.example.MainKt", None) -> "Main.kt"
-/// For inner classes: ("com.example.Main$Inner", None) -> "Main.java"
-fn synthesize_source_file(class_name: &str, reference_file: Option<&str>) -> Option<String> {
-    let base = extract_class_name(class_name)?;
-
-    // For Kotlin top-level classes (ending in "Kt"), always use .kt extension and strip suffix
-    // This takes precedence over reference_file since Kt suffix is a strong Kotlin indicator
-    if base.ends_with("Kt") && base.len() > 2 {
-        let kotlin_base = &base[..base.len() - 2];
-        return Some(format!("{}.kt", kotlin_base));
-    }
-
-    // If we have a reference file, derive extension from it
-    if let Some(ext) = reference_file.and_then(|f| f.rfind('.').map(|pos| &f[pos..])) {
-        return Some(format!("{}{}", base, ext));
-    }
-
-    Some(format!("{}.java", base))
-}
-
 fn map_member_with_lines<'a>(
     frame: &StackFrame<'a>,
     member: &MemberMapping<'a>,
 ) -> Option<StackFrame<'a>> {
-    if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline) {
+    if has_line_range(member)
+        && member.startline <= member.endline
+        && (frame.line < member.startline || frame.line > member.endline)
+    {
         return None;
     }
 
     // parents of inlined frames don't have an `endline`, and
     // the top inlined frame need to be correctly offset.
-    let line = if member.original_endline.is_none()
-        || member.original_endline == Some(member.original_startline)
-    {
-        member.original_startline
-    } else {
-        member.original_startline + frame.line - member.startline
+    let line = match member.original_endline {
+        None => member.original_startline,
+        Some(end) if end < member.original_startline => frame.line,
+        Some(end) if end == member.original_startline => member.original_startline,
+        Some(_) => member.original_startline + frame.line - member.startline,
     };
 
     let class = member.original_class.unwrap_or(frame.class);
@@ -220,15 +201,139 @@ fn map_member_without_lines<'a>(
     let class = member.original_class.unwrap_or(frame.class);
     // Synthesize from class name (input filename is not reliable)
     let file = synthesize_source_file(class, member.outer_source_file).map(Cow::Owned);
+    let original_startline = if member.original_startline > 0 {
+        Some(member.original_startline)
+    } else {
+        None
+    };
+    let line = resolve_no_line_output_line(
+        frame.line,
+        original_startline,
+        member.startline,
+        member.endline,
+    );
     StackFrame {
         class,
         method: member.original,
         file,
-        // Preserve input line if present (e.g. "Unknown Source:7") when the mapping itself
-        // has no line information. This matches R8 retrace behavior.
-        line: frame.line,
+        // Preserve input line when available, unless this is an explicit 0:0 mapping with
+        // an original line (which should take precedence in R8 retrace behavior).
+        line,
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized,
+    }
+}
+
+fn remap_class_only<'a>(frame: &StackFrame<'a>, reference_file: Option<&str>) -> StackFrame<'a> {
+    let file = synthesize_source_file(frame.class, reference_file).map(Cow::Owned);
+    StackFrame {
+        class: frame.class,
+        method: frame.method,
+        file,
+        line: frame.line,
+        parameters: frame.parameters,
+        method_synthesized: false,
+    }
+}
+
+enum NoLineSelection<'a> {
+    ExplicitBase(Vec<&'a MemberMapping<'a>>, bool),
+    ImplicitNoRange(Vec<&'a MemberMapping<'a>>, bool),
+    All(Vec<&'a MemberMapping<'a>>, bool),
+}
+
+fn select_no_line_selection<'a>(mapping_entries: &'a [MemberMapping<'a>]) -> NoLineSelection<'a> {
+    let explicit_base: Vec<_> = mapping_entries
+        .iter()
+        .filter(|m| is_explicit_base(m))
+        .collect();
+    if !explicit_base.is_empty() {
+        let has_span = explicit_base.iter().any(|m| {
+            m.original_endline
+                .is_some_and(|end| end > m.original_startline)
+        });
+        return NoLineSelection::ExplicitBase(explicit_base, has_span);
+    }
+
+    let implicit_no_range: Vec<_> = mapping_entries
+        .iter()
+        .filter(|m| is_implicit_no_range(m))
+        .collect();
+    if !implicit_no_range.is_empty() {
+        let suppress_line = implicit_no_range.len() > 1;
+        let mut implicit_no_range = implicit_no_range;
+        implicit_no_range.sort_by_key(|m| {
+            if m.original_startline > 0 {
+                m.original_startline
+            } else {
+                usize::MAX
+            }
+        });
+        return NoLineSelection::ImplicitNoRange(implicit_no_range, suppress_line);
+    }
+
+    NoLineSelection::All(mapping_entries.iter().collect(), true)
+}
+
+fn collect_no_line_frames<'a>(
+    frame: &StackFrame<'a>,
+    mapping_entries: &'a [MemberMapping<'a>],
+    collected: &mut CollectedFrames<'a>,
+) {
+    let selection = select_no_line_selection(mapping_entries);
+    let (candidates, suppress_line) = match selection {
+        NoLineSelection::ExplicitBase(candidates, suppress_line) => (candidates, suppress_line),
+        NoLineSelection::ImplicitNoRange(candidates, suppress_line) => (candidates, suppress_line),
+        NoLineSelection::All(candidates, suppress_line) => (candidates, suppress_line),
+    };
+
+    let Some(first) = candidates.first().copied() else {
+        return;
+    };
+    let all_same = candidates.iter().all(|m| m.original == first.original);
+    let iter_candidates: Vec<_> = if all_same { vec![first] } else { candidates };
+
+    for member in iter_candidates {
+        let mut mapped = map_member_without_lines(frame, member);
+        if suppress_line {
+            mapped.line = 0;
+        } else if is_implicit_no_range(member) && member.original_startline > 0 {
+            mapped.line = member.original_startline;
+        }
+        collected.frames.push(mapped);
+        collected.rewrite_rules.extend(member.rewrite_rules.iter());
+    }
+}
+
+fn collect_base_frames_with_line<'a>(
+    frame: &StackFrame<'a>,
+    mapping_entries: &'a [MemberMapping<'a>],
+    collected: &mut CollectedFrames<'a>,
+) {
+    for member in mapping_entries {
+        let is_base = is_explicit_base(member);
+        let is_implicit = is_implicit_no_range(member);
+        if !(is_base || is_implicit) {
+            continue;
+        }
+        if let Some(original_endline) = member.original_endline {
+            if original_endline > member.original_startline && member.original_startline > 0 {
+                for line in member.original_startline..=original_endline {
+                    let mut mapped = map_member_without_lines(frame, member);
+                    mapped.line = line;
+                    collected.frames.push(mapped);
+                    collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                }
+                continue;
+            }
+        }
+
+        let mut mapped = map_member_without_lines(frame, member);
+        if is_implicit && member.original_startline > 0 {
+            mapped.line = member.original_startline;
+        }
+        collected.frames.push(mapped);
+        collected.rewrite_rules.extend(member.rewrite_rules.iter());
     }
 }
 
@@ -270,13 +375,19 @@ fn iterate_with_lines<'a>(
     has_line_info: bool,
 ) -> Option<StackFrame<'a>> {
     for member in members {
-        // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
-        if has_line_info && frame.line > 0 && member.endline == 0 {
+        let is_base = is_explicit_base(member);
+        let is_implicit = is_implicit_no_range(member);
+        // If this method has line mappings, skip base and implicit entries when we have a line.
+        if has_line_info && frame.line > 0 && (is_base || is_implicit) {
             continue;
         }
-        // If the mapping entry has no line range, preserve the input line number (if any).
-        if member.endline == 0 {
-            return Some(map_member_without_lines(frame, member));
+        // If the mapping entry has no line range, remap without line filters.
+        if is_base || is_implicit {
+            let mut mapped = map_member_without_lines(frame, member);
+            if is_implicit && frame.line > 0 && member.original_startline > 0 {
+                mapped.line = member.original_startline;
+            }
+            return Some(mapped);
         }
         if let Some(mapped) = map_member_with_lines(frame, member) {
             return Some(mapped);
@@ -538,15 +649,9 @@ impl<'s> ProguardMapper<'s> {
         // This is especially important for stack frames where the method is not mapped or the
         // stacktrace does not contain sufficient information to resolve the method.
         let Some(members) = class.members.get(frame.method) else {
-            let file = synthesize_source_file(frame.class, frame.file()).map(Cow::Owned);
-            collected.frames.push(StackFrame {
-                class: frame.class,
-                method: frame.method,
-                file,
-                line: frame.line,
-                parameters: frame.parameters,
-                method_synthesized: false,
-            });
+            collected
+                .frames
+                .push(remap_class_only(&frame, frame.file()));
             return collected;
         };
 
@@ -560,57 +665,47 @@ impl<'s> ProguardMapper<'s> {
         };
 
         if frame.parameters.is_none() {
-            let has_line_info = mapping_entries.iter().any(|m| m.endline > 0);
+            let has_line_info = mapping_entries.iter().any(|m| has_line_range(m));
+            if frame.line > 0
+                && frame.file().is_some_and(|file| file.is_empty())
+                && mapping_entries.len() == 1
+                && is_implicit_no_range(&mapping_entries[0])
+            {
+                // Treat empty file names like "(:2)" as no-line info when there's only a single
+                // implicit no-range mapping (R8 falls back to the original line in that case).
+                frame.line = 0;
+            }
 
             // If the stacktrace has no line number, treat it as unknown and remap without
-            // applying line filters. If there are base (no-line) mappings present, prefer those.
+            // applying line filters. If there are explicit 0:0 mappings, prefer those.
             if frame.line == 0 {
-                let preferred: Vec<_> = if has_line_info {
-                    let base: Vec<_> = mapping_entries.iter().filter(|m| m.endline == 0).collect();
-                    if base.is_empty() {
-                        mapping_entries.iter().collect()
-                    } else {
-                        base
-                    }
-                } else {
-                    mapping_entries.iter().collect()
-                };
-
-                let mut members_iter = preferred.iter().copied();
-                let Some(first) = members_iter.next() else {
-                    return collected;
-                };
-
-                let unambiguous = members_iter.all(|m| m.original == first.original);
-                if unambiguous {
-                    collected
-                        .frames
-                        .push(map_member_without_lines(&frame, first));
-                    collected.rewrite_rules.extend(first.rewrite_rules.iter());
-                } else {
-                    for member in preferred {
-                        collected
-                            .frames
-                            .push(map_member_without_lines(&frame, member));
-                        collected.rewrite_rules.extend(member.rewrite_rules.iter());
-                    }
-                }
+                collect_no_line_frames(&frame, mapping_entries, &mut collected);
                 return collected;
             }
 
             for member in mapping_entries {
-                if has_line_info && member.endline == 0 {
+                let is_base = is_explicit_base(member);
+                let is_implicit = is_implicit_no_range(member);
+                if has_line_info && (is_base || is_implicit) {
                     continue;
                 }
-                if member.endline == 0 {
-                    collected
-                        .frames
-                        .push(map_member_without_lines(&frame, member));
-                    collected.rewrite_rules.extend(member.rewrite_rules.iter());
+
+                if is_base || is_implicit {
+                    collect_base_frames_with_line(
+                        &frame,
+                        std::slice::from_ref(member),
+                        &mut collected,
+                    );
                 } else if let Some(mapped) = map_member_with_lines(&frame, member) {
                     collected.frames.push(mapped);
                     collected.rewrite_rules.extend(member.rewrite_rules.iter());
                 }
+            }
+
+            if collected.frames.is_empty() {
+                collected
+                    .frames
+                    .push(remap_class_only(&frame, frame.file()));
             }
         } else {
             for member in mapping_entries {
@@ -676,7 +771,7 @@ impl<'s> ProguardMapper<'s> {
             members.all_mappings.iter()
         };
 
-        let has_line_info = members.all_mappings.iter().any(|m| m.endline > 0);
+        let has_line_info = members.all_mappings.iter().any(|m| has_line_range(m));
         RemappedFrameIter::members(frame, mappings, has_line_info)
     }
 

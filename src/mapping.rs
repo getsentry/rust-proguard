@@ -635,11 +635,28 @@ fn parse_proguard_field_or_method(
             })?;
             let original_class = split_class.next();
 
-            let line_mapping = match (startline, endline) {
-                (Some(startline), Some(endline)) => Some(LineMapping {
+            let line_mapping = match (startline, endline, original_startline) {
+                (Some(startline), Some(endline), _) => Some(LineMapping {
                     startline,
                     endline,
                     original_startline,
+                    original_endline,
+                }),
+                // Preserve original line info even when no minified range is present.
+                // Use a sentinel to distinguish from an explicit 0:0 minified range, but keep
+                // an explicit 0:0 when the original line is also 0.
+                (None, None, Some(original_startline)) => Some(LineMapping {
+                    startline: if original_startline == 0 {
+                        0
+                    } else {
+                        usize::MAX
+                    },
+                    endline: if original_startline == 0 {
+                        0
+                    } else {
+                        usize::MAX
+                    },
+                    original_startline: Some(original_startline),
                     original_endline,
                 }),
                 _ => None,

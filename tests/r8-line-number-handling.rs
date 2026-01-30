@@ -51,8 +51,8 @@ fn test_no_obfuscation_range_mapping_with_stacktrace() {
     let expected = r#"Exception in thread "main" java.lang.NullPointerException
     at com.android.tools.r8.naming.retrace.Main.foo(Main.java:1)
     at com.android.tools.r8.naming.retrace.Main.bar(Main.java:3)
-    at com.android.tools.r8.naming.retrace.Main.baz(Main.java)
-    at com.android.tools.r8.naming.retrace.Main.main(Main.java)
+    at com.android.tools.r8.naming.retrace.Main.baz(Main.java:0)
+    at com.android.tools.r8.naming.retrace.Main.main(Main.java:0)
 "#;
 
     assert_remap_stacktrace(
@@ -204,7 +204,11 @@ fn test_no_obfuscated_line_number_with_override() {
     at com.android.tools.r8.naming.retrace.Main.mainPC(Main.java:42)
 "#;
 
-    assert_remap_stacktrace(NO_OBFUSCATED_LINE_NUMBER_WITH_OVERRIDE_MAPPING, input, expected);
+    assert_remap_stacktrace(
+        NO_OBFUSCATED_LINE_NUMBER_WITH_OVERRIDE_MAPPING,
+        input,
+        expected,
+    );
 }
 
 // =============================================================================
@@ -309,5 +313,3 @@ fn test_invalid_original_range_stacktrace() {
 
     assert_remap_stacktrace(INVALID_ORIGINAL_RANGE_MAPPING, input, expected);
 }
-
-

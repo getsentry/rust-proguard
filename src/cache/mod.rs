@@ -80,10 +80,27 @@ use thiserror::Error;
 
 use crate::builder::{RewriteAction, RewriteCondition, RewriteRule};
 use crate::mapper::{format_cause, format_frames, format_throwable};
+use crate::utils::{
+    class_name_to_descriptor, extract_class_name, resolve_no_line_output_line,
+    synthesize_source_file,
+};
 use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Throwable};
 
 pub use raw::{ProguardCache, PRGCACHE_VERSION};
 
+const NO_MINIFIED_RANGE: u32 = u32::MAX;
+
+fn is_implicit_no_range(member: &raw::Member) -> bool {
+    member.startline == NO_MINIFIED_RANGE && member.endline == NO_MINIFIED_RANGE
+}
+
+fn is_explicit_base(member: &raw::Member) -> bool {
+    member.startline == 0 && member.endline == 0
+}
+
+fn has_line_range(member: &raw::Member) -> bool {
+    !is_implicit_no_range(member) && member.endline > 0
+}
 /// Result of looking up member mappings for a frame.
 /// Contains: (members, prepared_frame, rewrite_rules, had_mappings, has_line_info, outer_source_file)
 type MemberLookupResult<'data> = (
@@ -154,6 +171,22 @@ impl From<CacheErrorKind> for CacheError {
 }
 
 impl<'data> ProguardCache<'data> {
+    fn remap_class_only(
+        &self,
+        frame: &StackFrame<'data>,
+        reference_file: Option<&'data str>,
+    ) -> StackFrame<'data> {
+        let file = synthesize_source_file(frame.class, reference_file).map(Cow::Owned);
+        StackFrame {
+            class: frame.class,
+            method: frame.method,
+            file,
+            line: frame.line,
+            parameters: frame.parameters,
+            method_synthesized: false,
+        }
+    }
+
     fn get_class(&self, name: &str) -> Option<&raw::Class> {
         let idx = self
             .classes
@@ -369,8 +402,10 @@ impl<'data> ProguardCache<'data> {
         if prepared_frame.parameters.is_none() {
             for member in mapping_entries {
                 // Check if this member would produce a frame (line matching)
-                if member.endline == 0
-                    || (prepared_frame.line >= member.startline as usize
+                if is_explicit_base(member)
+                    || is_implicit_no_range(member)
+                    || (has_line_range(member)
+                        && prepared_frame.line >= member.startline as usize
                         && prepared_frame.line <= member.endline as usize)
                 {
                     had_mappings = true;
@@ -385,7 +420,7 @@ impl<'data> ProguardCache<'data> {
             }
         }
 
-        let has_line_info = mapping_entries.iter().any(|m| m.endline > 0);
+        let has_line_info = mapping_entries.iter().any(has_line_range);
 
         Some((
             mapping_entries,
@@ -408,7 +443,7 @@ impl<'data> ProguardCache<'data> {
     ) -> RemappedFrameIter<'r, 'data> {
         let Some((
             members,
-            prepared_frame,
+            mut prepared_frame,
             _rewrite_rules,
             had_mappings,
             has_line_info,
@@ -417,6 +452,27 @@ impl<'data> ProguardCache<'data> {
         else {
             return RemappedFrameIter::empty();
         };
+
+        if prepared_frame.line > 0
+            && prepared_frame.file().is_some_and(|file| file.is_empty())
+            && members.len() == 1
+            && is_implicit_no_range(&members[0])
+        {
+            prepared_frame.line = 0;
+        }
+
+        if prepared_frame.line > 0 && !had_mappings {
+            let file =
+                synthesize_source_file(prepared_frame.class, outer_source_file).map(Cow::Owned);
+            return RemappedFrameIter::single(StackFrame {
+                class: prepared_frame.class,
+                method: prepared_frame.method,
+                file,
+                line: prepared_frame.line,
+                parameters: prepared_frame.parameters,
+                method_synthesized: false,
+            });
+        }
 
         RemappedFrameIter::members(
             self,
@@ -465,7 +521,7 @@ impl<'data> ProguardCache<'data> {
 
         let Some((
             members,
-            prepared_frame,
+            mut prepared_frame,
             rewrite_rules,
             had_mappings,
             has_line_info,
@@ -478,19 +534,37 @@ impl<'data> ProguardCache<'data> {
                     .read_string(class.original_name_offset)
                     .unwrap_or(effective.class);
                 let outer_source_file = self.read_string(class.file_name_offset).ok();
-                let file =
-                    synthesize_source_file(original_class, outer_source_file).map(Cow::Owned);
-                return Some(RemappedFrameIter::single(StackFrame {
-                    class: original_class,
-                    method: effective.method,
-                    file,
-                    line: effective.line,
-                    parameters: effective.parameters,
-                    method_synthesized: false,
-                }));
+                return Some(RemappedFrameIter::single(self.remap_class_only(
+                    &StackFrame {
+                        class: original_class,
+                        ..effective
+                    },
+                    outer_source_file,
+                )));
             }
             return Some(RemappedFrameIter::empty());
         };
+
+        if prepared_frame.line > 0
+            && prepared_frame.file().is_some_and(|file| file.is_empty())
+            && members.len() == 1
+            && is_implicit_no_range(&members[0])
+        {
+            prepared_frame.line = 0;
+        }
+
+        if prepared_frame.line > 0 && !had_mappings {
+            let file =
+                synthesize_source_file(prepared_frame.class, outer_source_file).map(Cow::Owned);
+            return Some(RemappedFrameIter::single(StackFrame {
+                class: prepared_frame.class,
+                method: prepared_frame.method,
+                file,
+                line: prepared_frame.line,
+                parameters: prepared_frame.parameters,
+                method_synthesized: false,
+            }));
+        }
 
         // Compute skip_count from rewrite rules
         let skip_count = if apply_rewrite {
@@ -814,8 +888,8 @@ pub struct RemappedFrameIter<'r, 'data> {
         StackFrame<'data>,
         std::slice::Iter<'data, raw::Member>,
     )>,
-    /// A single remapped frame fallback (e.g. class-only remapping).
-    fallback: Option<StackFrame<'data>>,
+    /// Precomputed frames (fallbacks, no-line, span expansions).
+    queued_frames: Vec<StackFrame<'data>>,
     /// Number of frames to skip from rewrite rules.
     skip_count: usize,
     /// Whether there were mapping entries (for should_skip determination).
@@ -827,10 +901,15 @@ pub struct RemappedFrameIter<'r, 'data> {
 }
 
 impl<'r, 'data> RemappedFrameIter<'r, 'data> {
+    fn enqueue_frames(&mut self, frames: Vec<StackFrame<'data>>) -> Option<StackFrame<'data>> {
+        self.queued_frames = frames.into_iter().rev().collect();
+        self.queued_frames.pop()
+    }
+
     fn empty() -> Self {
         Self {
             inner: None,
-            fallback: None,
+            queued_frames: Vec::new(),
             skip_count: 0,
             had_mappings: false,
             has_line_info: false,
@@ -849,7 +928,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
     ) -> Self {
         Self {
             inner: Some((cache, frame, members)),
-            fallback: None,
+            queued_frames: Vec::new(),
             skip_count,
             had_mappings,
             has_line_info,
@@ -860,7 +939,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
     fn single(frame: StackFrame<'data>) -> Self {
         Self {
             inner: None,
-            fallback: Some(frame),
+            queued_frames: vec![frame],
             skip_count: 0,
             had_mappings: false,
             has_line_info: false,
@@ -877,7 +956,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
     }
 
     fn next_inner(&mut self) -> Option<StackFrame<'data>> {
-        if let Some(frame) = self.fallback.take() {
+        if let Some(frame) = self.queued_frames.pop() {
             return Some(frame);
         }
 
@@ -887,76 +966,23 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             // If we have no line number, treat it as unknown. If there are base (no-line) mappings
             // present, prefer those over line-mapped entries.
             if frame.line == 0 {
-                let remaining = members.as_slice();
-                // Prefer base entries (endline == 0) if present.
-                let mut base_members = remaining.iter().filter(|m| m.endline == 0);
-                if let Some(first_base) = base_members.next() {
-                    // If all base entries resolve to the same original method name, deduplicate.
-                    let all_same = base_members.all(|m| {
-                        m.original_class_offset == first_base.original_class_offset
-                            && m.original_name_offset == first_base.original_name_offset
-                    });
+                let frames = collect_no_line_frames(
+                    cache,
+                    &frame,
+                    members.as_slice(),
+                    self.outer_source_file,
+                )?;
+                return self.enqueue_frames(frames);
+            }
 
-                    if all_same {
-                        let class = cache
-                            .read_string(first_base.original_class_offset)
-                            .unwrap_or(frame.class);
-                        let method = cache.read_string(first_base.original_name_offset).ok()?;
-                        let file =
-                            synthesize_source_file(class, self.outer_source_file).map(Cow::Owned);
-
-                        return Some(StackFrame {
-                            class,
-                            method,
-                            file,
-                            // Preserve input line if present when the mapping has no line info.
-                            line: frame.line,
-                            parameters: frame.parameters,
-                            method_synthesized: first_base.is_synthesized(),
-                        });
-                    }
-
-                    // Multiple distinct base entries: iterate them (skip line-mapped entries).
-                    let mapped = iterate_without_lines_preferring_base(
-                        cache,
-                        &mut frame,
-                        &mut members,
-                        self.outer_source_file,
-                    );
-                    self.inner = Some((cache, frame, members));
-                    return mapped;
-                }
-
-                // No base entries: fall back to existing behavior (may yield multiple candidates).
-                let first = remaining.first()?;
-                let unambiguous = remaining.iter().all(|m| {
-                    m.original_class_offset == first.original_class_offset
-                        && m.original_name_offset == first.original_name_offset
-                });
-
-                if unambiguous {
-                    let class = cache
-                        .read_string(first.original_class_offset)
-                        .unwrap_or(frame.class);
-                    let method = cache.read_string(first.original_name_offset).ok()?;
-                    let file =
-                        synthesize_source_file(class, self.outer_source_file).map(Cow::Owned);
-
-                    return Some(StackFrame {
-                        class,
-                        method,
-                        file,
-                        // Preserve input line if present when the mapping has no line info.
-                        line: frame.line,
-                        parameters: frame.parameters,
-                        method_synthesized: first.is_synthesized(),
-                    });
-                }
-
-                let mapped =
-                    iterate_without_lines(cache, &mut frame, &mut members, self.outer_source_file);
-                self.inner = Some((cache, frame, members));
-                return mapped;
+            if !self.has_line_info {
+                let frames = collect_base_frames_with_line(
+                    cache,
+                    &frame,
+                    members.as_slice(),
+                    self.outer_source_file,
+                )?;
+                return self.enqueue_frames(frames);
             }
 
             // With a concrete line number, skip base entries if there are line mappings.
@@ -995,6 +1021,115 @@ impl<'data> Iterator for RemappedFrameIter<'_, 'data> {
     }
 }
 
+fn collect_no_line_frames<'a>(
+    cache: &ProguardCache<'a>,
+    frame: &StackFrame<'a>,
+    members: &[raw::Member],
+    outer_source_file: Option<&str>,
+) -> Option<Vec<StackFrame<'a>>> {
+    let selection = select_no_line_selection(members);
+    let (candidates, suppress_line) = match selection {
+        NoLineSelection::ExplicitBase(candidates, suppress_line) => (candidates, suppress_line),
+        NoLineSelection::ImplicitNoRange(candidates, suppress_line) => (candidates, suppress_line),
+        NoLineSelection::All(candidates, suppress_line) => (candidates, suppress_line),
+    };
+
+    let first = candidates.first().copied()?;
+    let all_same = candidates.iter().all(|m| {
+        m.original_class_offset == first.original_class_offset
+            && m.original_name_offset == first.original_name_offset
+    });
+    let iter_candidates: Vec<_> = if all_same { vec![first] } else { candidates };
+
+    let mut frames = Vec::new();
+    for member in iter_candidates {
+        let mut mapped = map_member_without_lines(cache, frame, member, outer_source_file)?;
+        if suppress_line {
+            mapped.line = 0;
+        } else if is_implicit_no_range(member) && member.original_startline > 0 {
+            mapped.line = member.original_startline as usize;
+        }
+        frames.push(mapped);
+    }
+
+    if frames.is_empty() {
+        None
+    } else {
+        Some(frames)
+    }
+}
+
+enum NoLineSelection<'a> {
+    ExplicitBase(Vec<&'a raw::Member>, bool),
+    ImplicitNoRange(Vec<&'a raw::Member>, bool),
+    All(Vec<&'a raw::Member>, bool),
+}
+
+fn select_no_line_selection<'a>(members: &'a [raw::Member]) -> NoLineSelection<'a> {
+    let explicit_base: Vec<_> = members.iter().filter(|m| is_explicit_base(m)).collect();
+    if !explicit_base.is_empty() {
+        let has_span = explicit_base
+            .iter()
+            .any(|m| m.original_endline != u32::MAX && m.original_endline > m.original_startline);
+        return NoLineSelection::ExplicitBase(explicit_base, has_span);
+    }
+
+    let implicit_no_range: Vec<_> = members.iter().filter(|m| is_implicit_no_range(m)).collect();
+    if !implicit_no_range.is_empty() {
+        let suppress_line = implicit_no_range.len() > 1;
+        let mut implicit_no_range = implicit_no_range;
+        implicit_no_range.sort_by_key(|m| {
+            if m.original_startline > 0 {
+                m.original_startline
+            } else {
+                u32::MAX
+            }
+        });
+        return NoLineSelection::ImplicitNoRange(implicit_no_range, suppress_line);
+    }
+
+    NoLineSelection::All(members.iter().collect(), true)
+}
+
+fn collect_base_frames_with_line<'a>(
+    cache: &ProguardCache<'a>,
+    frame: &StackFrame<'a>,
+    members: &[raw::Member],
+    outer_source_file: Option<&str>,
+) -> Option<Vec<StackFrame<'a>>> {
+    let mut frames = Vec::new();
+    for member in members {
+        let is_base = is_explicit_base(member);
+        let is_implicit = is_implicit_no_range(member);
+        if !(is_base || is_implicit) {
+            continue;
+        }
+        if member.original_endline != u32::MAX
+            && member.original_endline > member.original_startline
+            && member.original_startline > 0
+        {
+            for line in member.original_startline..=member.original_endline {
+                let mut mapped = map_member_without_lines(cache, frame, member, outer_source_file)?;
+                mapped.line = line as usize;
+                frames.push(mapped);
+            }
+            continue;
+        }
+
+        let mut mapped = map_member_without_lines(cache, frame, member, outer_source_file)?;
+        if is_implicit && member.original_startline > 0 {
+            mapped.line = member.original_startline as usize;
+        }
+        frames.push(mapped);
+    }
+
+    if frames.is_empty() {
+        None
+    } else {
+        Some(frames)
+    }
+}
+
 fn iterate_with_lines<'a>(
     cache: &ProguardCache<'a>,
     frame: &mut StackFrame<'a>,
@@ -1003,41 +1138,34 @@ fn iterate_with_lines<'a>(
     has_line_info: bool,
 ) -> Option<StackFrame<'a>> {
     for member in members {
-        // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
-        if has_line_info && frame.line > 0 && member.endline == 0 {
+        let is_base = is_explicit_base(member);
+        let is_implicit = is_implicit_no_range(member);
+        // If this method has line mappings, skip base and implicit entries when we have a line.
+        if has_line_info && frame.line > 0 && (is_base || is_implicit) {
             continue;
         }
-        // If the mapping entry has no line range, preserve the input line number (if any).
-        if member.endline == 0 {
-            let class = cache
-                .read_string(member.original_class_offset)
-                .unwrap_or(frame.class);
-
-            let method = cache.read_string(member.original_name_offset).ok()?;
-
-            // Synthesize from class name (input filename is not reliable)
-            let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
-
-            return Some(StackFrame {
-                class,
-                method,
-                file,
-                line: frame.line,
-                parameters: frame.parameters,
-                method_synthesized: member.is_synthesized(),
-            });
+        // If the mapping entry has no line range, remap without line filters.
+        if is_base || is_implicit {
+            let mut mapped = map_member_without_lines(cache, frame, member, outer_source_file)?;
+            if is_implicit && frame.line > 0 && member.original_startline > 0 {
+                mapped.line = member.original_startline as usize;
+            }
+            return Some(mapped);
         }
         // skip any members which do not match our frames line
-        if member.endline > 0
+        if has_line_range(member)
+            && member.startline <= member.endline
             && (frame.line < member.startline as usize || frame.line > member.endline as usize)
         {
             continue;
         }
         // parents of inlined frames don't have an `endline`, and
         // the top inlined frame need to be correctly offset.
-        let line = if member.original_endline == u32::MAX
-            || member.original_endline == member.original_startline
-        {
+        let line = if member.original_endline == u32::MAX {
+            member.original_startline as usize
+        } else if member.original_endline < member.original_startline {
+            frame.line
+        } else if member.original_endline == member.original_startline {
             member.original_startline as usize
         } else {
             member.original_startline as usize + frame.line - member.startline as usize
@@ -1078,37 +1206,36 @@ fn iterate_with_lines<'a>(
     None
 }
 
-fn iterate_without_lines_preferring_base<'a>(
+fn map_member_without_lines<'a>(
     cache: &ProguardCache<'a>,
-    frame: &mut StackFrame<'a>,
-    members: &mut std::slice::Iter<'_, raw::Member>,
+    frame: &StackFrame<'a>,
+    member: &raw::Member,
     outer_source_file: Option<&str>,
 ) -> Option<StackFrame<'a>> {
-    for member in members {
-        if member.endline != 0 {
-            continue;
-        }
+    let class = cache
+        .read_string(member.original_class_offset)
+        .unwrap_or(frame.class);
+    let method = cache.read_string(member.original_name_offset).ok()?;
+    let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
 
-        let class = cache
-            .read_string(member.original_class_offset)
-            .unwrap_or(frame.class);
+    let original_startline = match member.original_startline {
+        0 | u32::MAX => None,
+        value => Some(value as usize),
+    };
 
-        let method = cache.read_string(member.original_name_offset).ok()?;
-
-        // Synthesize from class name (input filename is not reliable)
-        let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
-
-        return Some(StackFrame {
-            class,
-            method,
-            file,
-            // Preserve input line if present when the mapping has no line info.
-            line: frame.line,
-            parameters: frame.parameters,
-            method_synthesized: member.is_synthesized(),
-        });
-    }
-    None
+    Some(StackFrame {
+        class,
+        method,
+        file,
+        line: resolve_no_line_output_line(
+            frame.line,
+            original_startline,
+            member.startline as usize,
+            member.endline as usize,
+        ),
+        parameters: frame.parameters,
+        method_synthesized: member.is_synthesized(),
+    })
 }
 
 fn iterate_without_lines<'a>(
@@ -1128,57 +1255,24 @@ fn iterate_without_lines<'a>(
     // Synthesize from class name (input filename is not reliable)
     let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
 
+    let original_startline = match member.original_startline {
+        0 | u32::MAX => None,
+        value => Some(value as usize),
+    };
+
     Some(StackFrame {
         class,
         method,
         file,
-        // Preserve input line if present when the mapping has no line info.
-        line: frame.line,
+        line: resolve_no_line_output_line(
+            frame.line,
+            original_startline,
+            member.startline as usize,
+            member.endline as usize,
+        ),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
     })
-}
-
-fn extract_class_name(full_path: &str) -> Option<&str> {
-    let after_last_period = full_path.split('.').next_back()?;
-    // If the class is an inner class, we need to extract the outer class name
-    after_last_period.split('$').next()
-}
-
-/// Synthesizes a source file name from a class name.
-/// For Kotlin top-level classes ending in "Kt", the suffix is stripped and ".kt" is used.
-/// Otherwise, the extension is derived from the reference file, defaulting to ".java".
-/// For example: ("com.example.MainKt", Some("Other.java")) -> "Main.kt" (Kt suffix takes precedence)
-/// For example: ("com.example.Main", Some("Other.kt")) -> "Main.kt"
-/// For example: ("com.example.MainKt", None) -> "Main.kt"
-/// For inner classes: ("com.example.Main$Inner", None) -> "Main.java"
-fn synthesize_source_file(class_name: &str, reference_file: Option<&str>) -> Option<String> {
-    let base = extract_class_name(class_name)?;
-
-    // For Kotlin top-level classes (ending in "Kt"), always use .kt extension and strip suffix
-    // This takes precedence over reference_file since Kt suffix is a strong Kotlin indicator
-    if base.ends_with("Kt") && base.len() > 2 {
-        let kotlin_base = &base[..base.len() - 2];
-        return Some(format!("{}.kt", kotlin_base));
-    }
-
-    // If we have a reference file, derive extension from it
-    if let Some(ext) = reference_file.and_then(|f| f.rfind('.').map(|pos| &f[pos..])) {
-        return Some(format!("{}{}", base, ext));
-    }
-
-    Some(format!("{}.java", base))
-}
-
-/// Converts a Java class name to its JVM descriptor format.
-///
-/// For example, `java.lang.NullPointerException` becomes `Ljava/lang/NullPointerException;`.
-pub fn class_name_to_descriptor(class: &str) -> String {
-    let mut descriptor = String::with_capacity(class.len() + 2);
-    descriptor.push('L');
-    descriptor.push_str(&class.replace('.', "/"));
-    descriptor.push(';');
-    descriptor
 }
 
 /// Computes the number of frames to skip based on rewrite rules.

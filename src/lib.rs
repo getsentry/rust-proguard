@@ -42,13 +42,13 @@ mod java;
 mod mapper;
 mod mapping;
 mod stacktrace;
+mod utils;
 
-pub use cache::{
-    class_name_to_descriptor, CacheError, CacheErrorKind, ProguardCache, PRGCACHE_VERSION,
-};
+pub use cache::{CacheError, CacheErrorKind, ProguardCache, PRGCACHE_VERSION};
 pub use mapper::{DeobfuscatedSignature, ProguardMapper, RemappedFrameIter};
 pub use mapping::{
     LineMapping, MappingSummary, ParseError, ParseErrorKind, ProguardMapping, ProguardRecord,
     ProguardRecordIter,
 };
 pub use stacktrace::{StackFrame, StackTrace, Throwable};
+pub use utils::class_name_to_descriptor;

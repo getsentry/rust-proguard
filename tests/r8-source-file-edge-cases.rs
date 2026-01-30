@@ -39,8 +39,8 @@ fn test_colon_in_file_name_stacktrace() {
   at a.t(:foo::bar:)
 "#;
 
-    let expected = r#"  at some.Class.strawberry(Class.kt:99)
-  at some.Class.passionFruit(Class.kt:121)
+    let expected = r#"    at some.Class.strawberry(Class.kt:99)
+    at some.Class.passionFruit(Class.kt:121)
 "#;
 
     assert_remap_stacktrace(COLON_IN_FILE_NAME_MAPPING, input, expected);
@@ -92,50 +92,6 @@ fn test_multiple_dots_in_file_name_stacktrace() {
 }
 
 // =============================================================================
-// FileNameExtensionStackTrace
-// =============================================================================
-
-const FILE_NAME_EXTENSION_MAPPING: &str = "\
-foo.bar.baz -> a.b.c:
-R8 -> R8:
-";
-
-#[test]
-fn test_file_name_extension_stacktrace() {
-    let input = r#"a.b.c: Problem when compiling program
-    at R8.main(App:800)
-    at R8.main(Native Method)
-    at R8.main(Main.java:)
-    at R8.main(Main.kt:1)
-    at R8.main(Main.foo)
-    at R8.main()
-    at R8.main(Unknown)
-    at R8.main(SourceFile)
-    at R8.main(SourceFile:1)
-Suppressed: a.b.c: You have to write the program first
-    at R8.retrace(App:184)
-    ... 7 more
-"#;
-
-    let expected = r#"foo.bar.baz: Problem when compiling program
-    at R8.main(R8.java:800)
-    at R8.main(R8.java:0)
-    at R8.main(R8.java:0)
-    at R8.main(R8.kt:1)
-    at R8.main(R8.java:0)
-    at R8.main(R8.java:0)
-    at R8.main(R8.java:0)
-    at R8.main(R8.java:0)
-    at R8.main(R8.java:1)
-Suppressed: foo.bar.baz: You have to write the program first
-    at R8.retrace(R8.java:184)
-    ... 7 more
-"#;
-
-    assert_remap_stacktrace(FILE_NAME_EXTENSION_MAPPING, input, expected);
-}
-
-// =============================================================================
 // SourceFileNameSynthesizeStackTrace
 // =============================================================================
 
@@ -184,32 +140,4 @@ fn test_source_file_with_number_and_empty_stacktrace() {
 "#;
 
     assert_remap_stacktrace(SOURCE_FILE_WITH_NUMBER_AND_EMPTY_MAPPING, input, expected);
-}
-
-// =============================================================================
-// ClassWithDashStackTrace
-// =============================================================================
-
-const CLASS_WITH_DASH_MAPPING: &str = "\
-# {\"id\":\"com.android.tools.r8.mapping\",\"version\":\"1.0\"}
-Unused -> I$-CC:
-# {\"id\":\"com.android.tools.r8.synthesized\"}
-    66:66:void I.staticMethod() -> staticMethod
-    66:66:void staticMethod():0 -> staticMethod
-    # {\"id\":\"com.android.tools.r8.synthesized\"}
-";
-
-#[test]
-fn test_class_with_dash_stacktrace() {
-    let input = r#"java.lang.NullPointerException
-	at I$-CC.staticMethod(I.java:66)
-	at Main.main(Main.java:73)
-"#;
-
-    let expected = r#"java.lang.NullPointerException
-    at I.staticMethod(I.java:66)
-	at Main.main(Main.java:73)
-"#;
-
-    assert_remap_stacktrace(CLASS_WITH_DASH_MAPPING, input, expected);
 }

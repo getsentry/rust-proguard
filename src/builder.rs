@@ -291,9 +291,11 @@ impl<'s> ParsedProguardMapping<'s> {
                     } else {
                         None
                     };
-                    // in case the mapping has no line records, we use `0` here.
-                    let (startline, endline) =
-                        line_mapping.as_ref().map_or((0, 0), |line_mapping| {
+                    // If the mapping has no line records, use a sentinel to distinguish from
+                    // an explicit 0:0 minified range.
+                    let (startline, endline) = line_mapping
+                        .as_ref()
+                        .map_or((usize::MAX, usize::MAX), |line_mapping| {
                             (line_mapping.startline, line_mapping.endline)
                         });
                     let (original_startline, original_endline) =

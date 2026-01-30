@@ -643,10 +643,19 @@ fn parse_proguard_field_or_method(
                     original_endline,
                 }),
                 // Preserve original line info even when no minified range is present.
-                // This enables this crate to use the original line for no-line mappings.
+                // Use a sentinel to distinguish from an explicit 0:0 minified range, but keep
+                // an explicit 0:0 when the original line is also 0.
                 (None, None, Some(original_startline)) => Some(LineMapping {
-                    startline: 0,
-                    endline: 0,
+                    startline: if original_startline == 0 {
+                        0
+                    } else {
+                        usize::MAX
+                    },
+                    endline: if original_startline == 0 {
+                        0
+                    } else {
+                        usize::MAX
+                    },
                     original_startline: Some(original_startline),
                     original_endline,
                 }),

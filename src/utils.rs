@@ -1,16 +1,19 @@
 //! Internal helpers shared across modules.
 
-/// For no-line mappings, prefer the original line if the mapping has no minified range.
+/// For explicit 0:0 mappings, prefer the original line when available.
+/// Otherwise, preserve the input line when present.
 pub(crate) fn resolve_no_line_output_line(
     frame_line: usize,
     original_startline: Option<usize>,
     startline: usize,
     endline: usize,
 ) -> usize {
-    if frame_line > 0 {
+    if startline == 0 && endline == 0 {
+        original_startline
+            .filter(|value| *value > 0 && *value != usize::MAX)
+            .unwrap_or(0)
+    } else if frame_line > 0 {
         frame_line
-    } else if startline == 0 && endline == 0 {
-        original_startline.unwrap_or(0)
     } else {
         0
     }

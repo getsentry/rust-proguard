@@ -80,6 +80,10 @@ use thiserror::Error;
 
 use crate::builder::{RewriteAction, RewriteCondition, RewriteRule};
 use crate::mapper::{format_cause, format_frames, format_throwable};
+use crate::utils::{
+    class_name_to_descriptor, extract_class_name, resolve_no_line_output_line,
+    synthesize_source_file,
+};
 use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Throwable};
 
 pub use raw::{ProguardCache, PRGCACHE_VERSION};
@@ -1214,15 +1218,20 @@ fn map_member_without_lines<'a>(
     let method = cache.read_string(member.original_name_offset).ok()?;
     let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
 
+    let original_startline = match member.original_startline {
+        0 | u32::MAX => None,
+        value => Some(value as usize),
+    };
+
     Some(StackFrame {
         class,
         method,
         file,
         line: resolve_no_line_output_line(
             frame.line,
-            member.original_startline,
-            member.startline,
-            member.endline,
+            original_startline,
+            member.startline as usize,
+            member.endline as usize,
         ),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
@@ -1246,81 +1255,24 @@ fn iterate_without_lines<'a>(
     // Synthesize from class name (input filename is not reliable)
     let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
 
+    let original_startline = match member.original_startline {
+        0 | u32::MAX => None,
+        value => Some(value as usize),
+    };
+
     Some(StackFrame {
         class,
         method,
         file,
         line: resolve_no_line_output_line(
             frame.line,
-            member.original_startline,
-            member.startline,
-            member.endline,
+            original_startline,
+            member.startline as usize,
+            member.endline as usize,
         ),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
     })
-}
-
-// For explicit 0:0 mappings, prefer the original line when available.
-fn resolve_no_line_output_line(
-    frame_line: usize,
-    original_startline: u32,
-    startline: u32,
-    endline: u32,
-) -> usize {
-    if startline == 0 && endline == 0 {
-        if original_startline > 0 && original_startline != u32::MAX {
-            original_startline as usize
-        } else {
-            0
-        }
-    } else if frame_line > 0 {
-        frame_line
-    } else {
-        0
-    }
-}
-
-fn extract_class_name(full_path: &str) -> Option<&str> {
-    let after_last_period = full_path.split('.').next_back()?;
-    // If the class is an inner class, we need to extract the outer class name
-    after_last_period.split('$').next()
-}
-
-/// Synthesizes a source file name from a class name.
-/// For Kotlin top-level classes ending in "Kt", the suffix is stripped and ".kt" is used.
-/// Otherwise, the extension is derived from the reference file, defaulting to ".java".
-/// For example: ("com.example.MainKt", Some("Other.java")) -> "Main.kt" (Kt suffix takes precedence)
-/// For example: ("com.example.Main", Some("Other.kt")) -> "Main.kt"
-/// For example: ("com.example.MainKt", None) -> "Main.kt"
-/// For inner classes: ("com.example.Main$Inner", None) -> "Main.java"
-fn synthesize_source_file(class_name: &str, reference_file: Option<&str>) -> Option<String> {
-    let base = extract_class_name(class_name)?;
-
-    // For Kotlin top-level classes (ending in "Kt"), always use .kt extension and strip suffix
-    // This takes precedence over reference_file since Kt suffix is a strong Kotlin indicator
-    if base.ends_with("Kt") && base.len() > 2 {
-        let kotlin_base = &base[..base.len() - 2];
-        return Some(format!("{}.kt", kotlin_base));
-    }
-
-    // If we have a reference file, derive extension from it
-    if let Some(ext) = reference_file.and_then(|f| f.rfind('.').map(|pos| &f[pos..])) {
-        return Some(format!("{}{}", base, ext));
-    }
-
-    Some(format!("{}.java", base))
-}
-
-/// Converts a Java class name to its JVM descriptor format.
-///
-/// For example, `java.lang.NullPointerException` becomes `Ljava/lang/NullPointerException;`.
-pub fn class_name_to_descriptor(class: &str) -> String {
-    let mut descriptor = String::with_capacity(class.len() + 2);
-    descriptor.push('L');
-    descriptor.push_str(&class.replace('.', "/"));
-    descriptor.push(';');
-    descriptor
 }
 
 /// Computes the number of frames to skip based on rewrite rules.

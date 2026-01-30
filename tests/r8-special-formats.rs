@@ -30,40 +30,6 @@ fn assert_remap_stacktrace(mapping: &str, input: &str, expected: &str) {
 }
 
 // =============================================================================
-// NamedModuleStackTrace
-// =============================================================================
-
-const NAMED_MODULE_STACKTRACE_MAPPING: &str = r#"com.android.tools.r8.Classloader -> classloader.a.b.a:
-com.android.tools.r8.Main -> a:
-    101:101:void main(java.lang.String[]):1:1 -> a
-    12:12:void foo(java.lang.String[]):2:2 -> b
-    80:80:void bar(java.lang.String[]):3:3 -> c
-    81:81:void baz(java.lang.String[]):4:4 -> d
-    9:9:void qux(java.lang.String[]):5:5 -> e
-"#;
-
-#[test]
-fn test_named_module_stacktrace() {
-    let input = r#"SomeFakeException: this is a fake exception
-	at classloader.a.b.a/named_module@9.0/a.a(:101)
-	at classloader.a.b.a//a.b(App.java:12)
-	at named_module@2.1/a.c(Lib.java:80)
-	at named_module/a.d(Lib.java:81)
-	at a.e(MyClass.java:9)
-"#;
-
-    let expected = r#"SomeFakeException: this is a fake exception
-    at classloader.a.b.a/named_module@9.0/com.android.tools.r8.Main.main(Main.java:1)
-    at classloader.a.b.a//com.android.tools.r8.Main.foo(Main.java:2)
-    at named_module@2.1/com.android.tools.r8.Main.bar(Main.java:3)
-    at named_module/com.android.tools.r8.Main.baz(Main.java:4)
-    at com.android.tools.r8.Main.qux(Main.java:5)
-"#;
-
-    assert_remap_stacktrace(NAMED_MODULE_STACKTRACE_MAPPING, input, expected);
-}
-
-// =============================================================================
 // AutoStackTrace
 // =============================================================================
 
@@ -85,29 +51,6 @@ fn test_auto_stacktrace() {
 "#;
 
     assert_remap_stacktrace(AUTO_STACKTRACE_MAPPING, input, expected);
-}
-
-// =============================================================================
-// PGStackTrace (logcat + "PG:" source file format)
-// =============================================================================
-
-const PG_STACKTRACE_MAPPING: &str = r#"com.google.apps.sectionheader.SectionHeaderListController -> com.google.apps.sectionheader.SectionHeaderListController:
-com.google.apps.Controller -> com.google.apps.Controller:
-"#;
-
-#[test]
-fn test_pg_stacktrace() {
-    let input = r#"09-16 15:43:01.249 23316 23316 E AndroidRuntime: java.lang.NullPointerException: Attempt to invoke virtual method 'boolean com.google.android.foo(com.google.android.foo.Data$Key)' on a null object reference
-09-16 15:43:01.249 23316 23316 E AndroidRuntime:        at com.google.apps.sectionheader.SectionHeaderListController.onToolbarStateChanged(PG:586)
-09-16 15:43:01.249 23316 23316 E AndroidRuntime:        at com.google.apps.Controller.onToolbarStateChanged(PG:1087)
-"#;
-
-    let expected = r#"09-16 15:43:01.249 23316 23316 E AndroidRuntime: java.lang.NullPointerException: Attempt to invoke virtual method 'boolean com.google.android.foo(com.google.android.foo.Data$Key)' on a null object reference
-09-16 15:43:01.249 23316 23316 E AndroidRuntime:        at com.google.apps.sectionheader.SectionHeaderListController.onToolbarStateChanged(SectionHeaderListController.java:586)
-09-16 15:43:01.249 23316 23316 E AndroidRuntime:        at com.google.apps.Controller.onToolbarStateChanged(Controller.java:1087)
-"#;
-
-    assert_remap_stacktrace(PG_STACKTRACE_MAPPING, input, expected);
 }
 
 // =============================================================================

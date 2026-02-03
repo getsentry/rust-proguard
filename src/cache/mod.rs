@@ -74,7 +74,6 @@ mod raw;
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::HashSet;
 use std::fmt::Write;
 
 use thiserror::Error;
@@ -899,6 +898,8 @@ pub struct RemappedFrameIter<'r, 'data> {
     has_line_info: bool,
     /// The source file of the outer class for synthesis.
     outer_source_file: Option<&'data str>,
+    /// Tracks if any line-mapped result was emitted (prevents late fallback).
+    had_line_match: bool,
 }
 
 impl<'r, 'data> RemappedFrameIter<'r, 'data> {
@@ -915,6 +916,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             had_mappings: false,
             has_line_info: false,
             outer_source_file: None,
+            had_line_match: false,
         }
     }
 
@@ -934,6 +936,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             had_mappings,
             has_line_info,
             outer_source_file,
+            had_line_match: false,
         }
     }
 
@@ -945,6 +948,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             had_mappings: false,
             has_line_info: false,
             outer_source_file: None,
+            had_line_match: false,
         }
     }
 
@@ -966,13 +970,14 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
         let out = if frame.parameters.is_none() {
             // If we have no line number, treat it as unknown. If there are base (no-line) mappings
             // present, prefer those over line-mapped entries.
+            // R8: RetraceMethodResultImpl#narrowByPosition + filterOnNoPosition
+            // https://r8.googlesource.com/r8/+/main/src/main/java/com/android/tools/r8/retrace/internal/RetraceMethodResultImpl.java
             if frame.line == 0 {
                 let frames = collect_no_line_frames(
                     cache,
                     &frame,
                     members.as_slice(),
                     self.outer_source_file,
-                    frame.file().is_none(),
                 )?;
                 return self.enqueue_frames(frames);
             }
@@ -988,6 +993,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             }
 
             // With a concrete line number, skip base entries if there are line mappings.
+            let members_slice = members.as_slice();
             let mapped = iterate_with_lines(
                 cache,
                 &mut frame,
@@ -995,6 +1001,22 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
                 self.outer_source_file,
                 self.has_line_info,
             );
+            if mapped.is_some() && self.has_line_info {
+                // Remember that we already produced a line-specific result.
+                self.had_line_match = true;
+            }
+            if mapped.is_none() && !self.had_line_match {
+                // Align with R8 retrace fallback ordering: try line matches first, then fall back
+                // to mappings without a minified range.
+                // https://r8-review.googlesource.com/c/r8/+/72203/5
+                let frames = collect_no_minified_range_frames_with_line(
+                    cache,
+                    &frame,
+                    members_slice,
+                    self.outer_source_file,
+                )?;
+                return self.enqueue_frames(frames);
+            }
             self.inner = Some((cache, frame, members));
             mapped
         } else {
@@ -1028,27 +1050,7 @@ fn collect_no_line_frames<'a>(
     frame: &StackFrame<'a>,
     members: &[raw::Member],
     outer_source_file: Option<&str>,
-    include_line_ranged: bool,
 ) -> Option<Vec<StackFrame<'a>>> {
-    if include_line_ranged {
-        let mut seen = HashSet::new();
-        let mut frames = Vec::new();
-        for member in members {
-            if !seen.insert((member.original_class_offset, member.original_name_offset)) {
-                continue;
-            }
-            let mut mapped = map_member_without_lines(cache, frame, member, outer_source_file)?;
-            mapped.line = 0;
-            frames.push(mapped);
-        }
-
-        return if frames.is_empty() {
-            None
-        } else {
-            Some(frames)
-        };
-    }
-
     let selection = select_no_line_selection(members);
     let (candidates, suppress_line) = match selection {
         NoLineSelection::ExplicitBase(candidates, suppress_line) => (candidates, suppress_line),
@@ -1069,6 +1071,43 @@ fn collect_no_line_frames<'a>(
         if suppress_line {
             mapped.line = 0;
         } else if is_implicit_no_range(member) && member.original_startline > 0 {
+            mapped.line = member.original_startline as usize;
+        }
+        frames.push(mapped);
+    }
+
+    if frames.is_empty() {
+        None
+    } else {
+        Some(frames)
+    }
+}
+
+// Align with R8 retrace fallback ordering: try line matches first, then fall back
+// to mappings without a minified range.
+// https://r8-review.googlesource.com/c/r8/+/72203/5
+fn collect_no_minified_range_frames_with_line<'a>(
+    cache: &ProguardCache<'a>,
+    frame: &StackFrame<'a>,
+    members: &[raw::Member],
+    outer_source_file: Option<&str>,
+) -> Option<Vec<StackFrame<'a>>> {
+    let mut frames = Vec::new();
+    for member in members.iter().filter(|m| is_implicit_no_range(m)) {
+        if member.original_endline != u32::MAX
+            && member.original_endline > member.original_startline
+            && member.original_startline > 0
+        {
+            for line in member.original_startline..=member.original_endline {
+                let mut mapped = map_member_without_lines(cache, frame, member, outer_source_file)?;
+                mapped.line = line as usize;
+                frames.push(mapped);
+            }
+            continue;
+        }
+
+        let mut mapped = map_member_without_lines(cache, frame, member, outer_source_file)?;
+        if member.original_startline > 0 {
             mapped.line = member.original_startline as usize;
         }
         frames.push(mapped);

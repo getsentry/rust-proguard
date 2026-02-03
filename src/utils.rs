@@ -8,6 +8,10 @@ pub(crate) fn resolve_no_line_output_line(
     startline: usize,
     endline: usize,
 ) -> usize {
+    // Explicit 0:0 minified ranges are preserved as real positions; sentinels are handled by
+    // callers by keeping frame_line when present.
+    // R8 keeps minified range presence explicit (null vs 0:0).
+    // https://r8.googlesource.com/r8/+/main/src/main/java/com/android/tools/r8/naming/ClassNamingForNameMapper.java
     if startline == 0 && endline == 0 {
         original_startline
             .filter(|value| *value > 0 && *value != usize::MAX)

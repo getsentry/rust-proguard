@@ -292,7 +292,8 @@ impl<'s> ParsedProguardMapping<'s> {
                         None
                     };
                     // If the mapping has no line records, use a sentinel to distinguish from
-                    // an explicit 0:0 minified range.
+                    // an explicit 0:0 minified range (mirrors R8's "minifiedRange == null").
+                    // https://r8.googlesource.com/r8/+/main/src/main/java/com/android/tools/r8/naming/ClassNamingForNameMapper.java
                     let (startline, endline) = line_mapping
                         .as_ref()
                         .map_or((usize::MAX, usize::MAX), |line_mapping| {

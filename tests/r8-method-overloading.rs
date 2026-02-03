@@ -84,16 +84,22 @@ const RETRACE_MAPPING_WITH_OVERLOADS_MAPPING: &str = r#"some.Class -> A:
 "#;
 
 #[test]
-fn test_retrace_mapping_with_overloads_api_has_3_candidates() {
+fn test_retrace_mapping_with_overloads_api_has_2_candidates_no_position() {
     let mapper = ProguardMapper::from(RETRACE_MAPPING_WITH_OVERLOADS_MAPPING);
 
-    // Equivalent to upstream's `retracer.retraceClass(A).lookupMethod("a")` size == 3:
-    // - select(java.util.List)
-    // - sync() (line-mapped range)
-    // - cancel(java.lang.String[])
+    // For stacktrace remapping with no position (line == 0), align with R8's
+    // "no position" semantics: do not include line-ranged mappings.
     let frame = StackFrame::new("A", "a", 0);
     let remapped: Vec<_> = mapper.remap_frame(&frame).collect();
-    assert_eq!(remapped.len(), 3);
+    assert_eq!(remapped.len(), 2);
+
+    let mapping = ProguardMapping::new(RETRACE_MAPPING_WITH_OVERLOADS_MAPPING.as_bytes());
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
+    let remapped: Vec<_> = cache.remap_frame(&frame).collect();
+    assert_eq!(remapped.len(), 2);
 }
 
 #[test]
@@ -103,5 +109,13 @@ fn test_retrace_mapping_with_overloads_api_includes_sync_with_line() {
     // When the minified line hits the `sync()` mapping range, it should produce a `sync` candidate.
     let frame = StackFrame::new("A", "a", 3);
     let remapped: Vec<_> = mapper.remap_frame(&frame).collect();
+    assert!(remapped.iter().any(|f| f.method() == "sync"));
+
+    let mapping = ProguardMapping::new(RETRACE_MAPPING_WITH_OVERLOADS_MAPPING.as_bytes());
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
+    let remapped: Vec<_> = cache.remap_frame(&frame).collect();
     assert!(remapped.iter().any(|f| f.method() == "sync"));
 }

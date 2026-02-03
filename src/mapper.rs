@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
@@ -121,8 +121,6 @@ fn has_line_range(member: &MemberMapping<'_>) -> bool {
 pub struct RemappedFrameIter<'m> {
     inner: Option<(StackFrame<'m>, MemberIter<'m>)>,
     has_line_info: bool,
-    include_line_ranged_no_file: bool,
-    seen_no_line: HashSet<(&'m str, &'m str)>,
 }
 
 impl<'m> RemappedFrameIter<'m> {
@@ -130,21 +128,12 @@ impl<'m> RemappedFrameIter<'m> {
         Self {
             inner: None,
             has_line_info: false,
-            include_line_ranged_no_file: false,
-            seen_no_line: HashSet::new(),
         }
     }
-    fn members(
-        frame: StackFrame<'m>,
-        members: MemberIter<'m>,
-        has_line_info: bool,
-        include_line_ranged_no_file: bool,
-    ) -> Self {
+    fn members(frame: StackFrame<'m>, members: MemberIter<'m>, has_line_info: bool) -> Self {
         Self {
             inner: Some((frame, members)),
             has_line_info,
-            include_line_ranged_no_file,
-            seen_no_line: HashSet::new(),
         }
     }
 }
@@ -154,32 +143,11 @@ impl<'m> Iterator for RemappedFrameIter<'m> {
     fn next(&mut self) -> Option<Self::Item> {
         let (frame, ref mut members) = self.inner.as_mut()?;
         if frame.parameters.is_none() {
-            if self.include_line_ranged_no_file && frame.line == 0 {
-                iterate_with_lines_no_file(frame, members, &mut self.seen_no_line)
-            } else {
-                iterate_with_lines(frame, members, self.has_line_info)
-            }
+            iterate_with_lines(frame, members, self.has_line_info)
         } else {
             iterate_without_lines(frame, members)
         }
     }
-}
-
-fn iterate_with_lines_no_file<'a>(
-    frame: &StackFrame<'a>,
-    members: &mut MemberIter<'a>,
-    seen: &mut HashSet<(&'a str, &'a str)>,
-) -> Option<StackFrame<'a>> {
-    for member in members {
-        let class = member.original_class.unwrap_or(frame.class);
-        if !seen.insert((class, member.original)) {
-            continue;
-        }
-        let mut mapped = map_member_without_lines(frame, member);
-        mapped.line = 0;
-        return Some(mapped);
-    }
-    None
 }
 
 fn map_member_with_lines<'a>(
@@ -311,23 +279,9 @@ fn collect_no_line_frames<'a>(
     frame: &StackFrame<'a>,
     mapping_entries: &'a [MemberMapping<'a>],
     collected: &mut CollectedFrames<'a>,
-    include_line_ranged: bool,
 ) {
-    if include_line_ranged {
-        let mut seen = HashSet::new();
-        for member in mapping_entries {
-            let class = member.original_class.unwrap_or(frame.class);
-            if !seen.insert((class, member.original)) {
-                continue;
-            }
-            let mut mapped = map_member_without_lines(frame, member);
-            mapped.line = 0;
-            collected.frames.push(mapped);
-            collected.rewrite_rules.extend(member.rewrite_rules.iter());
-        }
-        return;
-    }
-
+    // Align with R8 "no position" semantics: prefer base/no-range candidates rather than
+    // including all line-ranged mappings.
     let selection = select_no_line_selection(mapping_entries);
     let (candidates, suppress_line) = match selection {
         NoLineSelection::ExplicitBase(candidates, suppress_line) => (candidates, suppress_line),
@@ -346,6 +300,36 @@ fn collect_no_line_frames<'a>(
         if suppress_line {
             mapped.line = 0;
         } else if is_implicit_no_range(member) && member.original_startline > 0 {
+            mapped.line = member.original_startline;
+        }
+        collected.frames.push(mapped);
+        collected.rewrite_rules.extend(member.rewrite_rules.iter());
+    }
+}
+
+// Align with R8 retrace fallback ordering: try line matches first, then fall back
+// to mappings without a minified range.
+// https://r8-review.googlesource.com/c/r8/+/72203/5
+fn collect_no_minified_range_frames_with_line<'a>(
+    frame: &StackFrame<'a>,
+    mapping_entries: &'a [MemberMapping<'a>],
+    collected: &mut CollectedFrames<'a>,
+) {
+    for member in mapping_entries.iter().filter(|m| is_implicit_no_range(m)) {
+        if let Some(original_endline) = member.original_endline {
+            if original_endline > member.original_startline && member.original_startline > 0 {
+                for line in member.original_startline..=original_endline {
+                    let mut mapped = map_member_without_lines(frame, member);
+                    mapped.line = line;
+                    collected.frames.push(mapped);
+                    collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                }
+                continue;
+            }
+        }
+
+        let mut mapped = map_member_without_lines(frame, member);
+        if member.original_startline > 0 {
             mapped.line = member.original_startline;
         }
         collected.frames.push(mapped);
@@ -727,12 +711,10 @@ impl<'s> ProguardMapper<'s> {
             // If the stacktrace has no line number, treat it as unknown and remap without
             // applying line filters. If there are explicit 0:0 mappings, prefer those.
             if frame.line == 0 {
-                collect_no_line_frames(
-                    &frame,
-                    mapping_entries,
-                    &mut collected,
-                    frame.file().is_none(),
-                );
+                // No-position lookup: do not include line-ranged mappings.
+                // R8: RetraceMethodResultImpl#narrowByPosition + filterOnNoPosition
+                // https://r8.googlesource.com/r8/+/main/src/main/java/com/android/tools/r8/retrace/internal/RetraceMethodResultImpl.java
+                collect_no_line_frames(&frame, mapping_entries, &mut collected);
                 return collected;
             }
 
@@ -753,6 +735,10 @@ impl<'s> ProguardMapper<'s> {
                     collected.frames.push(mapped);
                     collected.rewrite_rules.extend(member.rewrite_rules.iter());
                 }
+            }
+
+            if has_line_info && collected.frames.is_empty() {
+                collect_no_minified_range_frames_with_line(&frame, mapping_entries, &mut collected);
             }
 
             if collected.frames.is_empty() {
@@ -811,7 +797,6 @@ impl<'s> ProguardMapper<'s> {
             return RemappedFrameIter::empty();
         };
 
-        let include_line_ranged_no_file = frame.line == 0 && frame.file().is_none();
         let mut frame = frame.clone();
         frame.class = class.original;
 
@@ -826,7 +811,7 @@ impl<'s> ProguardMapper<'s> {
         };
 
         let has_line_info = members.all_mappings.iter().any(|m| has_line_range(m));
-        RemappedFrameIter::members(frame, mappings, has_line_info, include_line_ranged_no_file)
+        RemappedFrameIter::members(frame, mappings, has_line_info)
     }
 
     /// Remaps a throwable which is the first line of a full stacktrace.

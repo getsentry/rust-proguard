@@ -643,8 +643,10 @@ fn parse_proguard_field_or_method(
                     original_endline,
                 }),
                 // Preserve original line info even when no minified range is present.
-                // Use a sentinel to distinguish from an explicit 0:0 minified range, but keep
-                // an explicit 0:0 when the original line is also 0.
+                // Use a sentinel to distinguish from an explicit 0:0 minified range (R8 models
+                // this as a null minified range), but keep an explicit 0:0 when the original line
+                // is also 0.
+                // https://r8.googlesource.com/r8/+/main/src/main/java/com/android/tools/r8/naming/ClassNamingForNameMapper.java
                 (None, None, Some(original_startline)) => Some(LineMapping {
                     startline: if original_startline == 0 {
                         0

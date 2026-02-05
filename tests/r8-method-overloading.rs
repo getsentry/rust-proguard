@@ -87,9 +87,11 @@ const RETRACE_MAPPING_WITH_OVERLOADS_MAPPING: &str = r#"some.Class -> A:
 fn test_retrace_mapping_with_overloads_api_has_2_candidates() {
     let mapper = ProguardMapper::from(RETRACE_MAPPING_WITH_OVERLOADS_MAPPING);
 
-    // Equivalent to upstream's `retracer.retraceClass(A).lookupMethod("a")` size == 2:
+    // Equivalent to upstream's `retracer.retraceClass(A).lookupMethod("a").narrowByPosition()` size == 2:
     // - sync() (line-mapped range)
     // - cancel(java.lang.String[])
+    // The original test uses `lookupMethod("a") which is expected to return 3 candidates here,
+    //   but our implementation already bakes narrowByPosition() in, hence we expect 2`
     let frame = StackFrame::new("A", "a", 0);
     let remapped: Vec<_> = mapper.remap_frame(&frame).collect();
     assert_eq!(remapped.len(), 2);

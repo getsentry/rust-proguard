@@ -140,7 +140,8 @@ fn map_member_with_lines<'a>(
     frame: &StackFrame<'a>,
     member: &MemberMapping<'a>,
 ) -> Option<StackFrame<'a>> {
-    if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline) {
+    let frame_line = frame.line.unwrap_or(0);
+    if member.endline > 0 && (frame_line < member.startline || frame_line > member.endline) {
         return None;
     }
 
@@ -151,7 +152,7 @@ fn map_member_with_lines<'a>(
     {
         member.original_startline
     } else {
-        member.original_startline + frame.line - member.startline
+        member.original_startline + frame_line - member.startline
     };
 
     let class = member.original_class.unwrap_or(frame.class);
@@ -172,7 +173,7 @@ fn map_member_with_lines<'a>(
         class,
         method: member.original,
         file,
-        line,
+        line: Some(line),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized,
     })
@@ -191,7 +192,7 @@ fn map_member_without_lines<'a>(
         None
     };
     let line = resolve_no_line_output_line(
-        frame.line,
+        frame.line.unwrap_or(0),
         original_startline,
         member.startline,
         member.endline,
@@ -202,7 +203,7 @@ fn map_member_without_lines<'a>(
         file,
         // Preserve input line if present (e.g. "Unknown Source:7") when the mapping itself
         // has no line information. This matches R8 retrace behavior.
-        line,
+        line: Some(line),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized,
     }
@@ -214,7 +215,7 @@ fn remap_class_only<'a>(frame: &StackFrame<'a>, reference_file: Option<&str>) ->
         class: frame.class,
         method: frame.method,
         file,
-        line: frame.line,
+        line: Some(frame.line.unwrap_or(0)),
         parameters: frame.parameters,
         method_synthesized: false,
     }
@@ -295,9 +296,10 @@ fn iterate_with_lines<'a>(
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
     has_line_info: bool,
 ) -> Option<StackFrame<'a>> {
+    let frame_line = frame.line.unwrap_or(0);
     for member in members {
         // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
-        if has_line_info && frame.line > 0 && member.endline == 0 {
+        if has_line_info && frame_line > 0 && member.endline == 0 {
             continue;
         }
         // If the mapping entry has no line range, preserve the input line number (if any).
@@ -522,11 +524,11 @@ impl<'s> ProguardMapper<'s> {
             if let Some(mapped) = self.map_outline_position(
                 effective.class,
                 effective.method,
-                effective.line,
+                effective.line.unwrap_or(0),
                 pos,
                 effective.parameters,
             ) {
-                effective.line = mapped;
+                effective.line = Some(mapped);
             }
         }
 
@@ -584,7 +586,7 @@ impl<'s> ProguardMapper<'s> {
 
             // If the stacktrace has no line number, treat it as unknown and remap without
             // applying line filters. If there are base (no-line) mappings present, prefer those.
-            if frame.line == 0 {
+            if frame.line.unwrap_or(0) == 0 {
                 let selection = select_no_line_members(mapping_entries, has_line_info);
                 match selection {
                     Some(NoLineSelection::Single(member)) => {
@@ -744,7 +746,7 @@ impl<'s> ProguardMapper<'s> {
 
             if let Some(frame) = stacktrace::parse_frame(line) {
                 if self.is_outline_frame(frame.class, frame.method) {
-                    carried_outline_pos = Some(frame.line);
+                    carried_outline_pos = Some(frame.line.unwrap_or(0));
                     continue;
                 }
 
@@ -810,7 +812,7 @@ impl<'s> ProguardMapper<'s> {
         let mut next_frame_can_rewrite = exception_descriptor.is_some();
         for f in trace.frames.iter() {
             if self.is_outline_frame(f.class, f.method) {
-                carried_outline_pos = Some(f.line);
+                carried_outline_pos = Some(f.line.unwrap_or(0));
                 continue;
             }
 
@@ -913,7 +915,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                 StackFrame {
                     class: "com.example.MainFragment$g",
                     method: "onClick",
-                    line: 2,
+                    line: Some(2),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -921,7 +923,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                 StackFrame {
                     class: "android.view.View",
                     method: "performClick",
-                    line: 7393,
+                    line: Some(7393),
                     file: Some(Cow::Borrowed("View.java")),
                     parameters: None,
                     method_synthesized: false,
@@ -935,7 +937,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                 frames: vec![StackFrame {
                     class: "com.example.MainFragment$g",
                     method: "onClick",
-                    line: 1,
+                    line: Some(1),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -1055,7 +1057,7 @@ some.Class -> a:
             frames: vec![StackFrame {
                 class: "a",
                 method: "a",
-                line: 4,
+                line: Some(4),
                 file: Some(Cow::Borrowed("SourceFile")),
                 parameters: None,
                 method_synthesized: false,
@@ -1069,7 +1071,7 @@ some.Class -> a:
         assert_eq!(remapped.frames.len(), 1);
         assert_eq!(remapped.frames[0].class, "some.Class");
         assert_eq!(remapped.frames[0].method, "caller");
-        assert_eq!(remapped.frames[0].line, 7);
+        assert_eq!(remapped.frames[0].line, Some(7));
     }
 
     #[test]
@@ -1176,7 +1178,7 @@ some.Other -> b:
                 StackFrame {
                     class: "a",
                     method: "call",
-                    line: 4,
+                    line: Some(4),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -1184,7 +1186,7 @@ some.Other -> b:
                 StackFrame {
                     class: "b",
                     method: "run",
-                    line: 5,
+                    line: Some(5),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -1200,6 +1202,6 @@ some.Other -> b:
         assert_eq!(remapped.frames.len(), 1);
         assert_eq!(remapped.frames[0].class, "some.Other");
         assert_eq!(remapped.frames[0].method, "method");
-        assert_eq!(remapped.frames[0].line, 30);
+        assert_eq!(remapped.frames[0].line, Some(30));
     }
 }

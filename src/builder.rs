@@ -392,7 +392,7 @@ impl<'s> ParsedProguardMapping<'s> {
 
                     let has_minified_range = line_mapping
                         .as_ref()
-                        .map_or(false, |lm| lm.has_minified_range);
+                        .is_some_and(|lm| lm.has_minified_range);
                     let has_line_mapping = line_mapping.is_some();
 
                     let member = Member {

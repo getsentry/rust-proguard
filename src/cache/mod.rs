@@ -80,10 +80,7 @@ use thiserror::Error;
 
 use crate::builder::{RewriteAction, RewriteCondition, RewriteRule};
 use crate::mapper::{format_cause, format_frames, format_throwable};
-use crate::utils::{
-    class_name_to_descriptor, extract_class_name, resolve_no_line_output_line,
-    synthesize_source_file,
-};
+use crate::utils::{class_name_to_descriptor, extract_class_name, synthesize_source_file};
 use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Throwable};
 
 pub use raw::{ProguardCache, PRGCACHE_VERSION};
@@ -833,6 +830,8 @@ pub struct RemappedFrameIter<'r, 'data> {
     )>,
     /// A single remapped frame fallback (e.g. class-only remapping).
     fallback: Option<StackFrame<'data>>,
+    /// Buffered frames for multi-frame expansion (e.g. no-line groups).
+    pending_frames: Vec<StackFrame<'data>>,
     /// Number of frames to skip from rewrite rules.
     skip_count: usize,
     /// Whether there were mapping entries (for should_skip determination).
@@ -848,6 +847,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
         Self {
             inner: None,
             fallback: None,
+            pending_frames: Vec::new(),
             skip_count: 0,
             had_mappings: false,
             has_line_info: false,
@@ -867,6 +867,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
         Self {
             inner: Some((cache, frame, members)),
             fallback: None,
+            pending_frames: Vec::new(),
             skip_count,
             had_mappings,
             has_line_info,
@@ -878,6 +879,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
         Self {
             inner: None,
             fallback: Some(frame),
+            pending_frames: Vec::new(),
             skip_count: 0,
             had_mappings: false,
             has_line_info: false,
@@ -894,6 +896,11 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
     }
 
     fn next_inner(&mut self) -> Option<StackFrame<'data>> {
+        // Drain any buffered frames from multi-frame expansion first.
+        if !self.pending_frames.is_empty() {
+            return Some(self.pending_frames.remove(0));
+        }
+
         if let Some(frame) = self.fallback.take() {
             return Some(frame);
         }
@@ -904,40 +911,18 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             // If we have no line number, treat it as unknown. If there are base (no-line) mappings
             // present, prefer those over line-mapped entries.
             if frame.line.unwrap_or(0) == 0 {
-                let selection = select_no_line_members(members.as_slice())?;
-                let mapped = match selection {
-                    NoLineSelection::Single(member) => {
-                        return map_member_without_lines(
-                            cache,
-                            &frame,
-                            member,
-                            self.outer_source_file,
-                        );
-                    }
-                    NoLineSelection::IterateBase => {
-                        let mut mapped = None;
-                        for member in members.by_ref() {
-                            if member.endline().unwrap_or(0) == 0 {
-                                mapped = map_member_without_lines(
-                                    cache,
-                                    &frame,
-                                    member,
-                                    self.outer_source_file,
-                                );
-                                break;
-                            }
-                        }
-                        mapped
-                    }
-                    NoLineSelection::IterateAll => iterate_without_lines(
-                        cache,
-                        &mut frame,
-                        &mut members,
-                        self.outer_source_file,
-                    ),
-                };
-                self.inner = Some((cache, frame, members));
-                return mapped;
+                let mut frames = resolve_no_line_frames(
+                    cache,
+                    &frame,
+                    members.as_slice(),
+                    self.outer_source_file,
+                );
+                if !frames.is_empty() {
+                    let first = frames.remove(0);
+                    self.pending_frames = frames;
+                    return Some(first);
+                }
+                return None;
             }
 
             // With a concrete line number, skip base entries if there are line mappings.
@@ -957,8 +942,6 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             mapped
         };
 
-        // If we returned early for the unambiguous line==0 case above, `self.inner` remains `None`
-        // which ensures the iterator terminates.
         out
     }
 }
@@ -985,29 +968,38 @@ fn iterate_with_lines<'a>(
 ) -> Option<StackFrame<'a>> {
     let frame_line = frame.line.unwrap_or(0);
     for member in members {
-        let member_endline = member.endline().unwrap_or(0) as usize;
-        let member_startline = member.startline().unwrap_or(0) as usize;
         // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
-        if has_line_info && frame_line > 0 && member_endline == 0 {
+        if has_line_info && frame_line > 0 && member.endline().unwrap_or(0) == 0 {
             continue;
         }
-        // If the mapping entry has no line range, preserve the input line number (if any).
-        if member_endline == 0 {
-            return map_member_without_lines(cache, frame, member, outer_source_file);
+        // If the mapping entry has no line range, determine output line.
+        if member.endline().unwrap_or(0) == 0 {
+            let output_line = if member.original_startline().is_none() {
+                // Bare method mapping: pass through frame line.
+                frame.line
+            } else if member.original_startline().unwrap_or(0) > 0 {
+                Some(member.original_startline().unwrap_or(0) as usize)
+            } else {
+                None
+            };
+            return map_member_without_lines(cache, frame, member, outer_source_file, output_line);
         }
         // skip any members which do not match our frames line
-        if member_endline > 0 && (frame_line < member_startline || frame_line > member_endline) {
+        if member.endline().unwrap_or(0) > 0
+            && (frame_line < member.startline().unwrap_or(0) as usize
+                || frame_line > member.endline().unwrap_or(0) as usize)
+        {
             continue;
         }
-        let original_startline = member.original_startline().unwrap_or(0) as usize;
         // parents of inlined frames don't have an `endline`, and
         // the top inlined frame need to be correctly offset.
         let line = if member.original_endline == u32::MAX
-            || member.original_endline as usize == original_startline
+            || member.original_endline == member.original_startline().unwrap_or(0) as u32
         {
-            original_startline
+            member.original_startline().unwrap_or(0) as usize
         } else {
-            original_startline + frame_line - member_startline
+            member.original_startline().unwrap_or(0) as usize + frame_line
+                - member.startline().unwrap_or(0) as usize
         };
 
         let class = cache
@@ -1045,52 +1037,12 @@ fn iterate_with_lines<'a>(
     None
 }
 
-/// Selection strategy for line==0 frames.
-///
-/// When line info is missing, we prefer base (no-line) mappings if they exist.
-/// If all candidates resolve to the same original method, we treat it as
-/// unambiguous and return a single mapping. Otherwise we iterate either over
-/// base mappings (when present) or all mappings (when only line-mapped entries exist).
-enum NoLineSelection<'a> {
-    Single(&'a raw::Member),
-    IterateBase,
-    IterateAll,
-}
-
-fn select_no_line_members<'a>(members: &'a [raw::Member]) -> Option<NoLineSelection<'a>> {
-    // Prefer base entries (endline == 0) if present.
-    let mut base_members = members.iter().filter(|m| m.endline().unwrap_or(0) == 0);
-    if let Some(first_base) = base_members.next() {
-        let all_same = base_members.all(|m| {
-            m.original_class_offset == first_base.original_class_offset
-                && m.original_name_offset == first_base.original_name_offset
-        });
-
-        return Some(if all_same {
-            NoLineSelection::Single(first_base)
-        } else {
-            NoLineSelection::IterateBase
-        });
-    }
-
-    let first = members.first()?;
-    let unambiguous = members.iter().all(|m| {
-        m.original_class_offset == first.original_class_offset
-            && m.original_name_offset == first.original_name_offset
-    });
-
-    Some(if unambiguous {
-        NoLineSelection::Single(first)
-    } else {
-        NoLineSelection::IterateAll
-    })
-}
-
 fn map_member_without_lines<'a>(
     cache: &ProguardCache<'a>,
     frame: &StackFrame<'a>,
     member: &raw::Member,
     outer_source_file: Option<&str>,
+    output_line: Option<usize>,
 ) -> Option<StackFrame<'a>> {
     let class = cache
         .read_string(member.original_class_offset)
@@ -1098,21 +1050,22 @@ fn map_member_without_lines<'a>(
     let method = cache.read_string(member.original_name_offset).ok()?;
     let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
 
-    let original_startline = member.original_startline().map(|v| v as usize);
-
     Some(StackFrame {
         class,
         method,
         file,
-        line: Some(resolve_no_line_output_line(
-            frame.line.unwrap_or(0),
-            original_startline,
-            member.startline().map(|v| v as usize),
-            member.endline().map(|v| v as usize),
-        )),
+        line: output_line,
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
     })
+}
+
+/// Computes the default output line for a cache member's original_startline.
+fn cache_member_output_line(member: &raw::Member) -> Option<usize> {
+    member
+        .original_startline()
+        .filter(|&v| v > 0)
+        .map(|v| v as usize)
 }
 
 fn iterate_without_lines<'a>(
@@ -1122,31 +1075,153 @@ fn iterate_without_lines<'a>(
     outer_source_file: Option<&str>,
 ) -> Option<StackFrame<'a>> {
     let member = members.next()?;
+    let output_line = cache_member_output_line(member);
+    map_member_without_lines(cache, frame, member, outer_source_file, output_line)
+}
 
-    let class = cache
-        .read_string(member.original_class_offset)
-        .unwrap_or(frame.class);
+/// Resolves frames for the no-line (frame_line==0) case.
+///
+/// When the input frame has no line number, base entries (endline==0) are preferred
+/// over line-mapped entries. Base entries are split into two groups by
+/// `has_minified_range` and each group's output lines are computed based on
+/// whether the group contains range mappings, single-line mappings, or bare methods.
+fn resolve_no_line_frames<'a>(
+    cache: &ProguardCache<'a>,
+    frame: &StackFrame<'a>,
+    members: &[raw::Member],
+    outer_source_file: Option<&str>,
+) -> Vec<StackFrame<'a>> {
+    let base_entries: Vec<&raw::Member> = members
+        .iter()
+        .filter(|m| m.endline().unwrap_or(0) == 0)
+        .collect();
 
-    let method = cache.read_string(member.original_name_offset).ok()?;
+    if !base_entries.is_empty() {
+        return resolve_base_entries(cache, frame, &base_entries, outer_source_file);
+    }
 
-    // Synthesize from class name (input filename is not reliable)
-    let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
+    // No base entries — fall back to all entries with output line 0.
+    let mut frames = Vec::new();
+    if let Some(first) = members.first() {
+        let all_same = members.iter().all(|m| {
+            m.original_class_offset == first.original_class_offset
+                && m.original_name_offset == first.original_name_offset
+        });
+        if all_same {
+            if let Some(f) =
+                map_member_without_lines(cache, frame, first, outer_source_file, Some(0))
+            {
+                frames.push(f);
+            }
+        } else {
+            for member in members {
+                if let Some(f) =
+                    map_member_without_lines(cache, frame, member, outer_source_file, Some(0))
+                {
+                    frames.push(f);
+                }
+            }
+        }
+    }
+    frames
+}
 
-    let original_startline = member.original_startline().map(|v| v as usize);
+/// Resolves output lines for base (endline==0) entries when the frame has no line number.
+///
+/// Entries are split by `has_minified_range`:
+/// - **0:0 entries** (`has_minified_range=true`): if any entry has a range
+///   (`original_endline != original_startline`), all emit `Some(0)`;
+///   otherwise each emits its `original_startline`.
+/// - **No-range entries** (`has_minified_range=false`): a single entry uses
+///   its `original_startline` (or `Some(0)` for bare methods); multiple entries
+///   with the same name collapse to one frame with `Some(0)`; different names
+///   each emit `Some(0)` in original order.
+fn resolve_base_entries<'a>(
+    cache: &ProguardCache<'a>,
+    frame: &StackFrame<'a>,
+    base_entries: &[&raw::Member],
+    outer_source_file: Option<&str>,
+) -> Vec<StackFrame<'a>> {
+    let zero_zero: Vec<&&raw::Member> = base_entries
+        .iter()
+        .filter(|m| m.startline().is_some())
+        .collect();
+    let no_range: Vec<&&raw::Member> = base_entries
+        .iter()
+        .filter(|m| m.startline().is_none())
+        .collect();
 
-    Some(StackFrame {
-        class,
-        method,
-        file,
-        line: Some(resolve_no_line_output_line(
-            frame.line.unwrap_or(0),
-            original_startline,
-            member.startline().map(|v| v as usize),
-            member.endline().map(|v| v as usize),
-        )),
-        parameters: frame.parameters,
-        method_synthesized: member.is_synthesized(),
-    })
+    let mut frames = Vec::new();
+
+    // Process 0:0 entries.
+    if !zero_zero.is_empty() {
+        let any_has_range = zero_zero.iter().any(|m| {
+            m.original_endline != u32::MAX
+                && m.original_endline != m.original_startline().unwrap_or(0) as u32
+        });
+        if any_has_range {
+            for member in &zero_zero {
+                if let Some(f) =
+                    map_member_without_lines(cache, frame, member, outer_source_file, Some(0))
+                {
+                    frames.push(f);
+                }
+            }
+        } else {
+            for member in &zero_zero {
+                let line = cache_member_output_line(member);
+                if let Some(f) =
+                    map_member_without_lines(cache, frame, member, outer_source_file, line)
+                {
+                    frames.push(f);
+                }
+            }
+        }
+    }
+
+    // Process no-range entries.
+    if !no_range.is_empty() {
+        if no_range.len() == 1 {
+            let member = no_range[0];
+            let line = if member.original_startline().unwrap_or(0) > 0 {
+                Some(member.original_startline().unwrap_or(0) as usize)
+            } else if member.original_startline().is_none() {
+                Some(0)
+            } else {
+                None
+            };
+            if let Some(f) =
+                map_member_without_lines(cache, frame, member, outer_source_file, line)
+            {
+                frames.push(f);
+            }
+        } else {
+            let all_same_name = no_range
+                .iter()
+                .all(|m| m.original_name_offset == no_range[0].original_name_offset);
+            if all_same_name {
+                if let Some(f) = map_member_without_lines(
+                    cache,
+                    frame,
+                    no_range[0],
+                    outer_source_file,
+                    Some(0),
+                ) {
+                    frames.push(f);
+                }
+            } else {
+                for member in &no_range {
+                    if let Some(f) =
+                        map_member_without_lines(cache, frame, member, outer_source_file, Some(0))
+                    {
+                        frames.push(f);
+                    }
+                }
+            }
+        }
+    }
+
+    frames
 }
 
 /// Computes the number of frames to skip based on rewrite rules.

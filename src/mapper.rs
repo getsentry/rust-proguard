@@ -343,31 +343,51 @@ fn resolve_base_entries<'s>(
     base_entries: &[&'s MemberMapping<'s>],
     collected: &mut CollectedFrames<'s>,
 ) {
-    let zero_zero: Vec<&&MemberMapping<'s>> = base_entries
-        .iter()
-        .filter(|m| m.startline.is_some())
-        .collect();
-    let no_range: Vec<&&MemberMapping<'s>> = base_entries
-        .iter()
-        .filter(|m| m.startline.is_none())
-        .collect();
-
-    // Process 0:0 entries.
-    if !zero_zero.is_empty() {
-        let any_has_range = zero_zero.iter().any(|m| {
-            m.original_endline.is_some() && m.original_endline != m.original_startline
-        });
-        if any_has_range {
-            for member in &zero_zero {
-                collected
-                    .frames
-                    .push(map_member_without_lines(frame, member, Some(0)));
-                collected.rewrite_rules.extend(member.rewrite_rules.iter());
+    // Pre-compute aggregates in a single pass.
+    let mut any_zero_zero_has_range = false;
+    let mut no_range_count = 0usize;
+    let mut first_no_range_name: Option<&str> = None;
+    let mut all_no_range_same_name = true;
+    for member in base_entries {
+        if member.startline.is_some() {
+            if member.original_endline.is_some()
+                && member.original_endline != member.original_startline
+            {
+                any_zero_zero_has_range = true;
             }
         } else {
-            for member in &zero_zero {
-                let line = if member.original_startline.unwrap_or(0) > 0 {
+            no_range_count += 1;
+            match first_no_range_name {
+                None => first_no_range_name = Some(member.original),
+                Some(first) if member.original != first => all_no_range_same_name = false,
+                _ => {}
+            }
+        }
+    }
+
+    let mut no_range_emitted = false;
+    for member in base_entries {
+        if member.startline.is_some() {
+            let line = if any_zero_zero_has_range {
+                Some(0)
+            } else if member.original_startline.unwrap_or(0) > 0 {
+                member.original_startline
+            } else {
+                None
+            };
+            collected
+                .frames
+                .push(map_member_without_lines(frame, member, line));
+            collected.rewrite_rules.extend(member.rewrite_rules.iter());
+        } else if all_no_range_same_name {
+            if !no_range_emitted {
+                no_range_emitted = true;
+                let line = if no_range_count > 1 {
+                    Some(0)
+                } else if member.original_startline.unwrap_or(0) > 0 {
                     member.original_startline
+                } else if member.original_startline.is_none() {
+                    Some(0)
                 } else {
                     None
                 };
@@ -376,41 +396,11 @@ fn resolve_base_entries<'s>(
                     .push(map_member_without_lines(frame, member, line));
                 collected.rewrite_rules.extend(member.rewrite_rules.iter());
             }
-        }
-    }
-
-    // Process no-range entries.
-    if !no_range.is_empty() {
-        if no_range.len() == 1 {
-            let member = no_range[0];
-            let line = if member.original_startline.unwrap_or(0) > 0 {
-                member.original_startline
-            } else if member.original_startline.is_none() {
-                Some(0)
-            } else {
-                None
-            };
+        } else {
             collected
                 .frames
-                .push(map_member_without_lines(frame, member, line));
+                .push(map_member_without_lines(frame, member, Some(0)));
             collected.rewrite_rules.extend(member.rewrite_rules.iter());
-        } else {
-            let all_same_name = no_range.iter().all(|m| m.original == no_range[0].original);
-            if all_same_name {
-                collected
-                    .frames
-                    .push(map_member_without_lines(frame, no_range[0], Some(0)));
-                collected
-                    .rewrite_rules
-                    .extend(no_range[0].rewrite_rules.iter());
-            } else {
-                for member in &no_range {
-                    collected
-                        .frames
-                        .push(map_member_without_lines(frame, member, Some(0)));
-                    collected.rewrite_rules.extend(member.rewrite_rules.iter());
-                }
-            }
         }
     }
 }

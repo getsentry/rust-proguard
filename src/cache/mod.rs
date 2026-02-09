@@ -1061,7 +1061,7 @@ fn map_member_without_lines<'a>(
 }
 
 /// Computes the default output line for a cache member's original_startline.
-fn cache_member_output_line(member: &raw::Member) -> Option<usize> {
+fn compute_member_output_line(member: &raw::Member) -> Option<usize> {
     member
         .original_startline()
         .filter(|&v| v > 0)
@@ -1075,7 +1075,7 @@ fn iterate_without_lines<'a>(
     outer_source_file: Option<&str>,
 ) -> Option<StackFrame<'a>> {
     let member = members.next()?;
-    let output_line = cache_member_output_line(member);
+    let output_line = compute_member_output_line(member);
     map_member_without_lines(cache, frame, member, outer_source_file, output_line)
 }
 
@@ -1142,78 +1142,65 @@ fn resolve_base_entries<'a>(
     base_entries: &[&raw::Member],
     outer_source_file: Option<&str>,
 ) -> Vec<StackFrame<'a>> {
-    let zero_zero: Vec<&&raw::Member> = base_entries
-        .iter()
-        .filter(|m| m.startline().is_some())
-        .collect();
-    let no_range: Vec<&&raw::Member> = base_entries
-        .iter()
-        .filter(|m| m.startline().is_none())
-        .collect();
-
-    let mut frames = Vec::new();
-
-    // Process 0:0 entries.
-    if !zero_zero.is_empty() {
-        let any_has_range = zero_zero.iter().any(|m| {
-            m.original_endline != u32::MAX
-                && m.original_endline != m.original_startline().unwrap_or(0) as u32
-        });
-        if any_has_range {
-            for member in &zero_zero {
-                if let Some(f) =
-                    map_member_without_lines(cache, frame, member, outer_source_file, Some(0))
-                {
-                    frames.push(f);
-                }
+    // Pre-compute aggregates in a single pass.
+    let mut any_zero_zero_has_range = false;
+    let mut no_range_count = 0usize;
+    let mut first_no_range_offset: Option<u32> = None;
+    let mut all_no_range_same_name = true;
+    for member in base_entries {
+        if member.startline().is_some() {
+            if member.original_endline != u32::MAX
+                && member.original_endline != member.original_startline().unwrap_or(0) as u32
+            {
+                any_zero_zero_has_range = true;
             }
         } else {
-            for member in &zero_zero {
-                let line = cache_member_output_line(member);
+            no_range_count += 1;
+            match first_no_range_offset {
+                None => first_no_range_offset = Some(member.original_name_offset),
+                Some(first) if member.original_name_offset != first => {
+                    all_no_range_same_name = false
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut frames = Vec::new();
+    let mut no_range_emitted = false;
+    for member in base_entries {
+        if member.startline().is_some() {
+            let line = if any_zero_zero_has_range {
+                Some(0)
+            } else {
+                compute_member_output_line(member)
+            };
+            if let Some(f) = map_member_without_lines(cache, frame, member, outer_source_file, line)
+            {
+                frames.push(f);
+            }
+        } else if all_no_range_same_name {
+            if !no_range_emitted {
+                no_range_emitted = true;
+                let line = if no_range_count > 1 {
+                    Some(0)
+                } else {
+                    compute_member_output_line(member).or(if member.original_startline().is_none() {
+                        Some(0)
+                    } else {
+                        None
+                    })
+                };
                 if let Some(f) =
                     map_member_without_lines(cache, frame, member, outer_source_file, line)
                 {
                     frames.push(f);
                 }
             }
-        }
-    }
-
-    // Process no-range entries.
-    if !no_range.is_empty() {
-        if no_range.len() == 1 {
-            let member = no_range[0];
-            let line = if member.original_startline().unwrap_or(0) > 0 {
-                Some(member.original_startline().unwrap_or(0) as usize)
-            } else if member.original_startline().is_none() {
-                Some(0)
-            } else {
-                None
-            };
-            if let Some(f) =
-                map_member_without_lines(cache, frame, member, outer_source_file, line)
-            {
-                frames.push(f);
-            }
-        } else {
-            let all_same_name = no_range
-                .iter()
-                .all(|m| m.original_name_offset == no_range[0].original_name_offset);
-            if all_same_name {
-                if let Some(f) =
-                    map_member_without_lines(cache, frame, no_range[0], outer_source_file, Some(0))
-                {
-                    frames.push(f);
-                }
-            } else {
-                for member in &no_range {
-                    if let Some(f) =
-                        map_member_without_lines(cache, frame, member, outer_source_file, Some(0))
-                    {
-                        frames.push(f);
-                    }
-                }
-            }
+        } else if let Some(f) =
+            map_member_without_lines(cache, frame, member, outer_source_file, Some(0))
+        {
+            frames.push(f);
         }
     }
 

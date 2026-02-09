@@ -317,17 +317,13 @@ fn resolve_no_line_frames<'s>(
         collected
             .frames
             .push(map_member_without_lines(frame, first, Some(0)));
-        collected
-            .rewrite_rules
-            .extend(first.rewrite_rules.iter());
+        collected.rewrite_rules.extend(first.rewrite_rules.iter());
     } else {
         for member in mapping_entries {
             collected
                 .frames
                 .push(map_member_without_lines(frame, member, Some(0)));
-            collected
-                .rewrite_rules
-                .extend(member.rewrite_rules.iter());
+            collected.rewrite_rules.extend(member.rewrite_rules.iter());
         }
     }
 }
@@ -366,9 +362,7 @@ fn resolve_base_entries<'s>(
                 collected
                     .frames
                     .push(map_member_without_lines(frame, member, Some(0)));
-                collected
-                    .rewrite_rules
-                    .extend(member.rewrite_rules.iter());
+                collected.rewrite_rules.extend(member.rewrite_rules.iter());
             }
         } else {
             for member in &zero_zero {
@@ -380,9 +374,7 @@ fn resolve_base_entries<'s>(
                 collected
                     .frames
                     .push(map_member_without_lines(frame, member, line));
-                collected
-                    .rewrite_rules
-                    .extend(member.rewrite_rules.iter());
+                collected.rewrite_rules.extend(member.rewrite_rules.iter());
             }
         }
     }
@@ -401,13 +393,9 @@ fn resolve_base_entries<'s>(
             collected
                 .frames
                 .push(map_member_without_lines(frame, member, line));
-            collected
-                .rewrite_rules
-                .extend(member.rewrite_rules.iter());
+            collected.rewrite_rules.extend(member.rewrite_rules.iter());
         } else {
-            let all_same_name = no_range
-                .iter()
-                .all(|m| m.original == no_range[0].original);
+            let all_same_name = no_range.iter().all(|m| m.original == no_range[0].original);
             if all_same_name {
                 collected
                     .frames
@@ -420,9 +408,7 @@ fn resolve_base_entries<'s>(
                     collected
                         .frames
                         .push(map_member_without_lines(frame, member, Some(0)));
-                    collected
-                        .rewrite_rules
-                        .extend(member.rewrite_rules.iter());
+                    collected.rewrite_rules.extend(member.rewrite_rules.iter());
                 }
             }
         }

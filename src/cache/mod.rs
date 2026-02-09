@@ -1200,13 +1200,9 @@ fn resolve_base_entries<'a>(
                 .iter()
                 .all(|m| m.original_name_offset == no_range[0].original_name_offset);
             if all_same_name {
-                if let Some(f) = map_member_without_lines(
-                    cache,
-                    frame,
-                    no_range[0],
-                    outer_source_file,
-                    Some(0),
-                ) {
+                if let Some(f) =
+                    map_member_without_lines(cache, frame, no_range[0], outer_source_file, Some(0))
+                {
                     frames.push(f);
                 }
             } else {

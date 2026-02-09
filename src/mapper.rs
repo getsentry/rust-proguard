@@ -697,6 +697,22 @@ impl<'s> ProguardMapper<'s> {
                         collected.rewrite_rules.extend(member.rewrite_rules.iter());
                         continue;
                     }
+                    // Span expansion: if the original range spans multiple lines,
+                    // emit one frame per original line.
+                    if let Some(oe) = member.original_endline {
+                        let os = member.original_startline.unwrap_or(0);
+                        if oe > os {
+                            for line in os..=oe {
+                                collected.frames.push(map_member_without_lines(
+                                    &frame,
+                                    member,
+                                    Some(line),
+                                ));
+                            }
+                            collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                            continue;
+                        }
+                    }
                     // Single-line: use original_startline if > 0, else None.
                     let output_line = if member.original_startline.unwrap_or(0) > 0 {
                         member.original_startline
@@ -711,6 +727,14 @@ impl<'s> ProguardMapper<'s> {
                     collected.frames.push(mapped);
                     collected.rewrite_rules.extend(member.rewrite_rules.iter());
                 }
+            }
+
+            // Outside-range fallback: if we had line mappings but nothing matched,
+            // remap only the class name, keeping the obfuscated method name and original line.
+            if collected.frames.is_empty() && has_line_info {
+                collected
+                    .frames
+                    .push(remap_class_only(&frame, frame.file()));
             }
         } else {
             for member in mapping_entries {

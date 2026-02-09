@@ -157,6 +157,12 @@ pub(crate) struct Member<'s> {
     pub(crate) original_startline: usize,
     /// The original end line.
     pub(crate) original_endline: Option<usize>,
+    /// Whether the mapping line had an explicit minified range prefix (including `0:0:`).
+    /// `false` when the line was just `method():origLine -> obfuscated`.
+    pub(crate) has_minified_range: bool,
+    /// Whether the mapping line had any line mapping at all (`:origLine` or `startline:endline:`).
+    /// `false` only for bare method mappings like `void foo(int) -> a`.
+    pub(crate) has_line_mapping: bool,
     /// Optional outline callsite positions map attached to this member.
     pub(crate) outline_callsite_positions: Option<HashMap<usize, usize>>,
     /// Optional rewrite rules attached to this member.
@@ -384,12 +390,19 @@ impl<'s> ParsedProguardMapping<'s> {
                         records.next();
                     }
 
+                    let has_minified_range = line_mapping
+                        .as_ref()
+                        .map_or(false, |lm| lm.has_minified_range);
+                    let has_line_mapping = line_mapping.is_some();
+
                     let member = Member {
                         method,
                         startline,
                         endline,
                         original_startline,
                         original_endline,
+                        has_minified_range,
+                        has_line_mapping,
                         outline_callsite_positions,
                         rewrite_rules,
                     };

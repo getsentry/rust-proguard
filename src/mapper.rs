@@ -67,6 +67,10 @@ struct MemberMapping<'s> {
     original: &'s str,
     original_startline: usize,
     original_endline: Option<usize>,
+    /// Whether the mapping line had an explicit minified range prefix (including `0:0:`).
+    has_minified_range: bool,
+    /// Whether the mapping line had any line mapping at all.
+    has_line_mapping: bool,
     is_synthesized: bool,
     is_outline: bool,
     outline_callsite_positions: Option<HashMap<usize, usize>>,
@@ -461,6 +465,8 @@ impl<'s> ProguardMapper<'s> {
             original: member.method.name.as_str(),
             original_startline: member.original_startline,
             original_endline: member.original_endline,
+            has_minified_range: member.has_minified_range,
+            has_line_mapping: member.has_line_mapping,
             is_synthesized,
             is_outline,
             outline_callsite_positions,

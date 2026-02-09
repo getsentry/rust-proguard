@@ -295,6 +295,9 @@ pub struct LineMapping {
     pub original_startline: Option<usize>,
     /// The original End Line.
     pub original_endline: Option<usize>,
+    /// Whether this mapping had an explicit minified line range prefix (e.g. `0:0:` or `1:5:`).
+    /// `false` when the mapping line had no range prefix (e.g. `void method():42 -> a`).
+    pub has_minified_range: bool,
 }
 
 /// An R8 header, as described in
@@ -472,6 +475,7 @@ impl<'s> ProguardRecord<'s> {
     ///             endline: 1016,
     ///             original_startline: Some(16),
     ///             original_endline: Some(16),
+    ///             has_minified_range: true,
     ///         }),
     ///     })
     /// );
@@ -641,6 +645,7 @@ fn parse_proguard_field_or_method(
                     endline,
                     original_startline,
                     original_endline,
+                    has_minified_range: true,
                 }),
                 // Preserve original line info even when no minified range is present.
                 // This enables this crate to use the original line for no-line mappings.
@@ -649,6 +654,7 @@ fn parse_proguard_field_or_method(
                     endline: 0,
                     original_startline: Some(original_startline),
                     original_endline,
+                    has_minified_range: false,
                 }),
                 _ => None,
             };
@@ -985,6 +991,7 @@ mod tests {
                     endline: 15,
                     original_startline: None,
                     original_endline: None,
+                    has_minified_range: true,
                 }),
             }),
         );
@@ -1007,6 +1014,7 @@ mod tests {
                     endline: 15,
                     original_startline: Some(436),
                     original_endline: None,
+                    has_minified_range: true,
                 }),
             }),
         );
@@ -1029,6 +1037,7 @@ mod tests {
                     endline: 15,
                     original_startline: Some(436),
                     original_endline: Some(437),
+                    has_minified_range: true,
                 }),
             }),
         );
@@ -1165,6 +1174,7 @@ androidx.activity.OnBackPressedCallback
                         endline: 4,
                         original_startline: Some(184),
                         original_endline: Some(187),
+                        has_minified_range: true,
                     }),
                 }),
                 Ok(ProguardRecord::R8Header(R8Header::Synthesized)),

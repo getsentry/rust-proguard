@@ -19,7 +19,7 @@ pub(crate) const PRGCACHE_MAGIC: u32 = u32::from_le_bytes(PRGCACHE_MAGIC_BYTES);
 pub(crate) const PRGCACHE_MAGIC_FLIPPED: u32 = PRGCACHE_MAGIC.swap_bytes();
 
 /// The current version of the ProguardCache format.
-pub const PRGCACHE_VERSION: u32 = 4;
+pub const PRGCACHE_VERSION: u32 = 5;
 
 /// The header of a proguard cache file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,8 +136,14 @@ pub(crate) struct Member {
     ///
     /// `0` means `false`, all other values mean `true`.
     pub(crate) is_outline: u8,
-    /// Reserved space.
-    pub(crate) _reserved: [u8; 2],
+    /// Whether the mapping had an explicit minified range prefix (including `0:0:`).
+    ///
+    /// `0` means `false`, all other values mean `true`.
+    pub(crate) has_minified_range: u8,
+    /// Whether the mapping had any line mapping at all (`:origLine` or `startline:endline:`).
+    ///
+    /// `0` means `false`, all other values mean `true`.
+    pub(crate) has_line_mapping: u8,
 }
 
 impl Member {
@@ -148,6 +154,14 @@ impl Member {
     /// Returns true if this member refers to an outline method.
     pub(crate) fn is_outline(&self) -> bool {
         self.is_outline != 0
+    }
+    /// Returns true if the mapping had an explicit minified range prefix.
+    pub(crate) fn has_minified_range(&self) -> bool {
+        self.has_minified_range != 0
+    }
+    /// Returns true if the mapping had any line mapping at all.
+    pub(crate) fn has_line_mapping(&self) -> bool {
+        self.has_line_mapping != 0
     }
 }
 
@@ -627,11 +641,12 @@ impl<'data> ProguardCache<'data> {
             params_offset,
             is_synthesized,
             is_outline,
+            has_minified_range: member.has_minified_range as u8,
+            has_line_mapping: member.has_line_mapping as u8,
             outline_pairs_offset: 0,
             outline_pairs_len: 0,
             rewrite_rules_offset: 0,
             rewrite_rules_len: 0,
-            _reserved: [0; 2],
         };
 
         MemberInProgress {

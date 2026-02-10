@@ -181,7 +181,7 @@ fn map_member_with_lines<'a>(
 /// Builds a remapped frame from a no-line (base) mapping entry.
 ///
 /// `output_line` is the line number to use in the output frame, already computed
-/// by the caller based on group context (has_minified_range, entry count, etc.).
+/// by the caller based on group context (presence of `startline`, entry count, etc.).
 fn map_member_without_lines<'a>(
     frame: &StackFrame<'a>,
     member: &MemberMapping<'a>,
@@ -293,9 +293,10 @@ impl FusedIterator for RemappedFrameIter<'_> {}
 /// Resolves frames for the no-line (frame_line==0) case.
 ///
 /// When the input frame has no line number, base entries (endline==0) are preferred
-/// over line-mapped entries. Base entries are split into two groups by
-/// `has_minified_range` and each group's output lines are computed based on
-/// whether the group contains range mappings, single-line mappings, or bare methods.
+/// over line-mapped entries. Base entries are split into two groups by whether
+/// `startline` is present (0:0 entries) or absent (no-range entries), and each
+/// group's output lines are computed based on whether the group contains range
+/// mappings, single-line mappings, or bare methods.
 fn resolve_no_line_frames<'s>(
     frame: &StackFrame<'s>,
     mapping_entries: &'s [MemberMapping<'s>],
@@ -330,11 +331,11 @@ fn resolve_no_line_frames<'s>(
 
 /// Resolves output lines for base (endline==0) entries when the frame has no line number.
 ///
-/// Entries are split by `has_minified_range`:
-/// - **0:0 entries** (`has_minified_range=true`): if any entry has a range
+/// Entries are split by whether `startline` is present:
+/// - **0:0 entries** (`startline.is_some()`): if any entry has a range
 ///   (`original_endline != original_startline`), all emit `Some(0)`;
 ///   otherwise each emits its `original_startline`.
-/// - **No-range entries** (`has_minified_range=false`): a single entry uses
+/// - **No-range entries** (`startline.is_none()`): a single entry uses
 ///   its `original_startline` (or `Some(0)` for bare methods); multiple entries
 ///   with the same name collapse to one frame with `Some(0)`; different names
 ///   each emit `Some(0)` in original order.
@@ -344,9 +345,13 @@ fn resolve_base_entries<'s>(
     collected: &mut CollectedFrames<'s>,
 ) {
     // Pre-compute aggregates in a single pass.
+    // Whether any 0:0 entry has a multi-line original range (original_endline != original_startline).
     let mut any_zero_zero_has_range = false;
+    // Number of no-range (startline.is_none()) entries.
     let mut no_range_count = 0usize;
+    // Original name of the first no-range entry, used to detect ambiguity.
     let mut first_no_range_name: Option<&str> = None;
+    // Whether all no-range entries map to the same original method name.
     let mut all_no_range_same_name = true;
     for member in base_entries {
         if member.startline.is_some() {
@@ -365,6 +370,7 @@ fn resolve_base_entries<'s>(
         }
     }
 
+    // Whether a no-range entry has already been emitted (used to collapse duplicates).
     let mut no_range_emitted = false;
     for member in base_entries {
         if member.startline.is_some() {

@@ -292,11 +292,11 @@ impl<'s> ParsedProguardMapping<'s> {
                         None
                     };
                     // in case the mapping has no line records, we use `0` here.
-                    let (startline, endline) =
+                    let (mut startline, mut endline) =
                         line_mapping.as_ref().map_or((0, 0), |line_mapping| {
                             (line_mapping.startline, line_mapping.endline)
                         });
-                    let (original_startline, original_endline) =
+                    let (mut original_startline, mut original_endline) =
                         line_mapping.map_or((0, None), |line_mapping| {
                             match line_mapping.original_startline {
                                 Some(original_startline) => {
@@ -305,6 +305,17 @@ impl<'s> ParsedProguardMapping<'s> {
                                 None => (line_mapping.startline, Some(line_mapping.endline)),
                             }
                         });
+
+                    // Normalize inverted ranges independently.
+                    if startline > endline {
+                        std::mem::swap(&mut startline, &mut endline);
+                    }
+                    if let Some(oe) = original_endline {
+                        if original_startline > oe {
+                            original_endline = Some(original_startline);
+                            original_startline = oe;
+                        }
+                    }
 
                     let Some((current_class_obfuscated, current_class_original)) =
                         current_class_name

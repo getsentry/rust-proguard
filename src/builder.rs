@@ -149,20 +149,14 @@ pub(crate) struct RewriteRule<'s> {
 pub(crate) struct Member<'s> {
     /// The method the member refers to.
     pub(crate) method: MethodKey<'s>,
-    /// The obfuscated/minified start line.
-    pub(crate) startline: usize,
-    /// The obfuscated/minified end line.
-    pub(crate) endline: usize,
-    /// The original start line.
-    pub(crate) original_startline: usize,
+    /// The obfuscated/minified start line, `None` when no minified range prefix was present.
+    pub(crate) startline: Option<usize>,
+    /// The obfuscated/minified end line, `None` when no minified range prefix was present.
+    pub(crate) endline: Option<usize>,
+    /// The original start line, `None` when no line mapping was present.
+    pub(crate) original_startline: Option<usize>,
     /// The original end line.
     pub(crate) original_endline: Option<usize>,
-    /// Whether the mapping line had an explicit minified range prefix (including `0:0:`).
-    /// `false` when the line was just `method():origLine -> obfuscated`.
-    pub(crate) has_minified_range: bool,
-    /// Whether the mapping line had any line mapping at all (`:origLine` or `startline:endline:`).
-    /// `false` only for bare method mappings like `void foo(int) -> a`.
-    pub(crate) has_line_mapping: bool,
     /// Optional outline callsite positions map attached to this member.
     pub(crate) outline_callsite_positions: Option<HashMap<usize, usize>>,
     /// Optional rewrite rules attached to this member.
@@ -297,29 +291,31 @@ impl<'s> ParsedProguardMapping<'s> {
                     } else {
                         None
                     };
-                    // in case the mapping has no line records, we use `0` here.
-                    let (mut startline, mut endline) =
-                        line_mapping.as_ref().map_or((0, 0), |line_mapping| {
-                            (line_mapping.startline, line_mapping.endline)
-                        });
-                    let (mut original_startline, mut original_endline) =
-                        line_mapping.map_or((0, None), |line_mapping| {
-                            match line_mapping.original_startline {
-                                Some(original_startline) => {
-                                    (original_startline, line_mapping.original_endline)
-                                }
-                                None => (line_mapping.startline, Some(line_mapping.endline)),
-                            }
-                        });
+                    let (mut startline, mut endline) = match line_mapping.as_ref() {
+                        Some(lm) if lm.has_minified_range => {
+                            (Some(lm.startline), Some(lm.endline))
+                        }
+                        _ => (None, None),
+                    };
+                    let (mut original_startline, mut original_endline) = match line_mapping {
+                        None => (None, None),
+                        Some(lm) => match lm.original_startline {
+                            Some(os) => (Some(os), lm.original_endline),
+                            None => (startline, endline),
+                        },
+                    };
 
                     // Normalize inverted ranges independently.
-                    if startline > endline {
-                        std::mem::swap(&mut startline, &mut endline);
+                    if let (Some(s), Some(e)) = (startline, endline) {
+                        if s > e {
+                            startline = Some(e);
+                            endline = Some(s);
+                        }
                     }
-                    if let Some(oe) = original_endline {
-                        if original_startline > oe {
-                            original_endline = Some(original_startline);
-                            original_startline = oe;
+                    if let (Some(os), Some(oe)) = (original_startline, original_endline) {
+                        if os > oe {
+                            original_startline = Some(oe);
+                            original_endline = Some(os);
                         }
                     }
 
@@ -390,19 +386,12 @@ impl<'s> ParsedProguardMapping<'s> {
                         records.next();
                     }
 
-                    let has_minified_range = line_mapping
-                        .as_ref()
-                        .is_some_and(|lm| lm.has_minified_range);
-                    let has_line_mapping = line_mapping.is_some();
-
                     let member = Member {
                         method,
                         startline,
                         endline,
                         original_startline,
                         original_endline,
-                        has_minified_range,
-                        has_line_mapping,
                         outline_callsite_positions,
                         rewrite_rules,
                     };

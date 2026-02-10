@@ -410,16 +410,16 @@ fn rewrite_frame_complex_stacktrace_typed() {
     assert_eq!(frames.len(), 4);
     assert_eq!(frames[0].class(), "com.example.flow.Initializer");
     assert_eq!(frames[0].method(), "start");
-    assert_eq!(frames[0].line(), 42);
+    assert_eq!(frames[0].line(), Some(42));
     assert_eq!(frames[1].class(), "com.example.flow.StreamRouter$Inline");
     assert_eq!(frames[1].method(), "internalDispatch");
-    assert_eq!(frames[1].line(), 30);
+    assert_eq!(frames[1].line(), Some(30));
     assert_eq!(frames[2].class(), "com.example.flow.StreamRouter");
     assert_eq!(frames[2].method(), "dispatch");
-    assert_eq!(frames[2].line(), 12);
+    assert_eq!(frames[2].line(), Some(12));
     assert_eq!(frames[3].class(), "com.example.flow.UiBridge");
     assert_eq!(frames[3].method(), "render");
-    assert_eq!(frames[3].line(), 200);
+    assert_eq!(frames[3].line(), Some(200));
 
     // Caused by exception (also not in mapping)
     let cause = remapped.cause().unwrap();
@@ -430,10 +430,10 @@ fn rewrite_frame_complex_stacktrace_typed() {
     assert_eq!(cause_frames.len(), 2);
     assert_eq!(cause_frames[0].class(), "com.example.flow.StreamRouter");
     assert_eq!(cause_frames[0].method(), "dispatch");
-    assert_eq!(cause_frames[0].line(), 12);
+    assert_eq!(cause_frames[0].line(), Some(12));
     assert_eq!(cause_frames[1].class(), "com.example.flow.UiBridge");
     assert_eq!(cause_frames[1].method(), "render");
-    assert_eq!(cause_frames[1].line(), 200);
+    assert_eq!(cause_frames[1].line(), Some(200));
 }
 
 #[test]
@@ -541,7 +541,7 @@ fn test_method_with_zero_zero_and_line_specific_mappings() {
     );
     assert_eq!(frame.method(), "obtainDropShadowRenderer-eZhPAX0");
     // Should map to line 70 (from the 1:4: mapping), not line 68 (from the 0:0: mapping)
-    assert_eq!(frame.line(), 70);
+    assert_eq!(frame.line(), Some(70));
     assert_eq!(mapped.next(), None);
 }
 
@@ -574,6 +574,6 @@ fn test_method_with_zero_zero_and_line_specific_mappings_cache() {
     );
     assert_eq!(remapped_frame.method(), "obtainDropShadowRenderer-eZhPAX0");
     // Should map to line 70 (from the 1:4: mapping), not line 68 (from the 0:0: mapping)
-    assert_eq!(remapped_frame.line(), 70);
+    assert_eq!(remapped_frame.line(), Some(70));
     assert_eq!(mapped.next(), None);
 }

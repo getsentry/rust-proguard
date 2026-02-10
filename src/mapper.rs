@@ -585,9 +585,7 @@ impl<'s> ProguardMapper<'s> {
         };
 
         if frame.parameters.is_none() {
-            let has_line_info = mapping_entries
-                .iter()
-                .any(|m| m.endline.unwrap_or(0) > 0);
+            let has_line_info = mapping_entries.iter().any(|m| m.endline.unwrap_or(0) > 0);
 
             // If the stacktrace has no line number, treat it as unknown and remap without
             // applying line filters. If there are base (no-line) mappings present, prefer those.

@@ -406,9 +406,7 @@ impl<'data> ProguardCache<'data> {
             }
         }
 
-        let has_line_info = mapping_entries
-            .iter()
-            .any(|m| m.endline().unwrap_or(0) > 0);
+        let has_line_info = mapping_entries.iter().any(|m| m.endline().unwrap_or(0) > 0);
 
         Some((
             mapping_entries,
@@ -999,9 +997,7 @@ fn iterate_with_lines<'a>(
             return map_member_without_lines(cache, frame, member, outer_source_file);
         }
         // skip any members which do not match our frames line
-        if member_endline > 0
-            && (frame_line < member_startline || frame_line > member_endline)
-        {
+        if member_endline > 0 && (frame_line < member_startline || frame_line > member_endline) {
             continue;
         }
         let original_startline = member.original_startline().unwrap_or(0) as usize;

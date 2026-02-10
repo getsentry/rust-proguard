@@ -994,7 +994,7 @@ fn iterate_with_lines<'a>(
         // parents of inlined frames don't have an `endline`, and
         // the top inlined frame need to be correctly offset.
         let line = if member.original_endline == u32::MAX
-            || member.original_endline == member.original_startline().unwrap_or(0) as u32
+            || member.original_endline == member.original_startline().unwrap_or(0)
         {
             member.original_startline().unwrap_or(0) as usize
         } else {
@@ -1150,7 +1150,7 @@ fn resolve_base_entries<'a>(
     for member in base_entries {
         if member.startline().is_some() {
             if member.original_endline != u32::MAX
-                && member.original_endline != member.original_startline().unwrap_or(0) as u32
+                && member.original_endline != member.original_startline().unwrap_or(0)
             {
                 any_zero_zero_has_range = true;
             }
@@ -1185,11 +1185,13 @@ fn resolve_base_entries<'a>(
                 let line = if no_range_count > 1 {
                     Some(0)
                 } else {
-                    compute_member_output_line(member).or(if member.original_startline().is_none() {
-                        Some(0)
-                    } else {
-                        None
-                    })
+                    compute_member_output_line(member).or(
+                        if member.original_startline().is_none() {
+                            Some(0)
+                        } else {
+                            None
+                        },
+                    )
                 };
                 if let Some(f) =
                     map_member_without_lines(cache, frame, member, outer_source_file, line)

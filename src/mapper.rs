@@ -781,7 +781,10 @@ impl<'s> ProguardMapper<'s> {
             members.all_mappings.iter()
         };
 
-        let has_line_info = members.all_mappings.iter().any(|m| m.endline.unwrap_or(0) > 0);
+        let has_line_info = members
+            .all_mappings
+            .iter()
+            .any(|m| m.endline.unwrap_or(0) > 0);
         RemappedFrameIter::members(frame, mappings, has_line_info)
     }
 

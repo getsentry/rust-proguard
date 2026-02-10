@@ -306,15 +306,10 @@ impl<'s> ParsedProguardMapping<'s> {
                             }
                         });
 
-                    // Normalize inverted ranges: if minified range is inverted,
-                    // swap both minified and original pairs.
+                    // Normalize inverted ranges independently.
                     if startline > endline {
                         std::mem::swap(&mut startline, &mut endline);
-                        if let Some(ref mut oe) = original_endline {
-                            std::mem::swap(&mut original_startline, oe);
-                        }
                     }
-                    // If original range is still inverted, swap it independently.
                     if let Some(oe) = original_endline {
                         if original_startline > oe {
                             original_endline = Some(original_startline);

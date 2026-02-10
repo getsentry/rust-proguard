@@ -390,8 +390,9 @@ impl<'data> ProguardCache<'data> {
             for member in mapping_entries {
                 // Check if this member would produce a frame (line matching)
                 let pf_line = prepared_frame.line.unwrap_or(0);
-                if member.endline == 0
-                    || (pf_line >= member.startline as usize && pf_line <= member.endline as usize)
+                if member.endline().unwrap_or(0) == 0
+                    || (pf_line >= member.startline().unwrap_or(0) as usize
+                        && pf_line <= member.endline().unwrap_or(0) as usize)
                 {
                     had_mappings = true;
                     rewrite_rules.extend(self.decode_rewrite_rules(member));
@@ -405,7 +406,9 @@ impl<'data> ProguardCache<'data> {
             }
         }
 
-        let has_line_info = mapping_entries.iter().any(|m| m.endline > 0);
+        let has_line_info = mapping_entries
+            .iter()
+            .any(|m| m.endline().unwrap_or(0) > 0);
 
         Some((
             mapping_entries,
@@ -631,9 +634,9 @@ impl<'data> ProguardCache<'data> {
         candidates
             .iter()
             .filter(|m| {
-                m.endline == 0
-                    || (callsite_line >= m.startline as usize
-                        && callsite_line <= m.endline as usize)
+                m.endline().unwrap_or(0) == 0
+                    || (callsite_line >= m.startline().unwrap_or(0) as usize
+                        && callsite_line <= m.endline().unwrap_or(0) as usize)
             })
             .find_map(|m| {
                 self.member_outline_pairs(m)
@@ -917,7 +920,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
                     NoLineSelection::IterateBase => {
                         let mut mapped = None;
                         for member in members.by_ref() {
-                            if member.endline == 0 {
+                            if member.endline().unwrap_or(0) == 0 {
                                 mapped = map_member_without_lines(
                                     cache,
                                     &frame,
@@ -985,28 +988,31 @@ fn iterate_with_lines<'a>(
 ) -> Option<StackFrame<'a>> {
     let frame_line = frame.line.unwrap_or(0);
     for member in members {
+        let member_endline = member.endline().unwrap_or(0) as usize;
+        let member_startline = member.startline().unwrap_or(0) as usize;
         // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
-        if has_line_info && frame_line > 0 && member.endline == 0 {
+        if has_line_info && frame_line > 0 && member_endline == 0 {
             continue;
         }
         // If the mapping entry has no line range, preserve the input line number (if any).
-        if member.endline == 0 {
+        if member_endline == 0 {
             return map_member_without_lines(cache, frame, member, outer_source_file);
         }
         // skip any members which do not match our frames line
-        if member.endline > 0
-            && (frame_line < member.startline as usize || frame_line > member.endline as usize)
+        if member_endline > 0
+            && (frame_line < member_startline || frame_line > member_endline)
         {
             continue;
         }
+        let original_startline = member.original_startline().unwrap_or(0) as usize;
         // parents of inlined frames don't have an `endline`, and
         // the top inlined frame need to be correctly offset.
         let line = if member.original_endline == u32::MAX
-            || member.original_endline == member.original_startline
+            || member.original_endline as usize == original_startline
         {
-            member.original_startline as usize
+            original_startline
         } else {
-            member.original_startline as usize + frame_line - member.startline as usize
+            original_startline + frame_line - member_startline
         };
 
         let class = cache
@@ -1058,7 +1064,7 @@ enum NoLineSelection<'a> {
 
 fn select_no_line_members<'a>(members: &'a [raw::Member]) -> Option<NoLineSelection<'a>> {
     // Prefer base entries (endline == 0) if present.
-    let mut base_members = members.iter().filter(|m| m.endline == 0);
+    let mut base_members = members.iter().filter(|m| m.endline().unwrap_or(0) == 0);
     if let Some(first_base) = base_members.next() {
         let all_same = base_members.all(|m| {
             m.original_class_offset == first_base.original_class_offset
@@ -1097,10 +1103,7 @@ fn map_member_without_lines<'a>(
     let method = cache.read_string(member.original_name_offset).ok()?;
     let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
 
-    let original_startline = match member.original_startline {
-        0 | u32::MAX => None,
-        value => Some(value as usize),
-    };
+    let original_startline = member.original_startline().map(|v| v as usize);
 
     Some(StackFrame {
         class,
@@ -1109,8 +1112,8 @@ fn map_member_without_lines<'a>(
         line: Some(resolve_no_line_output_line(
             frame.line.unwrap_or(0),
             original_startline,
-            member.startline as usize,
-            member.endline as usize,
+            member.startline().map(|v| v as usize),
+            member.endline().map(|v| v as usize),
         )),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
@@ -1134,10 +1137,7 @@ fn iterate_without_lines<'a>(
     // Synthesize from class name (input filename is not reliable)
     let file = synthesize_source_file(class, outer_source_file).map(Cow::Owned);
 
-    let original_startline = match member.original_startline {
-        0 | u32::MAX => None,
-        value => Some(value as usize),
-    };
+    let original_startline = member.original_startline().map(|v| v as usize);
 
     Some(StackFrame {
         class,
@@ -1146,8 +1146,8 @@ fn iterate_without_lines<'a>(
         line: Some(resolve_no_line_output_line(
             frame.line.unwrap_or(0),
             original_startline,
-            member.startline as usize,
-            member.endline as usize,
+            member.startline().map(|v| v as usize),
+            member.endline().map(|v| v as usize),
         )),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),

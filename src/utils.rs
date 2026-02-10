@@ -4,12 +4,12 @@
 pub(crate) fn resolve_no_line_output_line(
     frame_line: usize,
     original_startline: Option<usize>,
-    startline: usize,
-    endline: usize,
+    startline: Option<usize>,
+    endline: Option<usize>,
 ) -> usize {
     if frame_line > 0 {
         frame_line
-    } else if startline == 0 && endline == 0 {
+    } else if startline.unwrap_or(0) == 0 && endline.unwrap_or(0) == 0 {
         original_startline.unwrap_or(0)
     } else {
         0

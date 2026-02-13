@@ -898,7 +898,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
     fn next_inner(&mut self) -> Option<StackFrame<'data>> {
         // Drain any buffered frames from multi-frame expansion first.
         if !self.pending_frames.is_empty() {
-            return Some(self.pending_frames.remove(0));
+            return self.pending_frames.pop();
         }
 
         if let Some(frame) = self.fallback.take() {
@@ -917,8 +917,8 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
                     members.as_slice(),
                     self.outer_source_file,
                 );
-                if !frames.is_empty() {
-                    let first = frames.remove(0);
+                frames.reverse();
+                if let Some(first) = frames.pop() {
                     self.pending_frames = frames;
                     return Some(first);
                 }
@@ -1133,8 +1133,8 @@ fn resolve_no_line_frames<'a>(
 /// - **0:0 entries** (`startline().is_some()`): if any entry has a range
 ///   (`original_endline != original_startline`), all emit `Some(0)`;
 ///   otherwise each emits its `original_startline`.
-/// - **No-range entries** (`startline().is_none()`): a single entry uses
-///   its `original_startline` (or `Some(0)` for bare methods); multiple entries
+/// - **No-range entries** (`startline().is_none()`): a single entry emits
+///   its `original_startline` if > 0, otherwise `Some(0)`; multiple entries
 ///   with the same name collapse to one frame with `Some(0)`; different names
 ///   each emit `Some(0)` in original order.
 fn resolve_base_entries<'a>(

@@ -309,10 +309,9 @@ fn resolve_no_line_frames<'s>(
     }
 
     // No base entries — fall back to all entries with output line 0.
-    if mapping_entries.is_empty() {
+    let Some(first) = mapping_entries.first() else {
         return;
-    }
-    let first = &mapping_entries[0];
+    };
     let unambiguous = mapping_entries.iter().all(|m| m.original == first.original);
     if unambiguous {
         collected
@@ -335,8 +334,8 @@ fn resolve_no_line_frames<'s>(
 /// - **0:0 entries** (`startline.is_some()`): if any entry has a range
 ///   (`original_endline != original_startline`), all emit `Some(0)`;
 ///   otherwise each emits its `original_startline`.
-/// - **No-range entries** (`startline.is_none()`): a single entry uses
-///   its `original_startline` (or `Some(0)` for bare methods); multiple entries
+/// - **No-range entries** (`startline.is_none()`): a single entry emits
+///   its `original_startline` if > 0, otherwise `Some(0)`; multiple entries
 ///   with the same name collapse to one frame with `Some(0)`; different names
 ///   each emit `Some(0)` in original order.
 fn resolve_base_entries<'s>(
@@ -388,14 +387,10 @@ fn resolve_base_entries<'s>(
         } else if all_no_range_same_name {
             if !no_range_emitted {
                 no_range_emitted = true;
-                let line = if no_range_count > 1 {
-                    Some(0)
-                } else if member.original_startline.unwrap_or(0) > 0 {
+                let line = if no_range_count == 1 && member.original_startline.unwrap_or(0) > 0 {
                     member.original_startline
-                } else if member.original_startline.is_none() {
-                    Some(0)
                 } else {
-                    None
+                    Some(0)
                 };
                 collected
                     .frames

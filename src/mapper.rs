@@ -60,12 +60,12 @@ impl fmt::Display for DeobfuscatedSignature {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MemberMapping<'s> {
-    startline: usize,
-    endline: usize,
+    startline: Option<usize>,
+    endline: Option<usize>,
     original_class: Option<&'s str>,
     original_file: Option<&'s str>,
     original: &'s str,
-    original_startline: usize,
+    original_startline: Option<usize>,
     original_endline: Option<usize>,
     is_synthesized: bool,
     is_outline: bool,
@@ -141,18 +141,21 @@ fn map_member_with_lines<'a>(
     member: &MemberMapping<'a>,
 ) -> Option<StackFrame<'a>> {
     let frame_line = frame.line.unwrap_or(0);
-    if member.endline > 0 && (frame_line < member.startline || frame_line > member.endline) {
+    let member_endline = member.endline.unwrap_or(0);
+    let member_startline = member.startline.unwrap_or(0);
+    if member_endline > 0 && (frame_line < member_startline || frame_line > member_endline) {
         return None;
     }
 
+    let original_startline = member.original_startline.unwrap_or(0);
     // parents of inlined frames don't have an `endline`, and
     // the top inlined frame need to be correctly offset.
     let line = if member.original_endline.is_none()
-        || member.original_endline == Some(member.original_startline)
+        || member.original_endline == Some(original_startline)
     {
-        member.original_startline
+        original_startline
     } else {
-        member.original_startline + frame_line - member.startline
+        original_startline + frame_line - member_startline
     };
 
     let class = member.original_class.unwrap_or(frame.class);
@@ -186,14 +189,9 @@ fn map_member_without_lines<'a>(
     let class = member.original_class.unwrap_or(frame.class);
     // Synthesize from class name (input filename is not reliable)
     let file = synthesize_source_file(class, member.outer_source_file).map(Cow::Owned);
-    let original_startline = if member.original_startline > 0 {
-        Some(member.original_startline)
-    } else {
-        None
-    };
     let line = resolve_no_line_output_line(
         frame.line.unwrap_or(0),
-        original_startline,
+        member.original_startline,
         member.startline,
         member.endline,
     );
@@ -237,7 +235,9 @@ fn select_no_line_members<'a>(
     mapping_entries: &'a [MemberMapping<'a>],
     has_line_info: bool,
 ) -> Option<NoLineSelection<'a>> {
-    let mut base_members = mapping_entries.iter().filter(|m| m.endline == 0);
+    let mut base_members = mapping_entries
+        .iter()
+        .filter(|m| m.endline.unwrap_or(0) == 0);
     if has_line_info {
         if let Some(first_base) = base_members.next() {
             let all_same = base_members.all(|m| m.original == first_base.original);
@@ -298,12 +298,13 @@ fn iterate_with_lines<'a>(
 ) -> Option<StackFrame<'a>> {
     let frame_line = frame.line.unwrap_or(0);
     for member in members {
+        let member_endline = member.endline.unwrap_or(0);
         // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
-        if has_line_info && frame_line > 0 && member.endline == 0 {
+        if has_line_info && frame_line > 0 && member_endline == 0 {
             continue;
         }
         // If the mapping entry has no line range, preserve the input line number (if any).
-        if member.endline == 0 {
+        if member_endline == 0 {
             return Some(map_member_without_lines(frame, member));
         }
         if let Some(mapped) = map_member_with_lines(frame, member) {
@@ -493,7 +494,9 @@ impl<'s> ProguardMapper<'s> {
         candidates
             .iter()
             .filter(|m| {
-                m.endline == 0 || (callsite_line >= m.startline && callsite_line <= m.endline)
+                m.endline.unwrap_or(0) == 0
+                    || (callsite_line >= m.startline.unwrap_or(0)
+                        && callsite_line <= m.endline.unwrap_or(0))
             })
             .find_map(|m| {
                 m.outline_callsite_positions
@@ -582,7 +585,7 @@ impl<'s> ProguardMapper<'s> {
         };
 
         if frame.parameters.is_none() {
-            let has_line_info = mapping_entries.iter().any(|m| m.endline > 0);
+            let has_line_info = mapping_entries.iter().any(|m| m.endline.unwrap_or(0) > 0);
 
             // If the stacktrace has no line number, treat it as unknown and remap without
             // applying line filters. If there are base (no-line) mappings present, prefer those.
@@ -604,7 +607,10 @@ impl<'s> ProguardMapper<'s> {
                         }
                     }
                     Some(NoLineSelection::IterateBase) => {
-                        for member in mapping_entries.iter().filter(|m| m.endline == 0) {
+                        for member in mapping_entries
+                            .iter()
+                            .filter(|m| m.endline.unwrap_or(0) == 0)
+                        {
                             collected
                                 .frames
                                 .push(map_member_without_lines(&frame, member));
@@ -617,10 +623,10 @@ impl<'s> ProguardMapper<'s> {
             }
 
             for member in mapping_entries {
-                if has_line_info && member.endline == 0 {
+                if has_line_info && member.endline.unwrap_or(0) == 0 {
                     continue;
                 }
-                if member.endline == 0 {
+                if member.endline.unwrap_or(0) == 0 {
                     collected
                         .frames
                         .push(map_member_without_lines(&frame, member));
@@ -694,7 +700,10 @@ impl<'s> ProguardMapper<'s> {
             members.all_mappings.iter()
         };
 
-        let has_line_info = members.all_mappings.iter().any(|m| m.endline > 0);
+        let has_line_info = members
+            .all_mappings
+            .iter()
+            .any(|m| m.endline.unwrap_or(0) > 0);
         RemappedFrameIter::members(frame, mappings, has_line_info)
     }
 

@@ -292,8 +292,8 @@ impl<'s> ParsedProguardMapping<'s> {
                         None
                     };
                     let (mut startline, mut endline) = match line_mapping.as_ref() {
-                        Some(lm) if lm.has_minified_range => (Some(lm.startline), Some(lm.endline)),
-                        _ => (None, None),
+                        Some(lm) => (lm.startline, lm.endline),
+                        None => (None, None),
                     };
                     let (mut original_startline, mut original_endline) = match line_mapping {
                         None => (None, None),

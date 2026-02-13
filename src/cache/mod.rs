@@ -390,10 +390,9 @@ impl<'data> ProguardCache<'data> {
             for member in mapping_entries {
                 // Check if this member would produce a frame (line matching)
                 let pf_line = prepared_frame.line.unwrap_or(0);
-                if member.endline().unwrap_or(0) == 0
-                    || (pf_line >= member.startline().unwrap_or(0) as usize
-                        && pf_line <= member.endline().unwrap_or(0) as usize)
-                {
+                let startline = member.startline().unwrap_or(0) as usize;
+                let endline = member.endline().unwrap_or(0) as usize;
+                if endline == 0 || (pf_line >= startline && pf_line <= endline) {
                     had_mappings = true;
                     rewrite_rules.extend(self.decode_rewrite_rules(member));
                 }

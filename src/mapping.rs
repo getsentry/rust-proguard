@@ -287,17 +287,14 @@ impl<'s> Iterator for ProguardRecordIter<'s> {
 /// All line mappings are 1-based and inclusive.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LineMapping {
-    /// Start Line, 1-based.
-    pub startline: usize,
-    /// End Line, inclusive.
-    pub endline: usize,
+    /// Start Line, 1-based. `None` when no minified range prefix was present.
+    pub startline: Option<usize>,
+    /// End Line, inclusive. `None` when no minified range prefix was present.
+    pub endline: Option<usize>,
     /// The original Start Line.
     pub original_startline: Option<usize>,
     /// The original End Line.
     pub original_endline: Option<usize>,
-    /// Whether this mapping had an explicit minified line range prefix (e.g. `0:0:` or `1:5:`).
-    /// `false` when the mapping line had no range prefix (e.g. `void method():42 -> a`).
-    pub has_minified_range: bool,
 }
 
 /// An R8 header, as described in
@@ -471,11 +468,10 @@ impl<'s> ProguardRecord<'s> {
     ///         arguments: "",
     ///         original_class: Some("com.example1.domain.MyBean"),
     ///         line_mapping: Some(proguard::LineMapping {
-    ///             startline: 1016,
-    ///             endline: 1016,
+    ///             startline: Some(1016),
+    ///             endline: Some(1016),
     ///             original_startline: Some(16),
     ///             original_endline: Some(16),
-    ///             has_minified_range: true,
     ///         }),
     ///     })
     /// );
@@ -641,20 +637,18 @@ fn parse_proguard_field_or_method(
 
             let line_mapping = match (startline, endline, original_startline) {
                 (Some(startline), Some(endline), _) => Some(LineMapping {
-                    startline,
-                    endline,
+                    startline: Some(startline),
+                    endline: Some(endline),
                     original_startline,
                     original_endline,
-                    has_minified_range: true,
                 }),
                 // Preserve original line info even when no minified range is present.
                 // This enables this crate to use the original line for no-line mappings.
                 (None, None, Some(original_startline)) => Some(LineMapping {
-                    startline: 0,
-                    endline: 0,
+                    startline: None,
+                    endline: None,
                     original_startline: Some(original_startline),
                     original_endline,
-                    has_minified_range: false,
                 }),
                 _ => None,
             };
@@ -987,11 +981,10 @@ mod tests {
                 arguments: "androidx.appcompat.widget.Toolbar",
                 original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
                 line_mapping: Some(LineMapping {
-                    startline: 14,
-                    endline: 15,
+                    startline: Some(14),
+                    endline: Some(15),
                     original_startline: None,
                     original_endline: None,
-                    has_minified_range: true,
                 }),
             }),
         );
@@ -1010,11 +1003,10 @@ mod tests {
                 arguments: "androidx.appcompat.widget.Toolbar",
                 original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
                 line_mapping: Some(LineMapping {
-                    startline: 14,
-                    endline: 15,
+                    startline: Some(14),
+                    endline: Some(15),
                     original_startline: Some(436),
                     original_endline: None,
-                    has_minified_range: true,
                 }),
             }),
         );
@@ -1033,11 +1025,10 @@ mod tests {
                 arguments: "androidx.appcompat.widget.Toolbar",
                 original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
                 line_mapping: Some(LineMapping {
-                    startline: 14,
-                    endline: 15,
+                    startline: Some(14),
+                    endline: Some(15),
                     original_startline: Some(436),
                     original_endline: Some(437),
-                    has_minified_range: true,
                 }),
             }),
         );
@@ -1170,11 +1161,10 @@ androidx.activity.OnBackPressedCallback
                     arguments: "",
                     original_class: None,
                     line_mapping: Some(LineMapping {
-                        startline: 1,
-                        endline: 4,
+                        startline: Some(1),
+                        endline: Some(4),
                         original_startline: Some(184),
                         original_endline: Some(187),
-                        has_minified_range: true,
                     }),
                 }),
                 Ok(ProguardRecord::R8Header(R8Header::Synthesized)),

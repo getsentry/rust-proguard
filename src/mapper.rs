@@ -4,6 +4,15 @@ use std::fmt;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
+/// Maximum number of frames emitted by span expansion for a single mapping entry.
+///
+/// R8 uses `0:65535` as the catch-all range for methods with a single unique position:
+/// <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#catch-all-range-for-methods-with-a-single-unique-position>
+///
+/// No real method would span more lines than this, so ranges exceeding this cap
+/// are treated as malformed and fall through to single-line handling.
+const MAX_SPAN_EXPANSION: usize = 65_535;
+
 use crate::builder::{
     Member, MethodReceiver, ParsedProguardMapping, RewriteAction, RewriteCondition, RewriteRule,
 };
@@ -701,7 +710,7 @@ impl<'s> ProguardMapper<'s> {
                     // emit one frame per original line.
                     if let Some(oe) = member.original_endline {
                         let os = member.original_startline.unwrap_or(0);
-                        if oe > os {
+                        if oe > os && (oe - os) <= MAX_SPAN_EXPANSION {
                             for line in os..=oe {
                                 collected.frames.push(map_member_without_lines(
                                     &frame,

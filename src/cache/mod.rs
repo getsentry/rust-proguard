@@ -83,6 +83,15 @@ use crate::mapper::{format_cause, format_frames, format_throwable};
 use crate::utils::{class_name_to_descriptor, extract_class_name, synthesize_source_file};
 use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Throwable};
 
+/// Maximum number of frames emitted by span expansion for a single mapping entry.
+///
+/// R8 uses `0:65535` as the catch-all range for methods with a single unique position:
+/// <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#catch-all-range-for-methods-with-a-single-unique-position>
+///
+/// No real method would span more lines than this, so ranges exceeding this cap
+/// are treated as malformed and fall through to single-line handling.
+const MAX_SPAN_EXPANSION: u32 = 65_535;
+
 pub use raw::{ProguardCache, PRGCACHE_VERSION};
 
 /// Result of looking up member mappings for a frame.
@@ -1005,6 +1014,8 @@ fn iterate_with_lines<'a>(
             // emit one frame per original line.
             if member.original_endline != u32::MAX
                 && member.original_endline > member.original_startline().unwrap_or(0)
+                && (member.original_endline - member.original_startline().unwrap_or(0))
+                    <= MAX_SPAN_EXPANSION
             {
                 let first_line = member.original_startline().unwrap_or(0) as usize;
                 let last_line = member.original_endline as usize;

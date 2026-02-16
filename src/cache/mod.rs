@@ -1191,13 +1191,7 @@ fn resolve_base_entries<'a>(
                 let line = if no_range_count > 1 {
                     Some(0)
                 } else {
-                    compute_member_output_line(member).or(
-                        if member.original_startline().is_none() {
-                            Some(0)
-                        } else {
-                            None
-                        },
-                    )
+                    compute_member_output_line(member).or(Some(0))
                 };
                 if let Some(f) =
                     map_member_without_lines(cache, frame, member, outer_source_file, line)

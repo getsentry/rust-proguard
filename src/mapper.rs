@@ -387,8 +387,8 @@ fn resolve_base_entries<'s>(
         } else if all_no_range_same_name {
             if !no_range_emitted {
                 no_range_emitted = true;
-                let line = if no_range_count == 1 && member.original_startline.unwrap_or(0) > 0 {
-                    member.original_startline
+                let line = if no_range_count == 1 {
+                    member.original_startline.or(Some(0))
                 } else {
                     Some(0)
                 };

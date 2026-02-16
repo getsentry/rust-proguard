@@ -83,6 +83,15 @@ use crate::mapper::{format_cause, format_frames, format_throwable};
 use crate::utils::{class_name_to_descriptor, extract_class_name, synthesize_source_file};
 use crate::{java, stacktrace, DeobfuscatedSignature, StackFrame, StackTrace, Throwable};
 
+/// Maximum number of frames emitted by span expansion for a single mapping entry.
+///
+/// R8 uses `0:65535` as the catch-all range for methods with a single unique position:
+/// <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#catch-all-range-for-methods-with-a-single-unique-position>
+///
+/// No real method would span more lines than this, so ranges exceeding this cap
+/// are treated as malformed and fall through to single-line handling.
+const MAX_SPAN_EXPANSION: u32 = 65_535;
+
 pub use raw::{ProguardCache, PRGCACHE_VERSION};
 
 /// Result of looking up member mappings for a frame.
@@ -838,6 +847,8 @@ pub struct RemappedFrameIter<'r, 'data> {
     had_mappings: bool,
     /// Whether this method has any line-based mappings.
     has_line_info: bool,
+    /// Whether any frame was successfully matched by iterate_with_lines.
+    matched_any: bool,
     /// The source file of the outer class for synthesis.
     outer_source_file: Option<&'data str>,
 }
@@ -851,6 +862,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             skip_count: 0,
             had_mappings: false,
             has_line_info: false,
+            matched_any: false,
             outer_source_file: None,
         }
     }
@@ -871,6 +883,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             skip_count,
             had_mappings,
             has_line_info,
+            matched_any: false,
             outer_source_file,
         }
     }
@@ -883,6 +896,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
             skip_count: 0,
             had_mappings: false,
             has_line_info: false,
+            matched_any: false,
             outer_source_file: None,
         }
     }
@@ -932,9 +946,20 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
                 &mut members,
                 self.outer_source_file,
                 self.has_line_info,
+                &mut self.pending_frames,
             );
-            self.inner = Some((cache, frame, members));
-            mapped
+            if mapped.is_some() {
+                self.matched_any = true;
+                self.inner = Some((cache, frame, members));
+                mapped
+            } else if !self.matched_any && self.has_line_info {
+                // Outside-range fallback: no member matched the frame line.
+                // Remap only the class name, keeping the obfuscated method name
+                // and the original line.
+                Some(cache.remap_class_only(&frame, self.outer_source_file))
+            } else {
+                None
+            }
         } else {
             let mapped =
                 iterate_without_lines(cache, &mut frame, &mut members, self.outer_source_file);
@@ -965,6 +990,7 @@ fn iterate_with_lines<'a>(
     members: &mut std::slice::Iter<'_, raw::Member>,
     outer_source_file: Option<&str>,
     has_line_info: bool,
+    pending_frames: &mut Vec<StackFrame<'a>>,
 ) -> Option<StackFrame<'a>> {
     let frame_line = frame.line.unwrap_or(0);
     for member in members {
@@ -974,10 +1000,46 @@ fn iterate_with_lines<'a>(
         }
         // If the mapping entry has no line range, determine output line.
         if member.endline().unwrap_or(0) == 0 {
-            let output_line = if member.original_startline().is_none() {
+            if member.original_startline().is_none() {
                 // Bare method mapping: pass through frame line.
-                frame.line
-            } else if member.original_startline().unwrap_or(0) > 0 {
+                return map_member_without_lines(
+                    cache,
+                    frame,
+                    member,
+                    outer_source_file,
+                    frame.line,
+                );
+            }
+            // Span expansion: if the original range spans multiple lines,
+            // emit one frame per original line.
+            if member.original_endline != u32::MAX
+                && member.original_endline > member.original_startline().unwrap_or(0)
+                && (member.original_endline - member.original_startline().unwrap_or(0))
+                    <= MAX_SPAN_EXPANSION
+            {
+                let first_line = member.original_startline().unwrap_or(0) as usize;
+                let last_line = member.original_endline as usize;
+                let mut first_frame = None;
+                for line in first_line..=last_line {
+                    if let Some(f) = map_member_without_lines(
+                        cache,
+                        frame,
+                        member,
+                        outer_source_file,
+                        Some(line),
+                    ) {
+                        if first_frame.is_none() {
+                            first_frame = Some(f);
+                        } else {
+                            pending_frames.push(f);
+                        }
+                    }
+                }
+                // Reverse so pop() drains in ascending line order.
+                pending_frames.reverse();
+                return first_frame;
+            }
+            let output_line = if member.original_startline().unwrap_or(0) > 0 {
                 Some(member.original_startline().unwrap_or(0) as usize)
             } else {
                 None

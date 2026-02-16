@@ -4,16 +4,22 @@ use std::fmt;
 use std::fmt::{Error as FmtError, Write};
 use std::iter::FusedIterator;
 
+/// Maximum number of frames emitted by span expansion for a single mapping entry.
+///
+/// R8 uses `0:65535` as the catch-all range for methods with a single unique position:
+/// <https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md#catch-all-range-for-methods-with-a-single-unique-position>
+///
+/// No real method would span more lines than this, so ranges exceeding this cap
+/// are treated as malformed and fall through to single-line handling.
+const MAX_SPAN_EXPANSION: usize = 65_535;
+
 use crate::builder::{
     Member, MethodReceiver, ParsedProguardMapping, RewriteAction, RewriteCondition, RewriteRule,
 };
 use crate::java;
 use crate::mapping::ProguardMapping;
 use crate::stacktrace::{self, StackFrame, StackTrace, Throwable};
-use crate::utils::{
-    class_name_to_descriptor, extract_class_name, resolve_no_line_output_line,
-    synthesize_source_file,
-};
+use crate::utils::{class_name_to_descriptor, extract_class_name, synthesize_source_file};
 
 /// A deobfuscated method signature.
 pub struct DeobfuscatedSignature {
@@ -60,12 +66,12 @@ impl fmt::Display for DeobfuscatedSignature {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MemberMapping<'s> {
-    startline: usize,
-    endline: usize,
+    startline: Option<usize>,
+    endline: Option<usize>,
     original_class: Option<&'s str>,
     original_file: Option<&'s str>,
     original: &'s str,
-    original_startline: usize,
+    original_startline: Option<usize>,
     original_endline: Option<usize>,
     is_synthesized: bool,
     is_outline: bool,
@@ -140,18 +146,21 @@ fn map_member_with_lines<'a>(
     frame: &StackFrame<'a>,
     member: &MemberMapping<'a>,
 ) -> Option<StackFrame<'a>> {
-    if member.endline > 0 && (frame.line < member.startline || frame.line > member.endline) {
+    let frame_line = frame.line.unwrap_or(0);
+    if member.endline.unwrap_or(0) > 0
+        && (frame_line < member.startline.unwrap_or(0) || frame_line > member.endline.unwrap_or(0))
+    {
         return None;
     }
 
     // parents of inlined frames don't have an `endline`, and
     // the top inlined frame need to be correctly offset.
     let line = if member.original_endline.is_none()
-        || member.original_endline == Some(member.original_startline)
+        || member.original_endline == member.original_startline
     {
-        member.original_startline
+        member.original_startline.unwrap_or(0)
     } else {
-        member.original_startline + frame.line - member.startline
+        member.original_startline.unwrap_or(0) + frame_line - member.startline.unwrap_or(0)
     };
 
     let class = member.original_class.unwrap_or(frame.class);
@@ -172,37 +181,29 @@ fn map_member_with_lines<'a>(
         class,
         method: member.original,
         file,
-        line,
+        line: Some(line),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized,
     })
 }
 
+/// Builds a remapped frame from a no-line (base) mapping entry.
+///
+/// `output_line` is the line number to use in the output frame, already computed
+/// by the caller based on group context (presence of `startline`, entry count, etc.).
 fn map_member_without_lines<'a>(
     frame: &StackFrame<'a>,
     member: &MemberMapping<'a>,
+    output_line: Option<usize>,
 ) -> StackFrame<'a> {
     let class = member.original_class.unwrap_or(frame.class);
     // Synthesize from class name (input filename is not reliable)
     let file = synthesize_source_file(class, member.outer_source_file).map(Cow::Owned);
-    let original_startline = if member.original_startline > 0 {
-        Some(member.original_startline)
-    } else {
-        None
-    };
-    let line = resolve_no_line_output_line(
-        frame.line,
-        original_startline,
-        member.startline,
-        member.endline,
-    );
     StackFrame {
         class,
         method: member.original,
         file,
-        // Preserve input line if present (e.g. "Unknown Source:7") when the mapping itself
-        // has no line information. This matches R8 retrace behavior.
-        line,
+        line: output_line,
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized,
     }
@@ -214,48 +215,10 @@ fn remap_class_only<'a>(frame: &StackFrame<'a>, reference_file: Option<&str>) ->
         class: frame.class,
         method: frame.method,
         file,
-        line: frame.line,
+        line: Some(frame.line.unwrap_or(0)),
         parameters: frame.parameters,
         method_synthesized: false,
     }
-}
-
-/// Selection strategy for line==0 frames.
-///
-/// When line info is missing, we prefer base (no-line) mappings if they exist.
-/// If all candidates resolve to the same original method, we treat it as
-/// unambiguous and return a single mapping. Otherwise we iterate either over
-/// base mappings (when present) or all mappings (when only line-mapped entries exist).
-enum NoLineSelection<'a> {
-    Single(&'a MemberMapping<'a>),
-    IterateAll,
-    IterateBase,
-}
-
-fn select_no_line_members<'a>(
-    mapping_entries: &'a [MemberMapping<'a>],
-    has_line_info: bool,
-) -> Option<NoLineSelection<'a>> {
-    let mut base_members = mapping_entries.iter().filter(|m| m.endline == 0);
-    if has_line_info {
-        if let Some(first_base) = base_members.next() {
-            let all_same = base_members.all(|m| m.original == first_base.original);
-            return Some(if all_same {
-                NoLineSelection::Single(first_base)
-            } else {
-                NoLineSelection::IterateBase
-            });
-        }
-    }
-
-    let first = mapping_entries.first()?;
-    let unambiguous = mapping_entries.iter().all(|m| m.original == first.original);
-
-    Some(if unambiguous {
-        NoLineSelection::Single(first)
-    } else {
-        NoLineSelection::IterateAll
-    })
 }
 
 fn apply_rewrite_rules<'s>(collected: &mut CollectedFrames<'s>, thrown_descriptor: Option<&str>) {
@@ -295,14 +258,23 @@ fn iterate_with_lines<'a>(
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
     has_line_info: bool,
 ) -> Option<StackFrame<'a>> {
+    let frame_line = frame.line.unwrap_or(0);
     for member in members {
         // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
-        if has_line_info && frame.line > 0 && member.endline == 0 {
+        if has_line_info && frame_line > 0 && member.endline.unwrap_or(0) == 0 {
             continue;
         }
-        // If the mapping entry has no line range, preserve the input line number (if any).
-        if member.endline == 0 {
-            return Some(map_member_without_lines(frame, member));
+        // If the mapping entry has no line range, determine output line.
+        if member.endline.unwrap_or(0) == 0 {
+            let output_line = if member.original_startline.is_none() {
+                // Bare method mapping: pass through frame line.
+                frame.line
+            } else if member.original_startline.unwrap_or(0) > 0 {
+                member.original_startline
+            } else {
+                None
+            };
+            return Some(map_member_without_lines(frame, member, output_line));
         }
         if let Some(mapped) = map_member_with_lines(frame, member) {
             return Some(mapped);
@@ -315,12 +287,143 @@ fn iterate_without_lines<'a>(
     frame: &mut StackFrame<'a>,
     members: &mut core::slice::Iter<'_, MemberMapping<'a>>,
 ) -> Option<StackFrame<'a>> {
-    members
-        .next()
-        .map(|member| map_member_without_lines(frame, member))
+    members.next().map(|member| {
+        let output_line = if member.original_startline.unwrap_or(0) > 0 {
+            member.original_startline
+        } else {
+            None
+        };
+        map_member_without_lines(frame, member, output_line)
+    })
 }
 
 impl FusedIterator for RemappedFrameIter<'_> {}
+
+/// Resolves frames for the no-line (frame_line==0) case.
+///
+/// When the input frame has no line number, base entries (endline==0) are preferred
+/// over line-mapped entries. Base entries are split into two groups by whether
+/// `startline` is present (0:0 entries) or absent (no-range entries), and each
+/// group's output lines are computed based on whether the group contains range
+/// mappings, single-line mappings, or bare methods.
+fn resolve_no_line_frames<'s>(
+    frame: &StackFrame<'s>,
+    mapping_entries: &'s [MemberMapping<'s>],
+    base_entries: &[&'s MemberMapping<'s>],
+    collected: &mut CollectedFrames<'s>,
+) {
+    if !base_entries.is_empty() {
+        resolve_base_entries(frame, base_entries, collected);
+        return;
+    }
+
+    // No base entries — fall back to all entries with output line 0.
+    let Some(first) = mapping_entries.first() else {
+        return;
+    };
+    let unambiguous = mapping_entries.iter().all(|m| m.original == first.original);
+    if unambiguous {
+        collected
+            .frames
+            .push(map_member_without_lines(frame, first, Some(0)));
+        collected.rewrite_rules.extend(first.rewrite_rules.iter());
+    } else {
+        for member in mapping_entries {
+            collected
+                .frames
+                .push(map_member_without_lines(frame, member, Some(0)));
+            collected.rewrite_rules.extend(member.rewrite_rules.iter());
+        }
+    }
+}
+
+/// Resolves output lines for base (endline==0) entries when the frame has no line number.
+///
+/// Entries are split by whether `startline` is present:
+/// - **0:0 entries** (`startline.is_some()`): if any entry has a range
+///   (`original_endline != original_startline`), all emit `Some(0)`;
+///   otherwise each emits its `original_startline`.
+/// - **No-range entries** (`startline.is_none()`): a single entry emits
+///   its `original_startline` if > 0, otherwise `Some(0)`; multiple entries
+///   with the same name collapse to one frame with `Some(0)`; different names
+///   each emit `Some(0)` in original order.
+fn resolve_base_entries<'s>(
+    frame: &StackFrame<'s>,
+    base_entries: &[&'s MemberMapping<'s>],
+    collected: &mut CollectedFrames<'s>,
+) {
+    // Pre-compute aggregates in a single pass.
+    // Whether any 0:0 entry has a multi-line original range (original_endline != original_startline).
+    let mut any_zero_zero_has_range = false;
+    // Number of no-range (startline.is_none()) entries.
+    let mut no_range_count = 0usize;
+    // Original name of the first no-range entry, used to detect ambiguity.
+    let mut first_no_range_name: Option<&str> = None;
+    // Whether all no-range entries map to the same original method name.
+    let mut all_no_range_same_name = true;
+    let mut all_no_range_have_line_mapping = true;
+    for member in base_entries {
+        if member.startline.is_some() {
+            if member.original_endline.is_some()
+                && member.original_endline != member.original_startline
+            {
+                any_zero_zero_has_range = true;
+            }
+        } else {
+            no_range_count += 1;
+            if member.original_startline.is_none() {
+                all_no_range_have_line_mapping = false;
+            }
+            match first_no_range_name {
+                None => first_no_range_name = Some(member.original),
+                Some(first) if member.original != first => all_no_range_same_name = false,
+                _ => {}
+            }
+        }
+    }
+
+    // Whether a no-range entry has already been emitted (used to collapse duplicates).
+    let mut no_range_emitted = false;
+    for member in base_entries {
+        if member.startline.is_some() {
+            let line = if any_zero_zero_has_range {
+                Some(0)
+            } else if member.original_startline.unwrap_or(0) > 0 {
+                member.original_startline
+            } else {
+                None
+            };
+            collected
+                .frames
+                .push(map_member_without_lines(frame, member, line));
+            collected.rewrite_rules.extend(member.rewrite_rules.iter());
+        } else if all_no_range_same_name {
+            if !no_range_emitted {
+                no_range_emitted = true;
+                let line = if no_range_count == 1 {
+                    member.original_startline.or(Some(0))
+                } else {
+                    Some(0)
+                };
+                collected
+                    .frames
+                    .push(map_member_without_lines(frame, member, line));
+                collected.rewrite_rules.extend(member.rewrite_rules.iter());
+            }
+        } else {
+            collected
+                .frames
+                .push(map_member_without_lines(frame, member, Some(0)));
+            collected.rewrite_rules.extend(member.rewrite_rules.iter());
+        }
+    }
+
+    // Sort no-range frames by original method name when all have line mappings;
+    // bare method entries preserve original mapping file order.
+    if !all_no_range_same_name && all_no_range_have_line_mapping {
+        collected.frames.sort_by_key(|f| f.method);
+    }
+}
 
 /// A Proguard Remapper.
 ///
@@ -491,7 +594,9 @@ impl<'s> ProguardMapper<'s> {
         candidates
             .iter()
             .filter(|m| {
-                m.endline == 0 || (callsite_line >= m.startline && callsite_line <= m.endline)
+                m.endline.unwrap_or(0) == 0
+                    || (callsite_line >= m.startline.unwrap_or(0)
+                        && callsite_line <= m.endline.unwrap_or(0))
             })
             .find_map(|m| {
                 m.outline_callsite_positions
@@ -522,11 +627,11 @@ impl<'s> ProguardMapper<'s> {
             if let Some(mapped) = self.map_outline_position(
                 effective.class,
                 effective.method,
-                effective.line,
+                effective.line.unwrap_or(0),
                 pos,
                 effective.parameters,
             ) {
-                effective.line = mapped;
+                effective.line = Some(mapped);
             }
         }
 
@@ -580,57 +685,85 @@ impl<'s> ProguardMapper<'s> {
         };
 
         if frame.parameters.is_none() {
-            let has_line_info = mapping_entries.iter().any(|m| m.endline > 0);
+            let has_line_info = mapping_entries.iter().any(|m| m.endline.unwrap_or(0) > 0);
+            let frame_line = frame.line.unwrap_or(0);
+
+            // Base entries are those with endline == 0 (no minified range or 0:0 range).
+            let base_entries: Vec<&MemberMapping<'s>> = mapping_entries
+                .iter()
+                .filter(|m| m.endline.unwrap_or(0) == 0)
+                .collect();
 
             // If the stacktrace has no line number, treat it as unknown and remap without
             // applying line filters. If there are base (no-line) mappings present, prefer those.
-            if frame.line == 0 {
-                let selection = select_no_line_members(mapping_entries, has_line_info);
-                match selection {
-                    Some(NoLineSelection::Single(member)) => {
-                        collected
-                            .frames
-                            .push(map_member_without_lines(&frame, member));
-                        collected.rewrite_rules.extend(member.rewrite_rules.iter());
-                    }
-                    Some(NoLineSelection::IterateAll) => {
-                        for member in mapping_entries {
-                            collected
-                                .frames
-                                .push(map_member_without_lines(&frame, member));
-                            collected.rewrite_rules.extend(member.rewrite_rules.iter());
-                        }
-                    }
-                    Some(NoLineSelection::IterateBase) => {
-                        for member in mapping_entries.iter().filter(|m| m.endline == 0) {
-                            collected
-                                .frames
-                                .push(map_member_without_lines(&frame, member));
-                            collected.rewrite_rules.extend(member.rewrite_rules.iter());
-                        }
-                    }
-                    None => return collected,
-                }
+            if frame_line == 0 {
+                resolve_no_line_frames(&frame, mapping_entries, &base_entries, &mut collected);
                 return collected;
             }
 
+            // Frame has a line number > 0.
             for member in mapping_entries {
-                if has_line_info && member.endline == 0 {
+                if has_line_info && frame_line > 0 && member.endline.unwrap_or(0) == 0 {
                     continue;
                 }
-                if member.endline == 0 {
+                if member.endline.unwrap_or(0) == 0 {
+                    // No-range entry with frame_line > 0.
+                    if member.original_startline.is_none() {
+                        // Bare method mapping (no line info) — pass through frame line.
+                        collected
+                            .frames
+                            .push(map_member_without_lines(&frame, member, frame.line));
+                        collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                        continue;
+                    }
+                    // Span expansion: if the original range spans multiple lines,
+                    // emit one frame per original line.
+                    if let Some(oe) = member.original_endline {
+                        let os = member.original_startline.unwrap_or(0);
+                        if oe > os && (oe - os) <= MAX_SPAN_EXPANSION {
+                            for line in os..=oe {
+                                collected.frames.push(map_member_without_lines(
+                                    &frame,
+                                    member,
+                                    Some(line),
+                                ));
+                            }
+                            collected.rewrite_rules.extend(member.rewrite_rules.iter());
+                            continue;
+                        }
+                    }
+                    // Single-line: use original_startline if > 0, else None.
+                    let output_line = if member.original_startline.unwrap_or(0) > 0 {
+                        member.original_startline
+                    } else {
+                        None
+                    };
                     collected
                         .frames
-                        .push(map_member_without_lines(&frame, member));
+                        .push(map_member_without_lines(&frame, member, output_line));
                     collected.rewrite_rules.extend(member.rewrite_rules.iter());
                 } else if let Some(mapped) = map_member_with_lines(&frame, member) {
                     collected.frames.push(mapped);
                     collected.rewrite_rules.extend(member.rewrite_rules.iter());
                 }
             }
+
+            // Outside-range fallback: if we had line mappings but nothing matched,
+            // remap only the class name, keeping the obfuscated method name and original line.
+            if collected.frames.is_empty() && has_line_info {
+                collected
+                    .frames
+                    .push(remap_class_only(&frame, frame.file()));
+            }
         } else {
             for member in mapping_entries {
-                let mapped = map_member_without_lines(&frame, member);
+                // For parameter-based lookups, use original_startline if > 0, else None
+                let output_line = if member.original_startline.unwrap_or(0) > 0 {
+                    member.original_startline
+                } else {
+                    None
+                };
+                let mapped = map_member_without_lines(&frame, member, output_line);
                 collected.frames.push(mapped);
                 collected.rewrite_rules.extend(member.rewrite_rules.iter());
             }
@@ -692,7 +825,10 @@ impl<'s> ProguardMapper<'s> {
             members.all_mappings.iter()
         };
 
-        let has_line_info = members.all_mappings.iter().any(|m| m.endline > 0);
+        let has_line_info = members
+            .all_mappings
+            .iter()
+            .any(|m| m.endline.unwrap_or(0) > 0);
         RemappedFrameIter::members(frame, mappings, has_line_info)
     }
 
@@ -744,7 +880,7 @@ impl<'s> ProguardMapper<'s> {
 
             if let Some(frame) = stacktrace::parse_frame(line) {
                 if self.is_outline_frame(frame.class, frame.method) {
-                    carried_outline_pos = Some(frame.line);
+                    carried_outline_pos = Some(frame.line.unwrap_or(0));
                     continue;
                 }
 
@@ -810,7 +946,7 @@ impl<'s> ProguardMapper<'s> {
         let mut next_frame_can_rewrite = exception_descriptor.is_some();
         for f in trace.frames.iter() {
             if self.is_outline_frame(f.class, f.method) {
-                carried_outline_pos = Some(f.line);
+                carried_outline_pos = Some(f.line.unwrap_or(0));
                 continue;
             }
 
@@ -913,7 +1049,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                 StackFrame {
                     class: "com.example.MainFragment$g",
                     method: "onClick",
-                    line: 2,
+                    line: Some(2),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -921,7 +1057,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                 StackFrame {
                     class: "android.view.View",
                     method: "performClick",
-                    line: 7393,
+                    line: Some(7393),
                     file: Some(Cow::Borrowed("View.java")),
                     parameters: None,
                     method_synthesized: false,
@@ -935,7 +1071,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                 frames: vec![StackFrame {
                     class: "com.example.MainFragment$g",
                     method: "onClick",
-                    line: 1,
+                    line: Some(1),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -1055,7 +1191,7 @@ some.Class -> a:
             frames: vec![StackFrame {
                 class: "a",
                 method: "a",
-                line: 4,
+                line: Some(4),
                 file: Some(Cow::Borrowed("SourceFile")),
                 parameters: None,
                 method_synthesized: false,
@@ -1069,7 +1205,7 @@ some.Class -> a:
         assert_eq!(remapped.frames.len(), 1);
         assert_eq!(remapped.frames[0].class, "some.Class");
         assert_eq!(remapped.frames[0].method, "caller");
-        assert_eq!(remapped.frames[0].line, 7);
+        assert_eq!(remapped.frames[0].line, Some(7));
     }
 
     #[test]
@@ -1176,7 +1312,7 @@ some.Other -> b:
                 StackFrame {
                     class: "a",
                     method: "call",
-                    line: 4,
+                    line: Some(4),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -1184,7 +1320,7 @@ some.Other -> b:
                 StackFrame {
                     class: "b",
                     method: "run",
-                    line: 5,
+                    line: Some(5),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -1200,6 +1336,6 @@ some.Other -> b:
         assert_eq!(remapped.frames.len(), 1);
         assert_eq!(remapped.frames[0].class, "some.Other");
         assert_eq!(remapped.frames[0].method, "method");
-        assert_eq!(remapped.frames[0].line, 30);
+        assert_eq!(remapped.frames[0].line, Some(30));
     }
 }

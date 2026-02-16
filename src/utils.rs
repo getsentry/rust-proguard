@@ -1,21 +1,5 @@
 //! Internal helpers shared across modules.
 
-/// For no-line mappings, prefer the original line if the mapping has no minified range.
-pub(crate) fn resolve_no_line_output_line(
-    frame_line: usize,
-    original_startline: Option<usize>,
-    startline: usize,
-    endline: usize,
-) -> usize {
-    if frame_line > 0 {
-        frame_line
-    } else if startline == 0 && endline == 0 {
-        original_startline.unwrap_or(0)
-    } else {
-        0
-    }
-}
-
 pub(crate) fn extract_class_name(full_path: &str) -> Option<&str> {
     let after_last_period = full_path.split('.').next_back()?;
     // If the class is an inner class, we need to extract the outer class name

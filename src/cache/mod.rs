@@ -391,8 +391,7 @@ impl<'data> ProguardCache<'data> {
                 // Check if this member would produce a frame (line matching)
                 let pf_line = prepared_frame.line.unwrap_or(0);
                 if member.endline == 0
-                    || (pf_line >= member.startline as usize
-                        && pf_line <= member.endline as usize)
+                    || (pf_line >= member.startline as usize && pf_line <= member.endline as usize)
                 {
                     had_mappings = true;
                     rewrite_rules.extend(self.decode_rewrite_rules(member));

@@ -269,7 +269,11 @@ impl Display for StackFrame<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let file_name = self.file.as_deref().unwrap_or("<unknown>");
         match self.line {
-            Some(line) => write!(f, "at {}.{}({}:{})", self.class, self.method, file_name, line),
+            Some(line) => write!(
+                f,
+                "at {}.{}({}:{})",
+                self.class, self.method, file_name, line
+            ),
             None => write!(f, "at {}.{}({})", self.class, self.method, file_name),
         }
     }

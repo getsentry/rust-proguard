@@ -84,16 +84,26 @@ const RETRACE_MAPPING_WITH_OVERLOADS_MAPPING: &str = r#"some.Class -> A:
 "#;
 
 #[test]
-fn test_retrace_mapping_with_overloads_api_has_3_candidates() {
+fn test_retrace_mapping_with_overloads_api_has_2_candidates() {
     let mapper = ProguardMapper::from(RETRACE_MAPPING_WITH_OVERLOADS_MAPPING);
 
-    // Equivalent to upstream's `retracer.retraceClass(A).lookupMethod("a")` size == 3:
-    // - select(java.util.List)
+    // Equivalent to upstream's `retracer.retraceClass(A).lookupMethod("a").narrowByPosition()` size == 2:
     // - sync() (line-mapped range)
     // - cancel(java.lang.String[])
+    // The original test uses `lookupMethod("a") which is expected to return 3 candidates here,
+    //   but our implementation already bakes narrowByPosition() in, hence we expect 2`
     let frame = StackFrame::new("A", "a", 0);
     let remapped: Vec<_> = mapper.remap_frame(&frame).collect();
-    assert_eq!(remapped.len(), 3);
+    assert_eq!(remapped.len(), 2);
+
+    // Also test ProguardCache
+    let mapping = ProguardMapping::new(RETRACE_MAPPING_WITH_OVERLOADS_MAPPING.as_bytes());
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+
+    let remapped: Vec<_> = cache.remap_frame(&frame).collect();
+    assert_eq!(remapped.len(), 2);
 }
 
 #[test]
@@ -103,5 +113,14 @@ fn test_retrace_mapping_with_overloads_api_includes_sync_with_line() {
     // When the minified line hits the `sync()` mapping range, it should produce a `sync` candidate.
     let frame = StackFrame::new("A", "a", 3);
     let remapped: Vec<_> = mapper.remap_frame(&frame).collect();
+    assert!(remapped.iter().any(|f| f.method() == "sync"));
+
+    // Also test ProguardCache
+    let mapping = ProguardMapping::new(RETRACE_MAPPING_WITH_OVERLOADS_MAPPING.as_bytes());
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+
+    let remapped: Vec<_> = cache.remap_frame(&frame).collect();
     assert!(remapped.iter().any(|f| f.method() == "sync"));
 }

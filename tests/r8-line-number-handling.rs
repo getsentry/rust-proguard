@@ -51,8 +51,8 @@ fn test_no_obfuscation_range_mapping_with_stacktrace() {
     let expected = r#"Exception in thread "main" java.lang.NullPointerException
     at com.android.tools.r8.naming.retrace.Main.foo(Main.java:1)
     at com.android.tools.r8.naming.retrace.Main.bar(Main.java:3)
-    at com.android.tools.r8.naming.retrace.Main.baz(Main.java:0)
-    at com.android.tools.r8.naming.retrace.Main.main(Main.java:0)
+    at com.android.tools.r8.naming.retrace.Main.baz(Main.java)
+    at com.android.tools.r8.naming.retrace.Main.main(Main.java)
 "#;
 
     assert_remap_stacktrace(

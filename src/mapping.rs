@@ -287,10 +287,10 @@ impl<'s> Iterator for ProguardRecordIter<'s> {
 /// All line mappings are 1-based and inclusive.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LineMapping {
-    /// Start Line, 1-based.
-    pub startline: usize,
-    /// End Line, inclusive.
-    pub endline: usize,
+    /// Start Line, 1-based. `None` when no minified range prefix was present.
+    pub startline: Option<usize>,
+    /// End Line, inclusive. `None` when no minified range prefix was present.
+    pub endline: Option<usize>,
     /// The original Start Line.
     pub original_startline: Option<usize>,
     /// The original End Line.
@@ -468,8 +468,8 @@ impl<'s> ProguardRecord<'s> {
     ///         arguments: "",
     ///         original_class: Some("com.example1.domain.MyBean"),
     ///         line_mapping: Some(proguard::LineMapping {
-    ///             startline: 1016,
-    ///             endline: 1016,
+    ///             startline: Some(1016),
+    ///             endline: Some(1016),
     ///             original_startline: Some(16),
     ///             original_endline: Some(16),
     ///         }),
@@ -637,25 +637,16 @@ fn parse_proguard_field_or_method(
 
             let line_mapping = match (startline, endline, original_startline) {
                 (Some(startline), Some(endline), _) => Some(LineMapping {
-                    startline,
-                    endline,
+                    startline: Some(startline),
+                    endline: Some(endline),
                     original_startline,
                     original_endline,
                 }),
                 // Preserve original line info even when no minified range is present.
-                // Use a sentinel to distinguish from an explicit 0:0 minified range, but keep
-                // an explicit 0:0 when the original line is also 0.
+                // This enables this crate to use the original line for no-line mappings.
                 (None, None, Some(original_startline)) => Some(LineMapping {
-                    startline: if original_startline == 0 {
-                        0
-                    } else {
-                        usize::MAX
-                    },
-                    endline: if original_startline == 0 {
-                        0
-                    } else {
-                        usize::MAX
-                    },
+                    startline: None,
+                    endline: None,
                     original_startline: Some(original_startline),
                     original_endline,
                 }),
@@ -990,8 +981,8 @@ mod tests {
                 arguments: "androidx.appcompat.widget.Toolbar",
                 original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
                 line_mapping: Some(LineMapping {
-                    startline: 14,
-                    endline: 15,
+                    startline: Some(14),
+                    endline: Some(15),
                     original_startline: None,
                     original_endline: None,
                 }),
@@ -1012,8 +1003,8 @@ mod tests {
                 arguments: "androidx.appcompat.widget.Toolbar",
                 original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
                 line_mapping: Some(LineMapping {
-                    startline: 14,
-                    endline: 15,
+                    startline: Some(14),
+                    endline: Some(15),
                     original_startline: Some(436),
                     original_endline: None,
                 }),
@@ -1034,8 +1025,8 @@ mod tests {
                 arguments: "androidx.appcompat.widget.Toolbar",
                 original_class: Some("androidx.appcompat.app.AppCompatDelegateImpl"),
                 line_mapping: Some(LineMapping {
-                    startline: 14,
-                    endline: 15,
+                    startline: Some(14),
+                    endline: Some(15),
                     original_startline: Some(436),
                     original_endline: Some(437),
                 }),
@@ -1170,8 +1161,8 @@ androidx.activity.OnBackPressedCallback
                     arguments: "",
                     original_class: None,
                     line_mapping: Some(LineMapping {
-                        startline: 1,
-                        endline: 4,
+                        startline: Some(1),
+                        endline: Some(4),
                         original_startline: Some(184),
                         original_endline: Some(187),
                     }),

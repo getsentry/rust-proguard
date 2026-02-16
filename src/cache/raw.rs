@@ -98,15 +98,18 @@ impl Default for Class {
     }
 }
 
+/// Sentinel value representing absent/`None` for u32 fields in the binary format.
+const NONE_VALUE: u32 = u32::MAX;
+
 /// An entry corresponding to a method line in a proguard cache file.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[repr(C)]
 pub(crate) struct Member {
     /// The obfuscated method name (offset into the string section).
     pub(crate) obfuscated_name_offset: u32,
-    /// The start of the range covered by this entry (1-based).
+    /// The start of the range covered by this entry (1-based), `u32::MAX` if absent.
     pub(crate) startline: u32,
-    /// The end of the range covered by this entry (inclusive).
+    /// The end of the range covered by this entry (inclusive), `u32::MAX` if absent.
     pub(crate) endline: u32,
     /// The original class name (offset into the string section).
     pub(crate) original_class_offset: u32,
@@ -114,7 +117,7 @@ pub(crate) struct Member {
     pub(crate) original_file_offset: u32,
     /// The original method name (offset into the string section).
     pub(crate) original_name_offset: u32,
-    /// The original start line (1-based).
+    /// The original start line (0-based), `u32::MAX` if absent.
     pub(crate) original_startline: u32,
     /// The original end line (inclusive).
     pub(crate) original_endline: u32,
@@ -136,6 +139,7 @@ pub(crate) struct Member {
     ///
     /// `0` means `false`, all other values mean `true`.
     pub(crate) is_outline: u8,
+
     /// Reserved space.
     pub(crate) _reserved: [u8; 2],
 }
@@ -148,6 +152,30 @@ impl Member {
     /// Returns true if this member refers to an outline method.
     pub(crate) fn is_outline(&self) -> bool {
         self.is_outline != 0
+    }
+    /// Returns the startline as `Option<u32>`, where `NONE_VALUE` maps to `None`.
+    pub(crate) fn startline(&self) -> Option<u32> {
+        if self.startline == NONE_VALUE {
+            None
+        } else {
+            Some(self.startline)
+        }
+    }
+    /// Returns the endline as `Option<u32>`, where `NONE_VALUE` maps to `None`.
+    pub(crate) fn endline(&self) -> Option<u32> {
+        if self.endline == NONE_VALUE {
+            None
+        } else {
+            Some(self.endline)
+        }
+    }
+    /// Returns the original_startline as `Option<u32>`, where `NONE_VALUE` maps to `None`.
+    pub(crate) fn original_startline(&self) -> Option<u32> {
+        if self.original_startline == NONE_VALUE {
+            None
+        } else {
+            Some(self.original_startline)
+        }
     }
 }
 
@@ -616,22 +644,22 @@ impl<'data> ProguardCache<'data> {
             .collect();
 
         let member: Member = Member {
-            startline: member.startline as u32,
-            endline: member.endline as u32,
+            startline: member.startline.map_or(NONE_VALUE, |v| v as u32),
+            endline: member.endline.map_or(NONE_VALUE, |v| v as u32),
             original_class_offset,
             original_file_offset,
             original_name_offset,
-            original_startline: member.original_startline as u32,
-            original_endline: member.original_endline.map_or(u32::MAX, |l| l as u32),
+            original_startline: member.original_startline.map_or(NONE_VALUE, |v| v as u32),
+            original_endline: member.original_endline.map_or(NONE_VALUE, |l| l as u32),
             obfuscated_name_offset,
             params_offset,
             is_synthesized,
             is_outline,
+            _reserved: [0; 2],
             outline_pairs_offset: 0,
             outline_pairs_len: 0,
             rewrite_rules_offset: 0,
             rewrite_rules_len: 0,
-            _reserved: [0; 2],
         };
 
         MemberInProgress {

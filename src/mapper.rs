@@ -361,6 +361,7 @@ fn resolve_base_entries<'s>(
     let mut first_no_range_name: Option<&str> = None;
     // Whether all no-range entries map to the same original method name.
     let mut all_no_range_same_name = true;
+    let mut all_no_range_have_line_mapping = true;
     for member in base_entries {
         if member.startline.is_some() {
             if member.original_endline.is_some()
@@ -370,6 +371,9 @@ fn resolve_base_entries<'s>(
             }
         } else {
             no_range_count += 1;
+            if member.original_startline.is_none() {
+                all_no_range_have_line_mapping = false;
+            }
             match first_no_range_name {
                 None => first_no_range_name = Some(member.original),
                 Some(first) if member.original != first => all_no_range_same_name = false,
@@ -412,6 +416,12 @@ fn resolve_base_entries<'s>(
                 .push(map_member_without_lines(frame, member, Some(0)));
             collected.rewrite_rules.extend(member.rewrite_rules.iter());
         }
+    }
+
+    // Sort no-range frames by original method name when all have line mappings;
+    // bare method entries preserve original mapping file order.
+    if !all_no_range_same_name && all_no_range_have_line_mapping {
+        collected.frames.sort_by_key(|f| f.method);
     }
 }
 

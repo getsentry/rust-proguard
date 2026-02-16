@@ -168,7 +168,7 @@ impl<'data> ProguardCache<'data> {
             class: frame.class,
             method: frame.method,
             file,
-            line: frame.line,
+            line: Some(frame.line.unwrap_or(0)),
             parameters: frame.parameters,
             method_synthesized: false,
         }
@@ -389,9 +389,9 @@ impl<'data> ProguardCache<'data> {
         if prepared_frame.parameters.is_none() {
             for member in mapping_entries {
                 // Check if this member would produce a frame (line matching)
+                let pf_line = prepared_frame.line.unwrap_or(0);
                 if member.endline == 0
-                    || (prepared_frame.line >= member.startline as usize
-                        && prepared_frame.line <= member.endline as usize)
+                    || (pf_line >= member.startline as usize && pf_line <= member.endline as usize)
                 {
                     had_mappings = true;
                     rewrite_rules.extend(self.decode_rewrite_rules(member));
@@ -477,7 +477,7 @@ impl<'data> ProguardCache<'data> {
         'r: 'data,
     {
         if self.is_outline_frame(frame.class, frame.method) {
-            *carried_outline_pos = Some(frame.line);
+            *carried_outline_pos = Some(frame.line.unwrap_or(0));
             return None;
         }
 
@@ -678,11 +678,11 @@ impl<'data> ProguardCache<'data> {
             if let Some(mapped) = self.map_outline_position(
                 effective.class,
                 effective.method,
-                effective.line,
+                effective.line.unwrap_or(0),
                 pos,
                 effective.parameters,
             ) {
-                effective.line = mapped;
+                effective.line = Some(mapped);
             }
         }
 
@@ -903,7 +903,7 @@ impl<'r, 'data> RemappedFrameIter<'r, 'data> {
         let out = if frame.parameters.is_none() {
             // If we have no line number, treat it as unknown. If there are base (no-line) mappings
             // present, prefer those over line-mapped entries.
-            if frame.line == 0 {
+            if frame.line.unwrap_or(0) == 0 {
                 let selection = select_no_line_members(members.as_slice())?;
                 let mapped = match selection {
                     NoLineSelection::Single(member) => {
@@ -983,9 +983,10 @@ fn iterate_with_lines<'a>(
     outer_source_file: Option<&str>,
     has_line_info: bool,
 ) -> Option<StackFrame<'a>> {
+    let frame_line = frame.line.unwrap_or(0);
     for member in members {
         // If this method has line mappings, skip base (no-line) entries when we have a concrete line.
-        if has_line_info && frame.line > 0 && member.endline == 0 {
+        if has_line_info && frame_line > 0 && member.endline == 0 {
             continue;
         }
         // If the mapping entry has no line range, preserve the input line number (if any).
@@ -994,7 +995,7 @@ fn iterate_with_lines<'a>(
         }
         // skip any members which do not match our frames line
         if member.endline > 0
-            && (frame.line < member.startline as usize || frame.line > member.endline as usize)
+            && (frame_line < member.startline as usize || frame_line > member.endline as usize)
         {
             continue;
         }
@@ -1005,7 +1006,7 @@ fn iterate_with_lines<'a>(
         {
             member.original_startline as usize
         } else {
-            member.original_startline as usize + frame.line - member.startline as usize
+            member.original_startline as usize + frame_line - member.startline as usize
         };
 
         let class = cache
@@ -1035,7 +1036,7 @@ fn iterate_with_lines<'a>(
             class,
             method,
             file,
-            line,
+            line: Some(line),
             parameters: frame.parameters,
             method_synthesized: member.is_synthesized(),
         });
@@ -1105,12 +1106,12 @@ fn map_member_without_lines<'a>(
         class,
         method,
         file,
-        line: resolve_no_line_output_line(
-            frame.line,
+        line: Some(resolve_no_line_output_line(
+            frame.line.unwrap_or(0),
             original_startline,
             member.startline as usize,
             member.endline as usize,
-        ),
+        )),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
     })
@@ -1142,12 +1143,12 @@ fn iterate_without_lines<'a>(
         class,
         method,
         file,
-        line: resolve_no_line_output_line(
-            frame.line,
+        line: Some(resolve_no_line_output_line(
+            frame.line.unwrap_or(0),
             original_startline,
             member.startline as usize,
             member.endline as usize,
-        ),
+        )),
         parameters: frame.parameters,
         method_synthesized: member.is_synthesized(),
     })
@@ -1207,7 +1208,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                 StackFrame {
                     class: "com.example.MainFragment$g",
                     method: "onClick",
-                    line: 2,
+                    line: Some(2),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -1215,7 +1216,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                 StackFrame {
                     class: "android.view.View",
                     method: "performClick",
-                    line: 7393,
+                    line: Some(7393),
                     file: Some(Cow::Borrowed("View.java")),
                     parameters: None,
                     method_synthesized: false,
@@ -1229,7 +1230,7 @@ com.example.MainFragment$onActivityCreated$4 -> com.example.MainFragment$g:
                 frames: vec![StackFrame {
                     class: "com.example.MainFragment$g",
                     method: "onClick",
-                    line: 1,
+                    line: Some(1),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -1421,7 +1422,7 @@ some.Other -> b:
                 StackFrame {
                     class: "a",
                     method: "call",
-                    line: 4,
+                    line: Some(4),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -1429,7 +1430,7 @@ some.Other -> b:
                 StackFrame {
                     class: "b",
                     method: "run",
-                    line: 5,
+                    line: Some(5),
                     file: Some(Cow::Borrowed("SourceFile")),
                     parameters: None,
                     method_synthesized: false,
@@ -1445,6 +1446,6 @@ some.Other -> b:
         assert_eq!(remapped.frames.len(), 1);
         assert_eq!(remapped.frames[0].class, "some.Other");
         assert_eq!(remapped.frames[0].method, "method");
-        assert_eq!(remapped.frames[0].line, 30);
+        assert_eq!(remapped.frames[0].line, Some(30));
     }
 }

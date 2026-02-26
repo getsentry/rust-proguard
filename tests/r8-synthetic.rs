@@ -148,8 +148,7 @@ Exception in thread \"main\" java.lang.NullPointerException
     let actual = mapper.remap_stacktrace(input).unwrap();
     assert_eq!(actual.trim(), expected.trim());
 
-    let mapping =
-        ProguardMapping::new(SYNTHETIC_LAMBDA_METHOD_WITH_INLINING_MAPPING.as_bytes());
+    let mapping = ProguardMapping::new(SYNTHETIC_LAMBDA_METHOD_WITH_INLINING_MAPPING.as_bytes());
     let mut buf = Vec::new();
     ProguardCache::write(&mapping, &mut buf).unwrap();
     let cache = ProguardCache::parse(&buf).unwrap();
@@ -169,9 +168,15 @@ fn test_synthetic_lambda_method_with_inlining_synthesized_flag() {
     let remapped: Vec<_> = mapper.remap_frame(&frame).collect();
     assert_eq!(remapped.len(), 2);
     // lambda$main$0 is from example.Foo — not synthesized
-    assert!(!remapped[0].method_synthesized(), "inlined frame should not be synthesized");
+    assert!(
+        !remapped[0].method_synthesized(),
+        "inlined frame should not be synthesized"
+    );
     // run() is from the synthetic class — synthesized
-    assert!(remapped[1].method_synthesized(), "outer synthetic frame should be synthesized");
+    assert!(
+        remapped[1].method_synthesized(),
+        "outer synthetic frame should be synthesized"
+    );
 }
 
 // =============================================================================
@@ -232,7 +237,13 @@ fn test_moved_synthetized_info_synthesized_flag() {
     let remapped: Vec<_> = mapper.remap_frame(&frame).collect();
     assert_eq!(remapped.len(), 2);
     // inlinee — not synthesized
-    assert!(!remapped[0].method_synthesized(), "inlinee should not be synthesized");
+    assert!(
+        !remapped[0].method_synthesized(),
+        "inlinee should not be synthesized"
+    );
     // inlinee$synthetic — synthesized
-    assert!(remapped[1].method_synthesized(), "inlinee$synthetic should be synthesized");
+    assert!(
+        remapped[1].method_synthesized(),
+        "inlinee$synthetic should be synthesized"
+    );
 }

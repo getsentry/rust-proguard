@@ -95,7 +95,8 @@ struct ClassMapping<'s> {
     members: HashMap<&'s str, ClassMembers<'s>>,
     #[expect(
         unused,
-        reason = "It is currently unknown what effect a synthesized class has."
+        reason = "Class-level synthesized is propagated to members in resolve_mapping; \
+                  kept here for potential future class-level queries."
     )]
     is_synthesized: bool,
 }
@@ -549,7 +550,13 @@ impl<'s> ProguardMapper<'s> {
             .get(&member.method)
             .copied()
             .unwrap_or_default();
-        let is_synthesized = method_info.is_synthesized;
+        // A member is considered synthesized if either its own method info
+        // or its owning class is marked synthesized.
+        let class_synthesized = parsed
+            .class_infos
+            .get(&member.method.receiver.name())
+            .map_or(false, |ci| ci.is_synthesized);
+        let is_synthesized = method_info.is_synthesized || class_synthesized;
         let is_outline = method_info.is_outline;
 
         let outline_callsite_positions = member.outline_callsite_positions.clone();

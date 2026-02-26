@@ -154,7 +154,7 @@ fn parse_stacktrace(content: &str) -> Option<StackTrace<'_>> {
 pub struct StackFrame<'s> {
     pub(crate) class: &'s str,
     pub(crate) method: &'s str,
-    pub(crate) line: usize,
+    pub(crate) line: Option<usize>,
     pub(crate) file: Option<Cow<'s, str>>,
     pub(crate) parameters: Option<&'s str>,
     pub(crate) method_synthesized: bool,
@@ -166,7 +166,7 @@ impl<'s> StackFrame<'s> {
         Self {
             class,
             method,
-            line,
+            line: Some(line),
             file: None,
             parameters: None,
             method_synthesized: false,
@@ -178,7 +178,7 @@ impl<'s> StackFrame<'s> {
         Self {
             class,
             method,
-            line,
+            line: Some(line),
             file: Some(Cow::Borrowed(file)),
             parameters: None,
             method_synthesized: false,
@@ -191,7 +191,7 @@ impl<'s> StackFrame<'s> {
         Self {
             class,
             method,
-            line: 0,
+            line: None,
             file: None,
             parameters: Some(arguments),
             method_synthesized: false,
@@ -248,7 +248,9 @@ impl<'s> StackFrame<'s> {
     }
 
     /// The line of the StackFrame, 1-based.
-    pub fn line(&self) -> usize {
+    ///
+    /// Returns `None` if the frame has no line information.
+    pub fn line(&self) -> Option<usize> {
         self.line
     }
 
@@ -266,11 +268,14 @@ impl<'s> StackFrame<'s> {
 impl Display for StackFrame<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let file_name = self.file.as_deref().unwrap_or("<unknown>");
-        write!(
-            f,
-            "at {}.{}({}:{})",
-            self.class, self.method, file_name, self.line
-        )
+        match self.line {
+            Some(line) => write!(
+                f,
+                "at {}.{}({}:{})",
+                self.class, self.method, file_name, line
+            ),
+            None => write!(f, "at {}.{}({})", self.class, self.method, file_name),
+        }
     }
 }
 
@@ -286,9 +291,9 @@ pub(crate) fn parse_frame(line: &str) -> Option<StackFrame<'_>> {
 
     let (method_split, file_split) = line[3..line.len() - 1].split_once('(')?;
     let (class, method) = method_split.rsplit_once('.')?;
-    let (file, line) = match file_split.split_once(':') {
-        Some((file, line)) => (file, line.parse().ok()?),
-        None => (file_split, 0),
+    let (file, line) = match file_split.rsplit_once(':') {
+        Some((file, line)) => (file, Some(line.parse().unwrap_or(0))),
+        None => (file_split, None),
     };
 
     Some(StackFrame {
@@ -402,7 +407,7 @@ mod tests {
             frames: vec![StackFrame {
                 class: "com.example.Util",
                 method: "show",
-                line: 5,
+                line: Some(5),
                 file: Some(Cow::Borrowed("Util.java")),
                 parameters: None,
                 method_synthesized: false,
@@ -415,7 +420,7 @@ mod tests {
                 frames: vec![StackFrame {
                     class: "com.example.Parser",
                     method: "parse",
-                    line: 115,
+                    line: Some(115),
                     file: None,
                     parameters: None,
                     method_synthesized: false,
@@ -439,7 +444,7 @@ Caused by: com.example.Other: Invalid data
         let expect = Some(StackFrame {
             class: "com.example.MainFragment",
             method: "onClick",
-            line: 1,
+            line: Some(1),
             file: Some(Cow::Borrowed("SourceFile")),
             parameters: None,
             method_synthesized: false,
@@ -463,7 +468,7 @@ Caused by: com.example.Other: Invalid data
         let frame = StackFrame {
             class: "com.example.MainFragment",
             method: "onClick",
-            line: 1,
+            line: Some(1),
             file: None,
             parameters: None,
             method_synthesized: false,
@@ -477,7 +482,7 @@ Caused by: com.example.Other: Invalid data
         let frame = StackFrame {
             class: "com.example.MainFragment",
             method: "onClick",
-            line: 1,
+            line: Some(1),
             file: Some(Cow::Borrowed("SourceFile")),
             parameters: None,
             method_synthesized: false,

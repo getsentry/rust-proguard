@@ -83,13 +83,13 @@ fn test_inline_with_line_numbers_frame() {
 
     assert_eq!(frames.len(), 4);
     assert_eq!(frames[0].method(), "method3");
-    assert_eq!(frames[0].line(), 81);
+    assert_eq!(frames[0].line(), Some(81));
     assert_eq!(frames[1].method(), "method2");
-    assert_eq!(frames[1].line(), 88);
+    assert_eq!(frames[1].line(), Some(88));
     assert_eq!(frames[2].method(), "method1");
-    assert_eq!(frames[2].line(), 96);
+    assert_eq!(frames[2].line(), Some(96));
     assert_eq!(frames[3].method(), "main");
-    assert_eq!(frames[3].line(), 102);
+    assert_eq!(frames[3].line(), Some(102));
 }
 
 // =============================================================================
@@ -493,15 +493,15 @@ fn test_inline_preamble_no_original() {
     let frames: Vec<_> = mapper.remap_frame(&StackFrame::new("a", "a", 2)).collect();
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].method(), "caller");
-    assert_eq!(frames[0].line(), 10);
+    assert_eq!(frames[0].line(), Some(10));
 
     // Test line 5 - should be in inline range (4:5)
     let frames: Vec<_> = mapper.remap_frame(&StackFrame::new("a", "a", 5)).collect();
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[0].method(), "inlined");
-    assert_eq!(frames[0].line(), 21);
+    assert_eq!(frames[0].line(), Some(21));
     assert_eq!(frames[1].method(), "caller");
-    assert_eq!(frames[1].line(), 11);
+    assert_eq!(frames[1].line(), Some(11));
 }
 
 // =============================================================================
@@ -580,15 +580,15 @@ fn test_inline_frame_depth_one() {
     let frames: Vec<_> = mapper.remap_frame(&StackFrame::new("a", "a", 1)).collect();
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].method(), "foo");
-    assert_eq!(frames[0].line(), 10);
+    assert_eq!(frames[0].line(), Some(10));
 
     // Line 2 - one level of inlining
     let frames: Vec<_> = mapper.remap_frame(&StackFrame::new("a", "a", 2)).collect();
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[0].method(), "bar");
-    assert_eq!(frames[0].line(), 20);
+    assert_eq!(frames[0].line(), Some(20));
     assert_eq!(frames[1].method(), "foo");
-    assert_eq!(frames[1].line(), 11);
+    assert_eq!(frames[1].line(), Some(11));
 }
 
 #[test]
@@ -605,11 +605,11 @@ fn test_inline_frame_depth_two() {
     let frames: Vec<_> = mapper.remap_frame(&StackFrame::new("a", "a", 2)).collect();
     assert_eq!(frames.len(), 3);
     assert_eq!(frames[0].method(), "baz");
-    assert_eq!(frames[0].line(), 30);
+    assert_eq!(frames[0].line(), Some(30));
     assert_eq!(frames[1].method(), "bar");
-    assert_eq!(frames[1].line(), 21);
+    assert_eq!(frames[1].line(), Some(21));
     assert_eq!(frames[2].method(), "foo");
-    assert_eq!(frames[2].line(), 11);
+    assert_eq!(frames[2].line(), Some(11));
 }
 
 #[test]
@@ -631,11 +631,11 @@ fn test_inline_frame_depth_two_cache() {
     let frames: Vec<_> = cache.remap_frame(&frame).collect();
     assert_eq!(frames.len(), 3);
     assert_eq!(frames[0].method(), "baz");
-    assert_eq!(frames[0].line(), 30);
+    assert_eq!(frames[0].line(), Some(30));
     assert_eq!(frames[1].method(), "bar");
-    assert_eq!(frames[1].line(), 21);
+    assert_eq!(frames[1].line(), Some(21));
     assert_eq!(frames[2].method(), "foo");
-    assert_eq!(frames[2].line(), 11);
+    assert_eq!(frames[2].line(), Some(11));
 }
 
 // =============================================================================
@@ -655,15 +655,15 @@ fn test_inline_with_line_range() {
     let frames: Vec<_> = mapper.remap_frame(&StackFrame::new("a", "a", 3)).collect();
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].method(), "outer");
-    assert_eq!(frames[0].line(), 12); // 10 + (3-1) = 12
+    assert_eq!(frames[0].line(), Some(12)); // 10 + (3-1) = 12
 
     // Line 8 - in inline range
     let frames: Vec<_> = mapper.remap_frame(&StackFrame::new("a", "a", 8)).collect();
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[0].method(), "inner");
-    assert_eq!(frames[0].line(), 22); // 20 + (8-6) = 22
+    assert_eq!(frames[0].line(), Some(22)); // 20 + (8-6) = 22
     assert_eq!(frames[1].method(), "outer");
-    assert_eq!(frames[1].line(), 15);
+    assert_eq!(frames[1].line(), Some(15));
 }
 
 // =============================================================================
@@ -689,15 +689,15 @@ com.example.Main -> a:
 
     assert_eq!(frames[0].class(), "com.example.lib.Library");
     assert_eq!(frames[0].method(), "work");
-    assert_eq!(frames[0].line(), 100);
+    assert_eq!(frames[0].line(), Some(100));
 
     assert_eq!(frames[1].class(), "com.example.util.Utils");
     assert_eq!(frames[1].method(), "helper");
-    assert_eq!(frames[1].line(), 51);
+    assert_eq!(frames[1].line(), Some(51));
 
     assert_eq!(frames[2].class(), "com.example.Main");
     assert_eq!(frames[2].method(), "main");
-    assert_eq!(frames[2].line(), 11);
+    assert_eq!(frames[2].line(), Some(11));
 }
 
 #[test]
@@ -783,7 +783,7 @@ fn test_inline_with_zero_original_line() {
     // Should have 2 frames - the inline chain
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[0].method(), "main");
-    assert_eq!(frames[0].line(), 0);
+    assert_eq!(frames[0].line(), Some(0));
     assert_eq!(frames[1].method(), "caller");
-    assert_eq!(frames[1].line(), 10);
+    assert_eq!(frames[1].line(), Some(10));
 }

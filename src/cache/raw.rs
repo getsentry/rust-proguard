@@ -580,7 +580,7 @@ impl<'data> ProguardCache<'data> {
         let class_synthesized = parsed
             .class_infos
             .get(&member.method.receiver.name())
-            .map_or(false, |ci| ci.is_synthesized);
+            .is_some_and(|ci| ci.is_synthesized);
         let is_synthesized = (method_info.is_synthesized || class_synthesized) as u8;
         let is_outline = method_info.is_outline as u8;
 

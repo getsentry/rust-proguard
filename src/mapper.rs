@@ -555,7 +555,7 @@ impl<'s> ProguardMapper<'s> {
         let class_synthesized = parsed
             .class_infos
             .get(&member.method.receiver.name())
-            .map_or(false, |ci| ci.is_synthesized);
+            .is_some_and(|ci| ci.is_synthesized);
         let is_synthesized = method_info.is_synthesized || class_synthesized;
         let is_outline = method_info.is_outline;
 

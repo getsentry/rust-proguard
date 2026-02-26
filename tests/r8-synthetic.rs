@@ -82,6 +82,30 @@ fn test_synthetic_lambda_method_synthesized_flag() {
     );
 }
 
+#[test]
+fn test_synthetic_lambda_method_synthesized_flag_cache() {
+    let mapping = ProguardMapping::new(SYNTHETIC_LAMBDA_METHOD_MAPPING.as_bytes());
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+
+    // The synthetic lambda class member should have method_synthesized = true.
+    let frame = StackFrame::try_parse("  at a.b.a(Unknown Source)".as_bytes()).unwrap();
+    let remapped: Vec<_> = cache.remap_frame(&frame).collect();
+    assert!(
+        remapped.iter().all(|f| f.method_synthesized()),
+        "cache: expected synthetic frame to have method_synthesized = true, got: {remapped:?}"
+    );
+
+    // A regular method should have method_synthesized = false.
+    let frame = StackFrame::try_parse("  at a.a.a(a.java:5)".as_bytes()).unwrap();
+    let remapped: Vec<_> = cache.remap_frame(&frame).collect();
+    assert!(
+        remapped.iter().all(|f| !f.method_synthesized()),
+        "cache: expected regular frame to have method_synthesized = false, got: {remapped:?}"
+    );
+}
+
 // =============================================================================
 // SyntheticLambdaMethodWithInliningStackTrace
 // =============================================================================
@@ -155,7 +179,7 @@ fn test_synthetic_lambda_method_with_inlining_synthesized_flag() {
 // =============================================================================
 
 const MOVED_SYNTHETIZED_INFO_MAPPING: &str = "\
-# { id: 'com.android.tools.r8.mapping', version: '2.2' }
+# {\"id\":\"com.android.tools.r8.mapping\",\"version\":\"2.2\"}
 com.android.tools.r8.BaseCommand$Builder -> foo.bar:
     1:1:void inlinee(java.util.Collection):0:0 -> inlinee$synthetic
     1:1:void inlinee$synthetic(java.util.Collection):0:0 -> inlinee$synthetic

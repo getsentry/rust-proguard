@@ -577,7 +577,11 @@ impl<'data> ProguardCache<'data> {
             .get(&member.method)
             .copied()
             .unwrap_or_default();
-        let is_synthesized = method_info.is_synthesized as u8;
+        let class_synthesized = parsed
+            .class_infos
+            .get(&member.method.receiver.name())
+            .is_some_and(|ci| ci.is_synthesized);
+        let is_synthesized = (method_info.is_synthesized || class_synthesized) as u8;
         let is_outline = method_info.is_outline as u8;
 
         let outline_pairs: Vec<OutlinePair> = member

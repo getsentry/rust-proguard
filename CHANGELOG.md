@@ -1,5 +1,22 @@
 # Changelog
 
+## 5.10.0
+
+### New Features ✨
+
+#### R8 Tests
+
+- Add R8 method overloading tests by @romtsn in [#77](https://github.com/getsentry/rust-proguard/pull/77)
+- Add R8 exception handling tests by @romtsn in [#76](https://github.com/getsentry/rust-proguard/pull/76)
+- Add R8 line number tests by @romtsn in [#75](https://github.com/getsentry/rust-proguard/pull/75)
+- Add R8 source file tests by @romtsn in [#74](https://github.com/getsentry/rust-proguard/pull/74)
+- Add R8 ambiguous tests by @romtsn in [#71](https://github.com/getsentry/rust-proguard/pull/71)
+- Add R8 inline tests by @romtsn in [#69](https://github.com/getsentry/rust-proguard/pull/69)
+
+#### Other
+
+- (r8) Propagate class-level synthesized flag to members by @romtsn in [#73](https://github.com/getsentry/rust-proguard/pull/73)
+
 ## 5.9.0
 
 ### New Features ✨

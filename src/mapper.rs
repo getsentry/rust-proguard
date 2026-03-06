@@ -318,22 +318,52 @@ fn resolve_no_line_frames<'s>(
         return;
     }
 
-    // No base entries — fall back to all entries with output line 0.
+    // No base entries — check if the first range group forms an inline group
+    // (multiple entries sharing the same startline/endline). If so, resolve
+    // that group with proper output lines. Otherwise, fall back to emitting
+    // a single frame with line 0 (ambiguous non-inline case).
+    //
+    // This matches retrace's `allRangesForLine(0, true)` which picks the first
+    // range containing line 0 and returns all entries in that range group.
+    // Whether this is intentional retrace behavior or accidental is debatable,
+    // but we match it because users compare our output against retrace-based tools.
     let Some(first) = mapping_entries.first() else {
         return;
     };
-    let unambiguous = mapping_entries.iter().all(|m| m.original == first.original);
-    if unambiguous {
-        collected
-            .frames
-            .push(map_member_without_lines(frame, first, Some(0)));
-        collected.rewrite_rules.extend(first.rewrite_rules.iter());
-    } else {
-        for member in mapping_entries {
+
+    let first_start = first.startline;
+    let first_end = first.endline;
+    let first_group: Vec<_> = mapping_entries
+        .iter()
+        .take_while(|m| m.startline == first_start && m.endline == first_end)
+        .collect();
+
+    if first_group.len() > 1 {
+        // Inline group: multiple entries share the same range.
+        // Resolve each with its proper original line.
+        for member in &first_group {
+            let line = member.original_startline.filter(|&v| v > 0).or(Some(0));
             collected
                 .frames
-                .push(map_member_without_lines(frame, member, Some(0)));
+                .push(map_member_without_lines(frame, member, line));
             collected.rewrite_rules.extend(member.rewrite_rules.iter());
+        }
+    } else {
+        // Ambiguous: each entry has a different range. Collapse to one
+        // frame with line 0, matching retrace behavior.
+        let unambiguous = mapping_entries.iter().all(|m| m.original == first.original);
+        if unambiguous {
+            collected
+                .frames
+                .push(map_member_without_lines(frame, first, Some(0)));
+            collected.rewrite_rules.extend(first.rewrite_rules.iter());
+        } else {
+            for member in mapping_entries {
+                collected
+                    .frames
+                    .push(map_member_without_lines(frame, member, Some(0)));
+                collected.rewrite_rules.extend(member.rewrite_rules.iter());
+            }
         }
     }
 }

@@ -1163,25 +1163,55 @@ fn resolve_no_line_frames<'a>(
         return resolve_base_entries(cache, frame, &base_entries, outer_source_file);
     }
 
-    // No base entries — fall back to all entries with output line 0.
+    // No base entries — check if the first range group forms an inline group
+    // (multiple entries sharing the same startline/endline). If so, resolve
+    // that group with proper output lines. Otherwise, fall back to emitting
+    // a single frame with line 0 (ambiguous non-inline case).
+    //
+    // This matches retrace's `allRangesForLine(0, true)` which picks the first
+    // range containing line 0 and returns all entries in that range group.
+    // Whether this is intentional retrace behavior or accidental is debatable,
+    // but we match it because users compare our output against retrace-based tools.
     let mut frames = Vec::new();
     if let Some(first) = members.first() {
-        let all_same = members.iter().all(|m| {
-            m.original_class_offset == first.original_class_offset
-                && m.original_name_offset == first.original_name_offset
-        });
-        if all_same {
-            if let Some(f) =
-                map_member_without_lines(cache, frame, first, outer_source_file, Some(0))
-            {
-                frames.push(f);
-            }
-        } else {
-            for member in members {
+        let first_start = first.startline();
+        let first_end = first.endline();
+        let first_group: Vec<_> = members
+            .iter()
+            .take_while(|m| m.startline() == first_start && m.endline() == first_end)
+            .collect();
+
+        if first_group.len() > 1 {
+            // Inline group: multiple entries share the same range.
+            // Resolve each with its proper original line.
+            for member in &first_group {
+                let line = compute_member_output_line(member).or(Some(0));
                 if let Some(f) =
-                    map_member_without_lines(cache, frame, member, outer_source_file, Some(0))
+                    map_member_without_lines(cache, frame, member, outer_source_file, line)
                 {
                     frames.push(f);
+                }
+            }
+        } else {
+            // Ambiguous: each entry has a different range. Collapse to one
+            // frame with line 0, matching retrace behavior.
+            let all_same = members.iter().all(|m| {
+                m.original_class_offset == first.original_class_offset
+                    && m.original_name_offset == first.original_name_offset
+            });
+            if all_same {
+                if let Some(f) =
+                    map_member_without_lines(cache, frame, first, outer_source_file, Some(0))
+                {
+                    frames.push(f);
+                }
+            } else {
+                for member in members {
+                    if let Some(f) =
+                        map_member_without_lines(cache, frame, member, outer_source_file, Some(0))
+                    {
+                        frames.push(f);
+                    }
                 }
             }
         }

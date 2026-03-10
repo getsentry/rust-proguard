@@ -12,6 +12,7 @@ static MAPPING_OUTLINE: &[u8] = include_bytes!("res/mapping-outline.txt");
 static MAPPING_OUTLINE_COMPLEX: &[u8] = include_bytes!("res/mapping-outline-complex.txt");
 static MAPPING_REWRITE_COMPLEX: &str = include_str!("res/mapping-rewrite-complex.txt");
 static MAPPING_ZERO_LINE_INFO: &[u8] = include_bytes!("res/mapping-zero-line-info.txt");
+static MAPPING_INLINE_NO_BASE: &str = include_str!("res/mapping-inline-no-base.txt");
 
 static MAPPING_WIN_R8: LazyLock<Vec<u8>> = LazyLock::new(|| {
     MAPPING_R8
@@ -575,5 +576,59 @@ fn test_method_with_zero_zero_and_line_specific_mappings_cache() {
     assert_eq!(remapped_frame.method(), "obtainDropShadowRenderer-eZhPAX0");
     // Should map to line 70 (from the 1:4: mapping), not line 68 (from the 0:0: mapping)
     assert_eq!(remapped_frame.line(), Some(70));
+    assert_eq!(mapped.next(), None);
+}
+
+#[test]
+fn test_inline_group_no_base_entries() {
+    // Regression test: when a frame has no line number and all mapping entries
+    // have non-zero endline (no base entries), the first range group should be
+    // detected as an inline chain and each entry should get its proper original
+    // line number instead of all being collapsed to line 0.
+    let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_INLINE_NO_BASE.as_bytes()));
+
+    let test = mapper.remap_stacktrace(
+        r#"
+    java.lang.RuntimeException: Crash
+    at a.b.onClick(SourceFile:0)"#,
+    );
+
+    assert_eq!(
+        test.unwrap().trim(),
+        r#"java.lang.RuntimeException: Crash
+    at com.example.app.MainActivity.innerCall(MainActivity.kt:54)
+    at com.example.app.MainActivity.middleCall(MainActivity.kt:44)
+    at com.example.app.MainActivity.onClick(MainActivity.kt:30)"#
+            .trim()
+    );
+}
+
+#[test]
+fn test_inline_group_no_base_entries_cache() {
+    // Same regression test as above, but using ProguardCache.
+    let mapping = ProguardMapping::new(MAPPING_INLINE_NO_BASE.as_bytes());
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
+
+    let frame = StackFrame::new("a.b", "onClick", 0);
+    let mut mapped = cache.remap_frame(&frame);
+
+    let frame1 = mapped.next().unwrap();
+    assert_eq!(frame1.class(), "com.example.app.MainActivity");
+    assert_eq!(frame1.method(), "innerCall");
+    assert_eq!(frame1.line(), Some(54));
+
+    let frame2 = mapped.next().unwrap();
+    assert_eq!(frame2.class(), "com.example.app.MainActivity");
+    assert_eq!(frame2.method(), "middleCall");
+    assert_eq!(frame2.line(), Some(44));
+
+    let frame3 = mapped.next().unwrap();
+    assert_eq!(frame3.class(), "com.example.app.MainActivity");
+    assert_eq!(frame3.method(), "onClick");
+    assert_eq!(frame3.line(), Some(30));
+
     assert_eq!(mapped.next(), None);
 }

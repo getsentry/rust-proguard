@@ -1,0 +1,16 @@
+name: Check Retrace Spec
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check for newer retrace spec
+        run: ./scripts/check-retrace-spec.sh

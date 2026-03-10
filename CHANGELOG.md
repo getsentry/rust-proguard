@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.10.1
+
+### Bug Fixes 🐛
+
+- Resolve inline groups in no-base-entries fallback by @romtsn in [#88](https://github.com/getsentry/rust-proguard/pull/88)
+
 ## 5.10.0
 
 ### New Features ✨

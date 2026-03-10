@@ -1,0 +1,11 @@
+# compiler: R8
+# compiler_version: 8.6.17
+# min_api: 21
+# pg_map_id: abc123
+# common_typos_disable
+com.example.app.MainActivity -> a.b:
+# {"id":"sourceFile","fileName":"MainActivity.kt"}
+    1:1:void innerCall():54:54 -> onClick
+    1:1:void middleCall():44 -> onClick
+    1:1:void onClick(android.view.View):30 -> onClick
+    2:5:void otherMethod():100:100 -> otherMethod

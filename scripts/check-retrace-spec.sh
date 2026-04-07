@@ -1,24 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TRACKED_COMMIT="e212426be84283876b6bb832630c0de25a2a7bc5"
+# Blob hash of doc/retrace.md at the last known state.
+# To update: run this script's fetch logic manually and replace the hash.
+TRACKED_BLOB="ae22ff183a460d25fc0cecdd2d34f5b32ae216d9"
 
-# tail -n +2 to remove the magic anti-XSSI prefix from the Gitiles JSON response
-LATEST_COMMIT=$(curl -sf \
-  'https://r8.googlesource.com/r8/+log/refs/heads/main/doc/retrace.md?format=JSON' \
-  | tail -n +2 \
-  | jq -r '.log[0].commit')
+WORK_DIR=$(mktemp -d)
+trap 'rm -rf "$WORK_DIR"' EXIT
 
-if [ -z "$LATEST_COMMIT" ] || [ "$LATEST_COMMIT" = "null" ]; then
-  echo "ERROR: Failed to fetch latest commit from Gitiles" >&2
+git init -q "$WORK_DIR"
+git -C "$WORK_DIR" remote add origin https://r8.googlesource.com/r8
+git -C "$WORK_DIR" fetch --quiet --depth=1 --filter=blob:none origin refs/heads/main
+
+LATEST_BLOB=$(git -C "$WORK_DIR" ls-tree FETCH_HEAD -- doc/retrace.md | awk '{print $3}')
+
+if [ -z "$LATEST_BLOB" ]; then
+  echo "ERROR: Failed to read doc/retrace.md blob from r8 repo" >&2
   exit 1
 fi
 
-echo "Tracked commit: $TRACKED_COMMIT"
-echo "Latest commit:  $LATEST_COMMIT"
+echo "Tracked blob: $TRACKED_BLOB"
+echo "Latest blob:  $LATEST_BLOB"
 
-if [ "$LATEST_COMMIT" != "$TRACKED_COMMIT" ]; then
-  echo "Spec has been updated! Latest: https://r8.googlesource.com/r8/+/${LATEST_COMMIT}/doc/retrace.md"
+if [ "$LATEST_BLOB" != "$TRACKED_BLOB" ]; then
+  echo "Spec has been updated! View at: https://r8.googlesource.com/r8/+/refs/heads/main/doc/retrace.md"
   exit 1
 fi
 

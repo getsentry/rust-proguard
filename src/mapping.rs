@@ -161,13 +161,7 @@ impl<'s> ProguardMapping<'s> {
     /// let valid = ProguardMapping::new(b"a -> b:\n    void method() -> b");
     /// assert_eq!(valid.is_valid(), true);
     ///
-    /// let invalid = ProguardMapping::new(
-    ///     br#"
-    /// # looks: like
-    /// a -> proguard:
-    ///   mapping but(is) -> not
-    /// "#,
-    /// );
+    /// let invalid = ProguardMapping::new(b"a -> proguard:\n  not a valid proguard member line");
     /// assert_eq!(invalid.is_valid(), false);
     /// ```
     pub fn is_valid(&self) -> bool {
@@ -505,7 +499,7 @@ fn parse_proguard_record(bytes: &[u8]) -> (Result<ProguardRecord<'_>, ParseError
         } else {
             parse_proguard_header(bytes)
         }
-    } else if bytes.starts_with(b"    ") {
+    } else if matches!(bytes.first(), Some(b' ' | b'\t')) {
         parse_proguard_field_or_method(bytes)
     } else {
         parse_proguard_class(bytes)
@@ -568,7 +562,7 @@ fn parse_proguard_field_or_method(
     // field line or method line:
     // `originalfieldtype originalfieldname -> obfuscatedfieldname`
     // `[startline:endline:]originalreturntype [originalclassname.]originalmethodname(originalargumenttype,...)[:originalstartline[:originalendline]] -> obfuscatedmethodname`
-    let bytes = parse_prefix(bytes, b"    ")?;
+    let bytes = bytes.trim_ascii_start();
 
     let (startline, bytes) = match parse_usize(bytes) {
         Ok((startline, bytes)) => (Some(startline), bytes),
@@ -1063,15 +1057,15 @@ mod tests {
     }
 
     #[test]
-    fn try_parse_field_insufficient_leading_spaces() {
-        // only 2 leading spaces instead of 4
+    fn try_parse_field_with_two_space_indentation() {
         let bytes = b"  android.app.Activity mActivity -> a";
         let parsed = ProguardRecord::try_parse(bytes);
         assert_eq!(
             parsed,
-            Err(ParseError {
-                line: bytes,
-                kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+            Ok(ProguardRecord::Field {
+                ty: "android.app.Activity",
+                original: "mActivity",
+                obfuscated: "a",
             }),
         );
     }
@@ -1145,9 +1139,10 @@ androidx.activity.OnBackPressedCallback
                     original: "mEnabled",
                     obfuscated: "a",
                 }),
-                Err(ParseError {
-                    line: b"  boolean mEnabled -> a\n",
-                    kind: ParseErrorKind::ParseError("line is not a valid proguard record"),
+                Ok(ProguardRecord::Field {
+                    ty: "boolean",
+                    original: "mEnabled",
+                    obfuscated: "a",
                 }),
                 Ok(ProguardRecord::Field {
                     ty: "java.util.ArrayDeque",

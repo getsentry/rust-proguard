@@ -1,4 +1,4 @@
-use proguard::{ProguardMapper, StackFrame};
+use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame};
 
 #[test]
 fn test_remap() {
@@ -129,4 +129,57 @@ fn test_remap_just_method() {
 
     let ambiguous = mapper.remap_method("a.b.c.d", "buttonClicked");
     assert_eq!(ambiguous, None);
+}
+
+#[test]
+fn test_remap_compose_stacktrace_group_keys() {
+    let mapping = r#"ComposeStackTrace -> $$compose:
+  1:1:androidx.compose.runtime.State androidx.compose.animation.core.AnimateAsStateKt.animateFloatAsState(float,androidx.compose.animation.core.AnimationSpec,float,java.lang.String,kotlin.jvm.functions.Function1,androidx.compose.runtime.Composer,int,int):71:71 -> m$1125598679
+  1:1:androidx.compose.runtime.State androidx.compose.animation.core.AnimateAsStateKt.animateFloatAsState(float,androidx.compose.animation.core.AnimationSpec,float,java.lang.String,kotlin.jvm.functions.Function1,androidx.compose.runtime.Composer,int,int):73:73 -> m$1125708605"#;
+    let mapper = ProguardMapper::from(mapping);
+
+    let mapped = mapper
+        .remap_stacktrace(
+            r#"androidx.compose.runtime.ComposeTraceException:
+    at $$compose.m$1125598679(SourceFile:1)
+    at $$compose.m$1125708605(SourceFile:1)"#,
+        )
+        .unwrap();
+
+    assert_eq!(
+        mapped.trim(),
+        r#"androidx.compose.runtime.ComposeTraceException:
+    at androidx.compose.animation.core.AnimateAsStateKt.animateFloatAsState(AnimateAsState.kt:71)
+    at androidx.compose.animation.core.AnimateAsStateKt.animateFloatAsState(AnimateAsState.kt:73)"#
+            .trim()
+    );
+}
+
+#[test]
+fn test_remap_compose_stacktrace_group_keys_cache() {
+    let mapping = ProguardMapping::new(
+        br#"ComposeStackTrace -> $$compose:
+  1:1:androidx.compose.runtime.State androidx.compose.animation.core.AnimateAsStateKt.animateFloatAsState(float,androidx.compose.animation.core.AnimationSpec,float,java.lang.String,kotlin.jvm.functions.Function1,androidx.compose.runtime.Composer,int,int):71:71 -> m$1125598679
+  1:1:androidx.compose.runtime.State androidx.compose.animation.core.AnimateAsStateKt.animateFloatAsState(float,androidx.compose.animation.core.AnimationSpec,float,java.lang.String,kotlin.jvm.functions.Function1,androidx.compose.runtime.Composer,int,int):73:73 -> m$1125708605"#,
+    );
+
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+
+    let mapped = cache
+        .remap_stacktrace(
+            r#"androidx.compose.runtime.ComposeTraceException:
+    at $$compose.m$1125598679(SourceFile:1)
+    at $$compose.m$1125708605(SourceFile:1)"#,
+        )
+        .unwrap();
+
+    assert_eq!(
+        mapped.trim(),
+        r#"androidx.compose.runtime.ComposeTraceException:
+    at androidx.compose.animation.core.AnimateAsStateKt.animateFloatAsState(AnimateAsState.kt:71)
+    at androidx.compose.animation.core.AnimateAsStateKt.animateFloatAsState(AnimateAsState.kt:73)"#
+            .trim()
+    );
 }

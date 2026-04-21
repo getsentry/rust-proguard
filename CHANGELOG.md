@@ -1,5 +1,18 @@
 # Changelog
 
+## 5.10.2
+
+### Bug Fixes 🐛
+
+- (mapping) Parse Compose mappings with flexible indentation by @romtsn in [#93](https://github.com/getsentry/rust-proguard/pull/93)
+- Use git protocol for retrace spec check by @romtsn in [#92](https://github.com/getsentry/rust-proguard/pull/92)
+
+### Internal Changes 🔧
+
+- (codeowners) Update CODEOWNERS to reflect new ownership by @romtsn in [#89](https://github.com/getsentry/rust-proguard/pull/89)
+- Pin GitHub Actions to full-length commit SHAs by @joshuarli in [#91](https://github.com/getsentry/rust-proguard/pull/91)
+- Add scheduled job to check for retrace spec changes by @romtsn in [#90](https://github.com/getsentry/rust-proguard/pull/90)
+
 ## 5.10.1
 
 ### Bug Fixes 🐛

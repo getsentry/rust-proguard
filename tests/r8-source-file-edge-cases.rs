@@ -118,7 +118,7 @@ fn test_source_file_name_synthesize_stacktrace() {
 }
 
 // =============================================================================
-// ComposableSingletonsInlinedLambdaStackTrace
+// ComposableSingletons inlined lambda
 //
 // When a lambda from a Compose `ComposableSingletons$FileKt` wrapper is inlined
 // through an R8 synthetic class, the outer class has no `sourceFile` metadata of
@@ -137,7 +137,8 @@ host.LocalKt$$ExternalSyntheticLambda0 -> a.b:
 fn test_composable_singletons_inlined_lambda_stacktrace() {
     let input = "    at a.b.a(SourceFile:1)\n";
 
-    let expected = "    at io.example.ComposableSingletons$MyScreenKt.lambda_1$lambda$2(MyScreen.kt:42)\n";
+    let expected =
+        "    at io.example.ComposableSingletons$MyScreenKt.lambda_1$lambda$2(MyScreen.kt:42)\n";
 
     assert_remap_stacktrace(
         COMPOSABLE_SINGLETONS_INLINED_LAMBDA_MAPPING,

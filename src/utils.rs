@@ -22,8 +22,9 @@ pub(crate) fn synthesize_source_file(
     let mut segments = last_segment.split('$');
     let base = segments.next()?;
 
-    // Compiler-generated wrappers (e.g. `ComposableSingletons$MainActivityKt`)
-    // bury the `Kt` marker in an inner segment, so checking only `base` misses them.
+    // Kt suffix is a strong Kotlin indicator and takes precedence over reference_file.
+    // Compiler-generated wrappers (e.g. `ComposableSingletons$MainActivityKt`) bury the
+    // marker in an inner segment, so we scan every `$`-segment, not just `base`.
     for segment in std::iter::once(base).chain(segments) {
         if let Some(kotlin_base) = segment.strip_suffix("Kt").filter(|s| !s.is_empty()) {
             return Some(format!("{}.kt", kotlin_base));

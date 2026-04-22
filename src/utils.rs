@@ -13,17 +13,21 @@ pub(crate) fn extract_class_name(full_path: &str) -> Option<&str> {
 /// For example: ("com.example.Main", Some("Other.kt")) -> "Main.kt"
 /// For example: ("com.example.MainKt", None) -> "Main.kt"
 /// For inner classes: ("com.example.Main$Inner", None) -> "Main.java"
+/// For Compose-wrapped Kotlin files: ("com.example.ComposableSingletons$MainKt", None) -> "Main.kt"
 pub(crate) fn synthesize_source_file(
     class_name: &str,
     reference_file: Option<&str>,
 ) -> Option<String> {
-    let base = extract_class_name(class_name)?;
+    let last_segment = class_name.split('.').next_back()?;
+    let mut segments = last_segment.split('$');
+    let base = segments.next()?;
 
-    // For Kotlin top-level classes (ending in "Kt"), always use .kt extension and strip suffix
-    // This takes precedence over reference_file since Kt suffix is a strong Kotlin indicator
-    if base.ends_with("Kt") && base.len() > 2 {
-        let kotlin_base = &base[..base.len() - 2];
-        return Some(format!("{}.kt", kotlin_base));
+    // Compiler-generated wrappers (e.g. `ComposableSingletons$MainActivityKt`)
+    // bury the `Kt` marker in an inner segment, so checking only `base` misses them.
+    for segment in std::iter::once(base).chain(segments) {
+        if let Some(kotlin_base) = segment.strip_suffix("Kt").filter(|s| !s.is_empty()) {
+            return Some(format!("{}.kt", kotlin_base));
+        }
     }
 
     // If we have a reference file, derive extension from it

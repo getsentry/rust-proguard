@@ -117,16 +117,13 @@ fn test_source_file_name_synthesize_stacktrace() {
     assert_remap_stacktrace(SOURCE_FILE_NAME_SYNTHESIZE_MAPPING, input, expected);
 }
 
-// =============================================================================
-// ComposableSingletons inlined lambda
-//
-// When a lambda from a Compose `ComposableSingletons$FileKt` wrapper is inlined
-// through an R8 synthetic class, the outer class has no `sourceFile` metadata of
-// its own (only its `$$ExternalSyntheticLambda*` children appear in the mapping,
-// carrying `R8$$SyntheticClass`). The synthesized filename must be driven by the
-// inner `FooKt` segment, not by stripping after the first `$`.
-// =============================================================================
-
+/// ComposableSingletons inlined lambda
+///
+/// When a lambda from a Compose `ComposableSingletons$FileKt` wrapper is inlined
+/// through an R8 synthetic class, the outer class has no `sourceFile` metadata of
+/// its own (only its `$$ExternalSyntheticLambda*` children appear in the mapping,
+/// carrying `R8$$SyntheticClass`). The synthesized filename must be driven by the
+/// inner `FooKt` segment, not by stripping after the first `$`.
 const COMPOSABLE_SINGLETONS_INLINED_LAMBDA_MAPPING: &str = "\
 host.LocalKt$$ExternalSyntheticLambda0 -> a.b:
 # {\"id\":\"sourceFile\",\"fileName\":\"R8$$SyntheticClass\"}

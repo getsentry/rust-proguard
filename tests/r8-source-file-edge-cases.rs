@@ -117,6 +117,33 @@ fn test_source_file_name_synthesize_stacktrace() {
     assert_remap_stacktrace(SOURCE_FILE_NAME_SYNTHESIZE_MAPPING, input, expected);
 }
 
+/// ComposableSingletons inlined lambda
+///
+/// When a lambda from a Compose `ComposableSingletons$FileKt` wrapper is inlined
+/// through an R8 synthetic class, the outer class has no `sourceFile` metadata of
+/// its own (only its `$$ExternalSyntheticLambda*` children appear in the mapping,
+/// carrying `R8$$SyntheticClass`). The synthesized filename must be driven by the
+/// inner `FooKt` segment, not by stripping after the first `$`.
+const COMPOSABLE_SINGLETONS_INLINED_LAMBDA_MAPPING: &str = "\
+host.LocalKt$$ExternalSyntheticLambda0 -> a.b:
+# {\"id\":\"sourceFile\",\"fileName\":\"R8$$SyntheticClass\"}
+    1:1:kotlin.Unit io.example.ComposableSingletons$MyScreenKt.lambda_1$lambda$2():42:42 -> a
+";
+
+#[test]
+fn test_composable_singletons_inlined_lambda_stacktrace() {
+    let input = "    at a.b.a(SourceFile:1)\n";
+
+    let expected =
+        "    at io.example.ComposableSingletons$MyScreenKt.lambda_1$lambda$2(MyScreen.kt:42)\n";
+
+    assert_remap_stacktrace(
+        COMPOSABLE_SINGLETONS_INLINED_LAMBDA_MAPPING,
+        input,
+        expected,
+    );
+}
+
 // =============================================================================
 // SourceFileWithNumberAndEmptyStackTrace
 // =============================================================================

@@ -7,23 +7,27 @@ pub(crate) fn extract_class_name(full_path: &str) -> Option<&str> {
 }
 
 /// Synthesizes a source file name from a class name.
-/// For Kotlin top-level classes ending in "Kt", the suffix is stripped and ".kt" is used.
-/// Otherwise, the extension is derived from the reference file, defaulting to ".java".
-/// For example: ("com.example.MainKt", Some("Other.java")) -> "Main.kt" (Kt suffix takes precedence)
-/// For example: ("com.example.Main", Some("Other.kt")) -> "Main.kt"
-/// For example: ("com.example.MainKt", None) -> "Main.kt"
-/// For inner classes: ("com.example.Main$Inner", None) -> "Main.java"
+///
+/// Any `$`-segment ending in `Kt` wins with a `.kt` extension — this covers
+/// top-level Kotlin classes and Compose-compiler wrappers alike. Otherwise the
+/// extension comes from `reference_file`, defaulting to `.java`.
+///
+/// See the tests at the bottom of this file for the full matrix of cases.
 pub(crate) fn synthesize_source_file(
     class_name: &str,
     reference_file: Option<&str>,
 ) -> Option<String> {
-    let base = extract_class_name(class_name)?;
+    let last_segment = class_name.split('.').next_back()?;
+    let mut segments = last_segment.split('$');
+    let base = segments.next()?;
 
-    // For Kotlin top-level classes (ending in "Kt"), always use .kt extension and strip suffix
-    // This takes precedence over reference_file since Kt suffix is a strong Kotlin indicator
-    if base.ends_with("Kt") && base.len() > 2 {
-        let kotlin_base = &base[..base.len() - 2];
-        return Some(format!("{}.kt", kotlin_base));
+    // Kt suffix is a strong Kotlin indicator and takes precedence over reference_file.
+    // Compiler-generated wrappers (e.g. `ComposableSingletons$MainActivityKt`) bury the
+    // marker in an inner segment, so we scan every `$`-segment, not just `base`.
+    for segment in std::iter::once(base).chain(segments) {
+        if let Some(kotlin_base) = segment.strip_suffix("Kt").filter(|s| !s.is_empty()) {
+            return Some(format!("{}.kt", kotlin_base));
+        }
     }
 
     // If we have a reference file, derive extension from it
@@ -43,4 +47,66 @@ pub fn class_name_to_descriptor(class: &str) -> String {
     descriptor.push_str(&class.replace('.', "/"));
     descriptor.push(';');
     descriptor
+}
+
+#[cfg(test)]
+mod tests {
+    use super::synthesize_source_file;
+
+    #[test]
+    fn kotlin_top_level_class_uses_kt_extension() {
+        assert_eq!(
+            synthesize_source_file("com.example.MainKt", None).as_deref(),
+            Some("Main.kt")
+        );
+    }
+
+    #[test]
+    fn kt_suffix_takes_precedence_over_reference_file() {
+        assert_eq!(
+            synthesize_source_file("com.example.MainKt", Some("Other.java")).as_deref(),
+            Some("Main.kt")
+        );
+    }
+
+    #[test]
+    fn reference_file_extension_is_used_when_no_kt_suffix() {
+        assert_eq!(
+            synthesize_source_file("com.example.Main", Some("Other.kt")).as_deref(),
+            Some("Main.kt")
+        );
+    }
+
+    #[test]
+    fn non_kotlin_inner_class_falls_back_to_outer_java() {
+        assert_eq!(
+            synthesize_source_file("com.example.Main$Inner", None).as_deref(),
+            Some("Main.java")
+        );
+    }
+
+    #[test]
+    fn composable_singletons_wrapper_uses_inner_kt_segment() {
+        assert_eq!(
+            synthesize_source_file("com.example.ComposableSingletons$MainKt", None).as_deref(),
+            Some("Main.kt")
+        );
+    }
+
+    #[test]
+    fn bare_kt_segment_is_not_a_kotlin_marker() {
+        // Degenerate "Kt" alone (length 2) must not strip to an empty base.
+        assert_eq!(
+            synthesize_source_file("com.example.Foo$Kt", None).as_deref(),
+            Some("Foo.java")
+        );
+    }
+
+    #[test]
+    fn default_extension_is_java() {
+        assert_eq!(
+            synthesize_source_file("com.example.Main", None).as_deref(),
+            Some("Main.java")
+        );
+    }
 }

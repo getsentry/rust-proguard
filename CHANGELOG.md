@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.10.3
+
+### Bug Fixes 🐛
+
+- (mapping) Synthesize filenames for Kotlin classes buried in synthetic wrappers by @romtsn in [#94](https://github.com/getsentry/rust-proguard/pull/94)
+
 ## 5.10.2
 
 ### Bug Fixes 🐛

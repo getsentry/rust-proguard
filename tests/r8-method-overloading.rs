@@ -124,3 +124,36 @@ fn test_retrace_mapping_with_overloads_api_includes_sync_with_line() {
     let remapped: Vec<_> = cache.remap_frame(&frame).collect();
     assert!(remapped.iter().any(|f| f.method() == "sync"));
 }
+
+// =============================================================================
+// OverloadsWithDistinctRangesNoLineNumberStackTrace
+// =============================================================================
+
+/// Real overloads: three signatures share one obfuscated name, kept apart only by
+/// minified line range.
+const OVERLOADS_DISTINCT_RANGES_MAPPING: &str = r#"androidx.activity.ComponentActivity -> androidx.activity.aux:
+    1:2:void setContentView(int):379:380 -> setContentView
+    3:4:void setContentView(android.view.View):385:386 -> setContentView
+    5:6:void setContentView(android.view.View,android.view.ViewGroup$LayoutParams):393:394 -> setContentView
+"#;
+
+/// With a line number the range selects exactly one overload.
+#[test]
+fn test_overloads_distinct_ranges_with_line_number() {
+    assert_remap_stacktrace(
+        OVERLOADS_DISTINCT_RANGES_MAPPING,
+        "    at androidx.activity.aux.setContentView(SourceFile:3)",
+        "    at androidx.activity.ComponentActivity.setContentView(ComponentActivity.java:385)",
+    );
+}
+
+/// Without one, no overload can be selected, so a single frame is reported.
+/// Retrace prints the same frame (without the `:0`).
+#[test]
+fn test_overloads_distinct_ranges_no_line_number() {
+    assert_remap_stacktrace(
+        OVERLOADS_DISTINCT_RANGES_MAPPING,
+        "    at androidx.activity.aux.setContentView(Unknown Source)",
+        "    at androidx.activity.ComponentActivity.setContentView(ComponentActivity.java:0)",
+    );
+}

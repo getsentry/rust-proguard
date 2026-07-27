@@ -787,3 +787,67 @@ fn test_inline_with_zero_original_line() {
     assert_eq!(frames[1].method(), "caller");
     assert_eq!(frames[1].line(), Some(10));
 }
+
+// =============================================================================
+// InlineChainNoLineNumberStackTrace
+// =============================================================================
+
+/// A three-deep inline chain: `crash(boolean)` and `crash()` were inlined into
+/// `onFabClicked`, so all three entries share the minified range `1:8`.
+const INLINE_CHAIN_NO_LINE_MAPPING: &str = r#"com.example.HomeFragment -> com.example.HomeFragment:
+    1:8:void crash(boolean):184:184 -> onFabClicked
+    1:8:void crash():178 -> onFabClicked
+    1:8:void onFabClicked():174 -> onFabClicked
+"#;
+
+/// With a line number the chain resolves and every inlined frame is reported.
+#[test]
+fn test_inline_chain_with_line_number() {
+    let input = "    at com.example.HomeFragment.onFabClicked(SourceFile:5)";
+
+    let expected = "\
+    at com.example.HomeFragment.crash(HomeFragment.java:184)
+    at com.example.HomeFragment.crash(HomeFragment.java:178)
+    at com.example.HomeFragment.onFabClicked(HomeFragment.java:174)";
+
+    let mapper = ProguardMapper::from(INLINE_CHAIN_NO_LINE_MAPPING);
+    assert_eq!(
+        mapper.remap_stacktrace(input).unwrap().trim(),
+        expected.trim()
+    );
+
+    let mapping = ProguardMapping::new(INLINE_CHAIN_NO_LINE_MAPPING.as_bytes());
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
+    assert_eq!(
+        cache.remap_stacktrace(input).unwrap().trim(),
+        expected.trim()
+    );
+}
+
+/// Without one, which inlinee ran is unknowable, so only the outermost entry --
+/// the method that physically exists on the class -- is reported. Retrace prints
+/// the same single frame (without the `:0`).
+#[test]
+fn test_inline_chain_no_line_number() {
+    let input = "    at com.example.HomeFragment.onFabClicked(Unknown Source)";
+    let expected = "    at com.example.HomeFragment.onFabClicked(HomeFragment.java:0)";
+
+    let mapper = ProguardMapper::from(INLINE_CHAIN_NO_LINE_MAPPING);
+    assert_eq!(
+        mapper.remap_stacktrace(input).unwrap().trim(),
+        expected.trim()
+    );
+
+    let mapping = ProguardMapping::new(INLINE_CHAIN_NO_LINE_MAPPING.as_bytes());
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
+    assert_eq!(
+        cache.remap_stacktrace(input).unwrap().trim(),
+        expected.trim()
+    );
+}

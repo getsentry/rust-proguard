@@ -5,6 +5,10 @@
 
 use proguard::{ProguardCache, ProguardMapper, ProguardMapping};
 
+/// Excerpt of a real R8 mapping: the `a1.y` class block, trimmed to a representative
+/// spread of the method bodies R8 merged into the obfuscated method `j`.
+static MAPPING_AMBIGUOUS: &str = include_str!("res/mapping-ambiguous.txt");
+
 // =============================================================================
 // AmbiguousStackTrace
 // =============================================================================
@@ -334,6 +338,39 @@ Exception in thread \"main\" java.lang.NullPointerException
 
     let mapping =
         ProguardMapping::new(INLINE_NO_LINE_ASSUME_NO_INLINE_AMBIGUOUS_MAPPING.as_bytes());
+    let mut buf = Vec::new();
+    ProguardCache::write(&mapping, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
+
+    let actual = cache.remap_stacktrace(input).unwrap();
+    assert_eq!(actual.trim(), expected.trim());
+}
+
+// =============================================================================
+// DistinctRangesNoLineNumberStackTrace
+// =============================================================================
+
+/// Tombstone stacktraces carry no line numbers, so a frame is just `a1.y.j`.
+///
+/// R8 can merge many unrelated method bodies into the single obfuscated method `j`,
+/// keeping them apart only by minified line range. Every entry has its own distinct
+/// range, so a frame without a line matches none of them and nothing is left to
+/// disambiguate them.
+///
+/// Instead of emitting every entry, which fabricates a garbage stack, we only
+/// report a single frame asserted below.
+#[test]
+fn test_distinct_ranges_no_line_number_stacktrace() {
+    let input = "    at a1.y.j(Unknown Source)";
+
+    let expected = "at androidx.compose.foundation.text.TextFieldDelegate$Companion$updateTextLayoutResult$1$1$1.invoke(TextFieldDelegate.kt:0)";
+
+    let mapper = ProguardMapper::from(MAPPING_AMBIGUOUS);
+    let actual = mapper.remap_stacktrace(input).unwrap();
+    assert_eq!(actual.trim(), expected.trim());
+
+    let mapping = ProguardMapping::new(MAPPING_AMBIGUOUS.as_bytes());
     let mut buf = Vec::new();
     ProguardCache::write(&mapping, &mut buf).unwrap();
     let cache = ProguardCache::parse(&buf).unwrap();

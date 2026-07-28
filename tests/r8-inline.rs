@@ -827,7 +827,7 @@ fn test_inline_chain_with_line_number() {
     );
 }
 
-/// Without one, which inlinee ran is unknowable, so only the outermost entry --
+/// Without a line number, which inlinee ran is unknowable, so only the outermost entry --
 /// the method that physically exists on the class -- is reported. Retrace prints
 /// the same single frame (without the `:0`).
 #[test]
@@ -849,5 +849,112 @@ fn test_inline_chain_no_line_number() {
     assert_eq!(
         cache.remap_stacktrace(input).unwrap().trim(),
         expected.trim()
+    );
+}
+
+// =============================================================================
+// InlineChainNoLineNumberStackTrace + rewriteFrame
+// =============================================================================
+
+/// The same three-deep chain, with a `removeInnerFrames(1)` rule attached to it.
+const INLINE_CHAIN_REWRITE_MAPPING: &str = r#"com.example.HomeFragment -> com.example.HomeFragment:
+    1:8:void crash(boolean):184:184 -> onFabClicked
+    1:8:void crash():178 -> onFabClicked
+    1:8:void onFabClicked():174 -> onFabClicked
+    # {"id":"com.android.tools.r8.rewriteFrame","conditions":["throws(Ljava/lang/NullPointerException;)"],"actions":["removeInnerFrames(1)"]}
+"#;
+
+/// As above, but removing more frames than the no-line case reports at all.
+const INLINE_CHAIN_REWRITE_TWO_MAPPING: &str = r#"com.example.HomeFragment -> com.example.HomeFragment:
+    1:8:void crash(boolean):184:184 -> onFabClicked
+    1:8:void crash():178 -> onFabClicked
+    1:8:void onFabClicked():174 -> onFabClicked
+    # {"id":"com.android.tools.r8.rewriteFrame","conditions":["throws(Ljava/lang/NullPointerException;)"],"actions":["removeInnerFrames(2)"]}
+"#;
+
+/// Asserts that both the mapper and the cache remap `input` to `expected`.
+#[track_caller]
+#[expect(
+    clippy::unwrap_used,
+    reason = "`allow-unwrap-in-tests` only covers `#[test]` fns, not helpers"
+)]
+fn assert_remaps(mapping: &str, input: &str, expected: &str) {
+    let mapper = ProguardMapper::from(mapping);
+    assert_eq!(
+        mapper.remap_stacktrace(input).unwrap().trim(),
+        expected.trim(),
+        "mapper"
+    );
+
+    let parsed = ProguardMapping::new(mapping.as_bytes());
+    let mut buf = Vec::new();
+    ProguardCache::write(&parsed, &mut buf).unwrap();
+    let cache = ProguardCache::parse(&buf).unwrap();
+    cache.test();
+    assert_eq!(
+        cache.remap_stacktrace(input).unwrap().trim(),
+        expected.trim(),
+        "cache"
+    );
+}
+
+/// With a line number the chain resolves, so `removeInnerFrames(1)` has a real
+/// inline chain to trim and drops the innermost frame.
+#[test]
+fn test_inline_chain_rewrite_with_line_number() {
+    assert_remaps(
+        INLINE_CHAIN_REWRITE_MAPPING,
+        "\
+java.lang.NullPointerException: Boom
+    at com.example.HomeFragment.onFabClicked(SourceFile:5)",
+        "\
+java.lang.NullPointerException: Boom
+    at com.example.HomeFragment.crash(HomeFragment.java:178)
+    at com.example.HomeFragment.onFabClicked(HomeFragment.java:174)",
+    );
+}
+
+/// Without a line number the chain is not reconstructed, so there are no inner
+/// frames for the rule to trim and the outermost frame must survive. Retrace
+/// 8.9.27 prints it too (without the `:0`). NPE tombstones are exactly this
+/// shape, so dropping the frame here would lose the whole stacktrace.
+#[test]
+fn test_inline_chain_rewrite_no_line_number() {
+    assert_remaps(
+        INLINE_CHAIN_REWRITE_MAPPING,
+        "\
+java.lang.NullPointerException: Boom
+    at com.example.HomeFragment.onFabClicked(Unknown Source)",
+        "\
+java.lang.NullPointerException: Boom
+    at com.example.HomeFragment.onFabClicked(HomeFragment.java:0)",
+    );
+}
+
+/// Same, with a removal count exceeding the number of frames reported.
+#[test]
+fn test_inline_chain_rewrite_two_no_line_number() {
+    assert_remaps(
+        INLINE_CHAIN_REWRITE_TWO_MAPPING,
+        "\
+java.lang.NullPointerException: Boom
+    at com.example.HomeFragment.onFabClicked(Unknown Source)",
+        "\
+java.lang.NullPointerException: Boom
+    at com.example.HomeFragment.onFabClicked(HomeFragment.java:0)",
+    );
+}
+
+/// A thrown type the rule does not name leaves the frame alone either way.
+#[test]
+fn test_inline_chain_rewrite_condition_mismatch_no_line_number() {
+    assert_remaps(
+        INLINE_CHAIN_REWRITE_MAPPING,
+        "\
+java.lang.IllegalStateException: Boom
+    at com.example.HomeFragment.onFabClicked(Unknown Source)",
+        "\
+java.lang.IllegalStateException: Boom
+    at com.example.HomeFragment.onFabClicked(HomeFragment.java:0)",
     );
 }

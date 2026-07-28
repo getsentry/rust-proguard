@@ -345,12 +345,14 @@ fn resolve_no_line_frames<'s>(
         .last()
         .unwrap_or(first);
 
+    // The entry's rewrite rules are deliberately not collected. `removeInnerFrames`
+    // trims an inline chain, and we just established there is no chain to trim: the
+    // one frame we report is the outermost one, which the rule would never remove.
+    // Forwarding the rules would instead delete the sole frame and lose the
+    // stacktrace entirely. Retrace keeps the frame here too.
     collected
         .frames
         .push(map_member_without_lines(frame, outermost, Some(0)));
-    collected
-        .rewrite_rules
-        .extend(outermost.rewrite_rules.iter());
 }
 
 /// Resolves output lines for base (endline==0) entries when the frame has no line number.

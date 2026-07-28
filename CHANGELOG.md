@@ -1,5 +1,15 @@
 # Changelog
 
+## 5.10.4
+
+### Bug Fixes 🐛
+
+- (mapping) Report a single frame when no line number and no signature are present by @markushi in [#95](https://github.com/getsentry/rust-proguard/pull/95)
+
+### Internal Changes 🔧
+
+- (cargo) Update stale lock file by @markushi in [#96](https://github.com/getsentry/rust-proguard/pull/96)
+
 ## 5.10.3
 
 ### Bug Fixes 🐛

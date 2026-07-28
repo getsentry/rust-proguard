@@ -11,6 +11,4 @@ echo "Bumping version: ${NEW_VERSION}"
 
 find . -name Cargo.toml -type f -exec sed -i '' -e "s/^version.*/version = \"$NEW_VERSION\"/" {} \;
 
-# Keep Cargo.lock in sync. `--workspace` only touches our own packages, so this
-# does not pull in unrelated dependency updates.
-cargo update --workspace --offline
+cargo metadata --format-version 1 > /dev/null # update `Cargo.lock`

@@ -10,3 +10,5 @@ NEW_VERSION="${2}"
 echo "Bumping version: ${NEW_VERSION}"
 
 find . -name Cargo.toml -type f -exec sed -i '' -e "s/^version.*/version = \"$NEW_VERSION\"/" {} \;
+
+cargo metadata --format-version 1 > /dev/null # update `Cargo.lock`

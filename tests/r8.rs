@@ -581,10 +581,10 @@ fn test_method_with_zero_zero_and_line_specific_mappings_cache() {
 
 #[test]
 fn test_inline_group_no_base_entries() {
-    // Regression test: when a frame has no line number and all mapping entries
-    // have non-zero endline (no base entries), the first range group should be
-    // detected as an inline chain and each entry should get its proper original
-    // line number instead of all being collapsed to line 0.
+    // When a frame has no line number and every mapping entry has a minified
+    // range, the inline chain cannot be resolved: which inlinee ran is exactly
+    // what the missing line would have told us. Only the outermost entry -- the
+    // method that physically exists on the class -- is reported, matching retrace.
     let mapper = ProguardMapper::new(ProguardMapping::new(MAPPING_INLINE_NO_BASE.as_bytes()));
 
     let test = mapper.remap_stacktrace(
@@ -596,9 +596,7 @@ fn test_inline_group_no_base_entries() {
     assert_eq!(
         test.unwrap().trim(),
         r#"java.lang.RuntimeException: Crash
-    at com.example.app.MainActivity.innerCall(MainActivity.kt:54)
-    at com.example.app.MainActivity.middleCall(MainActivity.kt:44)
-    at com.example.app.MainActivity.onClick(MainActivity.kt:30)"#
+    at com.example.app.MainActivity.onClick(MainActivity.kt:0)"#
             .trim()
     );
 }
@@ -617,18 +615,8 @@ fn test_inline_group_no_base_entries_cache() {
 
     let frame1 = mapped.next().unwrap();
     assert_eq!(frame1.class(), "com.example.app.MainActivity");
-    assert_eq!(frame1.method(), "innerCall");
-    assert_eq!(frame1.line(), Some(54));
-
-    let frame2 = mapped.next().unwrap();
-    assert_eq!(frame2.class(), "com.example.app.MainActivity");
-    assert_eq!(frame2.method(), "middleCall");
-    assert_eq!(frame2.line(), Some(44));
-
-    let frame3 = mapped.next().unwrap();
-    assert_eq!(frame3.class(), "com.example.app.MainActivity");
-    assert_eq!(frame3.method(), "onClick");
-    assert_eq!(frame3.line(), Some(30));
+    assert_eq!(frame1.method(), "onClick");
+    assert_eq!(frame1.line(), Some(0));
 
     assert_eq!(mapped.next(), None);
 }

@@ -1,0 +1,30 @@
+androidx.compose.foundation.BorderModifierNode$drawWithCacheModifierNode$1 -> a1.y:
+# {"id":"sourceFile","fileName":"Border.kt"}
+    10:11:java.lang.Object androidx.compose.foundation.text.TextFieldDelegate$Companion$updateTextLayoutResult$1$1$1.invoke(java.lang.Object):256:256 -> j
+    34:35:java.lang.Object androidx.compose.foundation.text.AndroidCursorHandle_androidKt$CursorHandle$finalModifier$1$1.invoke(java.lang.Object):54:54 -> j
+    62:63:java.lang.Object coil.disk.DiskLruCache$newJournalWriter$faultHidingSink$1.invoke(java.lang.Object):247:247 -> j
+    74:75:java.lang.Object androidx.compose.ui.platform.RenderNodeLayer$updateDisplayList$1$1.invoke(java.lang.Object):323:323 -> j
+    87:88:java.lang.Object androidx.compose.ui.platform.InputMethodSession$createInputConnection$1$1.invoke(java.lang.Object):143:143 -> j
+    144:145:java.lang.Object androidx.compose.ui.platform.GraphicsLayerOwnerLayer$recordLambda$1.invoke(java.lang.Object):259:259 -> j
+    196:197:java.lang.Object androidx.compose.ui.platform.AndroidCompositionLocals_androidKt$ProvideAndroidCompositionLocals$2$1.invoke(java.lang.Object):96:96 -> j
+    209:210:java.lang.Object androidx.compose.ui.viewinterop.AndroidViewHolder$layoutNode$1$2.invoke(java.lang.Object):448:448 -> j
+    221:222:java.lang.Object androidx.compose.ui.node.NodeChainKt$fillVector$1.invoke(java.lang.Object):801:801 -> j
+    233:234:java.lang.Object androidx.compose.ui.node.AlignmentLines$recalculate$1.invoke(java.lang.Object):143:143 -> j
+    389:390:java.lang.Object androidx.compose.foundation.lazy.layout.LazyLayoutPinnableItemKt$LazyLayoutPinnableItem$1$1.invoke(java.lang.Object):55:55 -> j
+    402:403:java.lang.Object androidx.compose.foundation.lazy.layout.LazyLayoutItemContentFactory$CachedItemContent$createContentLambda$1$1$1.invoke(java.lang.Object):104:104 -> j
+    415:416:java.lang.Object io.sentry.okhttp.SentryOkHttpEventListener$responseHeadersEnd$1.invoke(java.lang.Object):300:300 -> j
+    455:456:java.lang.Object io.sentry.okhttp.SentryOkHttpEventListener$proxySelectEnd$1.invoke(java.lang.Object):112:112 -> j
+    492:498:java.lang.Object io.sentry.okhttp.SentryOkHttpEventListener$2.invoke(java.lang.Object):74:74 -> j
+    508:509:java.lang.Object io.sentry.android.replay.ReplayIntegration$captureReplay$1.invoke(java.lang.Object):259:259 -> j
+    642:647:java.lang.Object androidx.compose.foundation.lazy.grid.LazyGridState$scrollableState$1.invoke(java.lang.Object):225:225 -> j
+    806:807:java.lang.Object androidx.compose.ui.input.pointer.SuspendingPointerInputModifierNodeImpl$awaitPointerEventScope$2$2.invoke(java.lang.Object):793:793 -> j
+    825:826:java.lang.Object androidx.compose.ui.input.pointer.PointerInteropFilter$pointerInputFilter$1$dispatchToView$2.invoke(java.lang.Object):273:273 -> j
+    843:844:java.lang.Object androidx.navigation.compose.NavHostControllerKt$NavControllerSaver$2.invoke(java.lang.Object):80:80 -> j
+    1023:1024:java.lang.Object androidx.navigation.compose.NavBackStackEntryProviderKt$SaveableStateProvider$1.invoke(java.lang.Object):61:61 -> j
+    1041:1042:java.lang.Object androidx.compose.foundation.gestures.ScrollingLogic$performScrollForOverscroll$1.invoke(java.lang.Object):697:697 -> j
+    1063:1064:java.lang.Object androidx.compose.foundation.gestures.ScrollableNode$1.invoke(java.lang.Object):322:322 -> j
+    1103:1104:java.lang.Object androidx.compose.foundation.gestures.DragGestureDetectorKt$detectDragGestures$6.invoke(java.lang.Object):177:177 -> j
+    1115:1116:java.lang.Object androidx.navigation.Navigator$navigate$1.invoke(java.lang.Object):116:116 -> j
+    1176:1181:java.lang.Object androidx.compose.foundation.ScrollState$scrollableState$1.invoke(java.lang.Object):130:130 -> j
+    1247:1248:java.lang.Object androidx.compose.foundation.ClickableNode$clickPointerInput$3.invoke(java.lang.Object):693:693 -> j
+    1267:1268:java.lang.Object invoke(java.lang.Object):158:158 -> j

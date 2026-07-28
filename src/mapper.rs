@@ -303,10 +303,13 @@ impl FusedIterator for RemappedFrameIter<'_> {}
 /// Resolves frames for the no-line (frame_line==0) case.
 ///
 /// When the input frame has no line number, base entries (endline==0) are preferred
-/// over line-mapped entries. Base entries are split into two groups by whether
-/// `startline` is present (0:0 entries) or absent (no-range entries), and each
-/// group's output lines are computed based on whether the group contains range
-/// mappings, single-line mappings, or bare methods.
+/// over line-mapped entries, since they are not keyed to a line either. Base entries
+/// are split into two groups by whether `startline` is present (0:0 entries) or
+/// absent (no-range entries), and each group's output lines are computed based on
+/// whether the group contains range mappings, single-line mappings, or bare methods.
+///
+/// If there are no base entries, every entry is keyed by a minified range that the
+/// frame cannot match, and the entries are resolved by shape instead: see below.
 fn resolve_no_line_frames<'s>(
     frame: &StackFrame<'s>,
     mapping_entries: &'s [MemberMapping<'s>],
@@ -318,54 +321,38 @@ fn resolve_no_line_frames<'s>(
         return;
     }
 
-    // No base entries — check if the first range group forms an inline group
-    // (multiple entries sharing the same startline/endline). If so, resolve
-    // that group with proper output lines. Otherwise, fall back to emitting
-    // a single frame with line 0 (ambiguous non-inline case).
+    // Every entry is keyed by a minified line range, and the frame carries no line
+    // to select one with. R8 reuses a single obfuscated name for many unrelated
+    // method bodies, and it also flattens inlined call stacks into consecutive
+    // entries sharing one range. Neither can be resolved without a line number.
     //
-    // This matches retrace's `allRangesForLine(0, true)` which picks the first
-    // range containing line 0 and returns all entries in that range group.
-    // Whether this is intentional retrace behavior or accidental is debatable,
-    // but we match it because users compare our output against retrace-based tools.
+    // Retrace emits a single frame here: the method that physically exists on this
+    // class. It reaches that by taking the first range group and reporting only its
+    // outermost entry -- the caller the inlined bodies were spliced into. Inlinees
+    // are dropped, because which one ran is exactly what the missing line would have
+    // told us. We do the same, so that a frame without line information deobfuscates
+    // identically in both tools.
     let Some(first) = mapping_entries.first() else {
         return;
     };
 
-    let first_start = first.startline;
-    let first_end = first.endline;
-    let first_group: Vec<_> = mapping_entries
+    // The outermost entry of a group is its last member; R8 lists inlinees
+    // innermost-first, with the enclosing method last. A group of one is its own
+    // outermost entry.
+    let outermost = mapping_entries
         .iter()
-        .take_while(|m| m.startline == first_start && m.endline == first_end)
-        .collect();
+        .take_while(|m| m.startline == first.startline && m.endline == first.endline)
+        .last()
+        .unwrap_or(first);
 
-    if first_group.len() > 1 {
-        // Inline group: multiple entries share the same range.
-        // Resolve each with its proper original line.
-        for member in &first_group {
-            let line = member.original_startline.filter(|&v| v > 0).or(Some(0));
-            collected
-                .frames
-                .push(map_member_without_lines(frame, member, line));
-            collected.rewrite_rules.extend(member.rewrite_rules.iter());
-        }
-    } else {
-        // Ambiguous: each entry has a different range. Collapse to one
-        // frame with line 0, matching retrace behavior.
-        let unambiguous = mapping_entries.iter().all(|m| m.original == first.original);
-        if unambiguous {
-            collected
-                .frames
-                .push(map_member_without_lines(frame, first, Some(0)));
-            collected.rewrite_rules.extend(first.rewrite_rules.iter());
-        } else {
-            for member in mapping_entries {
-                collected
-                    .frames
-                    .push(map_member_without_lines(frame, member, Some(0)));
-                collected.rewrite_rules.extend(member.rewrite_rules.iter());
-            }
-        }
-    }
+    // The entry's rewrite rules are deliberately not collected. `removeInnerFrames`
+    // trims an inline chain, and we just established there is no chain to trim: the
+    // one frame we report is the outermost one, which the rule would never remove.
+    // Forwarding the rules would instead delete the sole frame and lose the
+    // stacktrace entirely. Retrace keeps the frame here too.
+    collected
+        .frames
+        .push(map_member_without_lines(frame, outermost, Some(0)));
 }
 
 /// Resolves output lines for base (endline==0) entries when the frame has no line number.

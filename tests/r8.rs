@@ -1,3 +1,4 @@
+#[cfg(feature = "uuid")]
 use std::sync::LazyLock;
 
 use proguard::{ProguardCache, ProguardMapper, ProguardMapping, StackFrame, StackTrace, Throwable};
@@ -14,6 +15,7 @@ static MAPPING_REWRITE_COMPLEX: &str = include_str!("res/mapping-rewrite-complex
 static MAPPING_ZERO_LINE_INFO: &[u8] = include_bytes!("res/mapping-zero-line-info.txt");
 static MAPPING_INLINE_NO_BASE: &str = include_str!("res/mapping-inline-no-base.txt");
 
+#[cfg(feature = "uuid")]
 static MAPPING_WIN_R8: LazyLock<Vec<u8>> = LazyLock::new(|| {
     MAPPING_R8
         .iter()

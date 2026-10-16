@@ -559,9 +559,9 @@ dependencies = [
 
 [[package]]
 name = "watto"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfbc1480663d640f8c9f7a1ac70922eea60ac16fea79df883177df3bc7bb8b49"
+checksum = "aa39e1525eea5917416b8afae93e948f947259b7100dd44d05b3b3b9b44897d3"
 dependencies = [
  "hashbrown",
  "leb128",

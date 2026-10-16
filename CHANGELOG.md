@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Internal Changes 🔧
+
+- Updated `watto` to 0.3.0 by @loewenheim in [#97](https://github.com/getsentry/rust-proguard/pull/97)
+
+
 ## 5.10.4
 
 ### Bug Fixes 🐛
